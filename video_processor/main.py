@@ -1,5 +1,6 @@
 import click
 import json
+import os
 from .processor import process_video, VideoProcessingError
 
 @click.command()
@@ -22,7 +23,20 @@ def main(video_file_path, output_directory, split_timestamps, chunk_duration, co
             compress_resolution=compress_resolution,
             compress_first=compress_first
         )
-        click.echo(json.dumps(result, indent=4))
+        
+        # Determine output directory for the JSON report
+        if not output_directory:
+            output_directory = os.path.dirname(video_file_path)
+        
+        # Create and save the JSON report
+        base_filename = os.path.splitext(os.path.basename(video_file_path))[0]
+        json_report_path = os.path.join(output_directory, f"{base_filename}_report.json")
+        
+        with open(json_report_path, 'w') as f:
+            json.dump(result, f, indent=4)
+            
+        click.echo(f"Processing complete. Report saved to: {json_report_path}")
+
     except (FileNotFoundError, VideoProcessingError) as e:
         error_result = {
             "input_video_path": video_file_path,

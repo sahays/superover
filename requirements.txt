@@ -4,3 +4,5 @@ click
 pymediainfo
 pydantic
 ffmpeg-python
+google-generativeai
+python-dotenv
