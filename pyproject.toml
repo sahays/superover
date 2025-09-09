@@ -11,7 +11,13 @@ dependencies = [
     "typer[all]",
     "pymediainfo",
     "pydantic",
+    "ffmpeg-python",
 ]
 
 [project.scripts]
-media-inspector = "media_inspector.main:app"
+media-inspector = "media_inspector.main:main"
+audio-extractor = "audio_extractor.main:main"
+video-processor = "video_processor.main:main"
+
+[tool.setuptools]
+packages = ["media_inspector", "audio_extractor", "video_processor"]
