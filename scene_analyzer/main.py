@@ -2,22 +2,22 @@ from fastapi import FastAPI, Request, HTTPException
 import base64
 import json
 import os
-from .analyzer import analyze_scenes, SceneAnalysisError
+from .analyzer import analyze_scenes
 from common.storage import StorageManager
 
 app = FastAPI()
 
 @app.post("/")
-async def handle_gcs_event(request: Request):
+async def handle_pubsub_message(request: Request):
     """
-    Handles incoming CloudEvents from GCS for scene analysis.
+    Handles incoming Pub/Sub push messages for scene analysis.
     The trigger for this service should be a manifest file from a video processor.
     """
     body = await request.json()
-    print(f"Received CloudEvent: {body}")
+    print(f"Received Pub/Sub message: {body}")
 
     if not body or "message" not in body or "data" not in body["message"]:
-        raise HTTPException(status_code=400, detail="Invalid CloudEvent payload: missing message data")
+        raise HTTPException(status_code=400, detail="Invalid Pub/Sub message payload")
 
     try:
         message_data = base64.b64decode(body["message"]["data"]).decode("utf-8")
@@ -29,18 +29,17 @@ async def handle_gcs_event(request: Request):
     name = event_data.get("name") # This should be the path to the manifest.json
 
     if not bucket or not name:
-        raise HTTPException(status_code=400, detail="Invalid GCS event data: missing bucket or name")
+        raise HTTPException(status_code=400, detail="Invalid GCS event data in message")
 
-    # Ensure we are only processing manifest files
+    # Ensure we are only processing the final report manifest from the video_processor
     if not name.endswith('_report.json'):
-        print(f"Skipping file {name} as it is not a report manifest.")
-        return {"status": "skipped", "reason": "Not a report manifest file"}, 200
+        print(f"Skipping file '{name}' as it is not a video processor report. Acknowledging message.")
+        return {"status": "skipped", "reason": "Not a video processor report manifest"}, 200
 
     input_manifest_gcs_path = f"gs://{bucket}/{name}"
     
-    # Define a structured output path.
-    # e.g., gs://my-bucket/processed/scene_analyzer/original_video_name/
-    original_video_name = name.split('/')[-2] # Assumes path like .../video_processor/original_name/report.json
+    # Define a structured output path based on the manifest's location
+    original_video_name = os.path.basename(name).replace('_report.json', '')
     output_dir_gcs_path = f"gs://{bucket}/processed/scene_analyzer/{original_video_name}/"
 
     print(f"Starting scene analysis for manifest: {input_manifest_gcs_path}")
@@ -51,7 +50,6 @@ async def handle_gcs_event(request: Request):
             output_directory=output_dir_gcs_path
         )
         
-        # Create the final manifest report
         storage = StorageManager()
         final_manifest_path = os.path.join(output_dir_gcs_path, "analysis_manifest.json")
         

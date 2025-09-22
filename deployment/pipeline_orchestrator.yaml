@@ -1,0 +1,111 @@
+# This YAML file defines the main pipeline orchestration logic.
+# Deploy it using the gcloud command:
+# gcloud workflows deploy pipeline-orchestrator --source=./pipeline_orchestrator.yaml --location=<your-region>
+
+main:
+  params: [input]
+  steps:
+    - init:
+        assign:
+          - projectId: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+          - location: "us-central1" # Or configure via env var
+          - jobId: ${input.jobId}
+          - jobCollection: "jobs"
+          - pipelineCollection: "pipelines"
+    - getJobDocument:
+        call: googleapis.firestore.v1.projects.databases.documents.get
+        args:
+          name: ${"projects/" + projectId + "/databases/(default)/documents/" + jobCollection + "/" + jobId}
+        result: jobDocument
+    - getPipelineId:
+        assign:
+          - pipelineId: ${jobDocument.fields.pipelineId.stringValue}
+    - getPipelineDocument:
+        call: googleapis.firestore.v1.projects.databases.documents.get
+        args:
+          name: ${"projects/" + projectId + "/databases/(default)/documents/" + pipelineCollection + "/" + pipelineId}
+        result: pipelineDocument
+    - setJobToRunning:
+        call: googleapis.firestore.v1.projects.databases.documents.patch
+        args:
+          name: ${"projects/" + projectId + "/databases/(default)/documents/" + jobCollection + "/" + jobId}
+          updateMask:
+            fieldPaths:
+              - "status"
+          body:
+            fields:
+              status:
+                stringValue: "RUNNING"
+    - getPipelineSteps:
+        assign:
+          - pipelineSteps: ${pipelineDocument.fields.steps.arrayValue.values}
+    - iterateOverSteps:
+        for:
+          value: step
+          in: ${pipelineSteps}
+          steps:
+            - getStepDetails:
+                assign:
+                  - serviceName: ${step.mapValue.fields.serviceName.stringValue}
+                  - topicName: ${step.mapValue.fields.topic.stringValue}
+            - checkCheckpoint:
+                call: googleapis.firestore.v1.projects.databases.documents.get
+                args:
+                  name: ${"projects/" + projectId + "/databases/(default)/documents/" + jobCollection + "/" + jobId}
+                result: currentJobState
+            - isStepCompleted:
+                switch:
+                  - condition: ${!("checkpoints" in currentJobState.fields) || !(serviceName in currentJobState.fields.checkpoints.mapValue.fields) || currentJobState.fields.checkpoints.mapValue.fields[serviceName].stringValue != "COMPLETED"}
+                    next: publishToTopic
+                next: stepCompleted
+            - publishToTopic:
+                call: googleapis.pubsub.v1.projects.topics.publish
+                args:
+                  topic: ${"projects/" + projectId + "/topics/" + topicName}
+                  body:
+                    messages:
+                      - data: ${base64.encode(json.encode({"jobId": jobId}))}
+                next: pollForCompletion
+            - pollForCompletion:
+                call: sys.sleep
+                args:
+                  seconds: 15
+                next: checkStepStatus
+            - checkStepStatus:
+                try:
+                  call: googleapis.firestore.v1.projects.databases.documents.get
+                  args:
+                    name: ${"projects/" + projectId + "/databases/(default)/documents/" + jobCollection + "/" + jobId}
+                  result: jobStatus
+                  next: didStepComplete
+                except:
+                  as: e
+                  steps:
+                    - handleFirestoreError:
+                        raise: ${e}
+            - didStepComplete:
+                switch:
+                  - condition: ${"checkpoints" in jobStatus.fields && serviceName in jobStatus.fields.checkpoints.mapValue.fields && jobStatus.fields.checkpoints.mapValue.fields[serviceName].stringValue == "COMPLETED"}
+                    next: stepCompleted # Exit the polling loop
+                  - condition: ${jobStatus.fields.status.stringValue == "FAILED" || jobStatus.fields.status.stringValue == "CANCELLED"}
+                    next: handleJobFailure
+                next: pollForCompletion # Continue polling
+            - stepCompleted:
+                next: endFor
+    - setJobToCompleted:
+        call: googleapis.firestore.v1.projects.databases.documents.patch
+        args:
+          name: ${"projects/" + projectId + "/databases/(default)/documents/" + jobCollection + "/" + jobId}
+          updateMask:
+            fieldPaths:
+              - "status"
+          body:
+            fields:
+              status:
+                stringValue: "COMPLETED"
+        next: end
+    - handleJobFailure:
+        raise: ${"Job failed or was cancelled. Terminating workflow."}
+    - endFor:
+        next: setJobToCompleted
+  result: jobDocument

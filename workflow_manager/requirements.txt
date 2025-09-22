@@ -1,0 +1,5 @@
+# Required by all Google Cloud Functions
+functions-framework==3.*
+
+# Dependencies for the workflow manager logic
+google-cloud-firestore==2.*

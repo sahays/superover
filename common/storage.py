@@ -3,6 +3,7 @@ from google.cloud import storage
 from urllib.parse import urlparse
 import tempfile
 import logging
+import shutil
 
 class StorageManager:
     """
@@ -53,6 +54,9 @@ class StorageManager:
             self.temp_files.append(temp_local_path)
             return temp_local_path
         else:
+            # If the local file doesn't exist, raise an error.
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"Local file not found: {path}")
             return path
 
     def upload_file(self, local_path: str, gcs_path: str):
@@ -65,6 +69,16 @@ class StorageManager:
         bucket = self.gcs_client.bucket(bucket_name)
         blob = bucket.blob(blob_name)
         blob.upload_from_filename(local_path)
+
+    def move_file(self, source_local_path: str, destination_path: str):
+        """Moves a local file to a destination that can be either local or GCS."""
+        if self.is_gcs_path(destination_path):
+            self.upload_file(source_local_path, destination_path)
+        else:
+            # Ensure the local destination directory exists
+            destination_dir = os.path.dirname(destination_path)
+            os.makedirs(destination_dir, exist_ok=True)
+            shutil.move(source_local_path, destination_path)
 
     def cleanup_temp_files(self):
         """Deletes all temporary files created during the session."""
@@ -79,7 +93,7 @@ class StorageManager:
     def write_json(self, path: str, data: dict):
         """Writes a dictionary to a JSON file on either local disk or GCS."""
         import json
-        content = json.dumps(data, indent=4)
+        content = json.dumps(data, indent=4).encode('utf-8') # Encode to bytes
         
         if self.is_gcs_path(path):
             bucket_name, blob_name = self._parse_gcs_path(path)
@@ -88,5 +102,5 @@ class StorageManager:
             blob.upload_from_string(content, content_type='application/json')
         else:
             os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, 'w') as f:
+            with open(path, 'wb') as f:
                 f.write(content)

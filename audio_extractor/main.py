@@ -2,21 +2,21 @@ from fastapi import FastAPI, Request, HTTPException
 import base64
 import json
 import os
-from .extractor import extract_audio, AudioExtractionError
+from .extractor import extract_audio
 from common.storage import StorageManager
 
 app = FastAPI()
 
 @app.post("/")
-async def handle_gcs_event(request: Request):
+async def handle_pubsub_message(request: Request):
     """
-    Handles incoming CloudEvents from GCS for audio extraction.
+    Handles incoming Pub/Sub push messages for audio extraction.
     """
     body = await request.json()
-    print(f"Received CloudEvent: {body}")
+    print(f"Received Pub/Sub message: {body}")
 
     if not body or "message" not in body or "data" not in body["message"]:
-        raise HTTPException(status_code=400, detail="Invalid CloudEvent payload: missing message data")
+        raise HTTPException(status_code=400, detail="Invalid Pub/Sub message payload")
 
     try:
         message_data = base64.b64decode(body["message"]["data"]).decode("utf-8")
@@ -28,7 +28,7 @@ async def handle_gcs_event(request: Request):
     name = event_data.get("name")
 
     if not bucket or not name:
-        raise HTTPException(status_code=400, detail="Invalid GCS event data: missing bucket or name")
+        raise HTTPException(status_code=400, detail="Invalid GCS event data in message")
 
     input_gcs_path = f"gs://{bucket}/{name}"
     output_dir_gcs_path = f"gs://{bucket}/processed/audio_extractor/{os.path.splitext(os.path.basename(name))[0]}/"
@@ -42,7 +42,7 @@ async def handle_gcs_event(request: Request):
         )
         
         storage = StorageManager()
-        report_path = os.path.join(output_dir_gcs_path, "extraction_report.json")
+        report_path = os.path.join(output_dir_gcs_path, f"{os.path.splitext(os.path.basename(name))[0]}_extraction_report.json")
         storage.write_json(report_path, result)
 
         print(f"Successfully extracted audio from {input_gcs_path}. Report at: {report_path}")

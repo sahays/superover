@@ -56,7 +56,7 @@ def extract_audio(video_file_path: str, output_directory: str) -> dict:
                         ffmpeg.input(local_video_path).output(local_output_path, map=f"0:{track_index}", acodec='flac', af=audio_filter).overwrite_output().run(capture_stdout=True, capture_stderr=True)
                         
                         gcs_path = os.path.join(output_directory, os.path.basename(local_output_path))
-                        storage.upload_file(local_output_path, gcs_path)
+                        storage.move_file(local_output_path, gcs_path)
                         
                         extracted_channels.append(ExtractedChannel(channel_index=i, output_path=gcs_path))
                         total_channels_extracted += 1
@@ -68,7 +68,7 @@ def extract_audio(video_file_path: str, output_directory: str) -> dict:
                     ffmpeg.input(local_video_path).output(local_output_path, map=f"0:{track_index}", acodec='flac').overwrite_output().run(capture_stdout=True, capture_stderr=True)
                     
                     gcs_path = os.path.join(output_directory, os.path.basename(local_output_path))
-                    storage.upload_file(local_output_path, gcs_path)
+                    storage.move_file(local_output_path, gcs_path)
 
                     extracted_channels.append(ExtractedChannel(channel_index=0, output_path=gcs_path))
                     total_channels_extracted += 1
