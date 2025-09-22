@@ -7,6 +7,12 @@ class SceneAnalysisRequest(BaseModel):
 class CharacterDialogue(BaseModel):
     character_name: str = Field(description="The name of the character speaking.")
     dialogue: str = Field(description="The line of dialogue spoken by the character.")
+    detected_language: str = Field(description="The detected language of the dialogue, e.g., 'English', 'Telugu'.")
+
+class BrandRecognition(BaseModel):
+    brand_name: str = Field(description="The recognized brand name.")
+    object_type: str = Field(description="The type of object the brand is associated with, e.g., 'Car', 'Phone', 'Clothing'.")
+    description: str = Field(description="A brief description of where the brand appears in the scene.")
 
 class SceneAnalysis(BaseModel):
     start_timestamp_seconds: float = Field(description="Start time of the scene in seconds from the beginning of the original video.")
@@ -20,6 +26,8 @@ class SceneAnalysis(BaseModel):
     visible_objects: List[str] = Field(description="A list of significant objects, vehicles, or symbols visible in the scene, e.g., ['Laptop', 'Red sports car', 'Golden key'].")
     camera_movement: str = Field(description="A description of the camera work, e.g., 'Static shot', 'Slow pan from left to right', 'Handheld shaky cam'.")
     sound_design: List[str] = Field(description="A list of notable non-dialogue sounds, e.g., ['Distant siren', 'Ticking clock', 'Sudden gunshot'].")
+    moderation_flags: List[str] = Field(description="A list of content moderation flags, e.g., ['Smoking', 'Alcohol Consumption', 'Violence']. An empty list if none are present.")
+    brand_recognition: List[BrandRecognition] = Field(description="A list of recognized brands and their context within the scene.")
 
 class SceneAnalysisResult(BaseModel):
     source_manifest_path: str
