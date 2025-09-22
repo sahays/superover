@@ -1,38 +1,53 @@
-import click
+from fastapi import FastAPI, Request, HTTPException
+import base64
 import json
 import os
 from .extractor import extract_audio, AudioExtractionError
+from common.storage import StorageManager
 
-@click.command()
-@click.argument('video_file_path', type=click.Path(exists=True, resolve_path=True))
-@click.option('--output-dir', '-o', 'output_dir', type=click.Path(resolve_path=True), help="Directory to save the extracted audio files.")
-def main(video_file_path, output_dir):
+app = FastAPI()
+
+@app.post("/")
+async def handle_gcs_event(request: Request):
     """
-    Extracts all audio tracks from a video file into individual files and one combined file.
+    Handles incoming CloudEvents from GCS for audio extraction.
     """
+    body = await request.json()
+    print(f"Received CloudEvent: {body}")
+
+    if not body or "message" not in body or "data" not in body["message"]:
+        raise HTTPException(status_code=400, detail="Invalid CloudEvent payload: missing message data")
+
     try:
-        result = extract_audio(video_file_path, output_dir)
-        
-        # Determine output directory for the JSON report
-        effective_output_dir = output_dir if output_dir else os.path.dirname(video_file_path)
-        
-        # Create and save the JSON report
-        base_filename = os.path.splitext(os.path.basename(video_file_path))[0]
-        json_report_path = os.path.join(effective_output_dir, f"{base_filename}_audio_report.json")
-        
-        with open(json_report_path, 'w') as f:
-            json.dump(result, f, indent=4)
-            
-        click.echo(f"Audio extraction complete. Report saved to: {json_report_path}")
+        message_data = base64.b64decode(body["message"]["data"]).decode("utf-8")
+        event_data = json.loads(message_data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error decoding message data: {e}")
 
-    except AudioExtractionError as e:
-        error_result = {
-            "input_video_path": video_file_path,
-            "status": "error",
-            "message": str(e)
-        }
-        click.echo(json.dumps(error_result, indent=4), err=True)
-        exit(1)
+    bucket = event_data.get("bucket")
+    name = event_data.get("name")
 
-if __name__ == '__main__':
-    main()
+    if not bucket or not name:
+        raise HTTPException(status_code=400, detail="Invalid GCS event data: missing bucket or name")
+
+    input_gcs_path = f"gs://{bucket}/{name}"
+    output_dir_gcs_path = f"gs://{bucket}/processed/audio_extractor/{os.path.splitext(os.path.basename(name))[0]}/"
+
+    print(f"Starting audio extraction for: {input_gcs_path}")
+
+    try:
+        result = extract_audio(
+            video_file_path=input_gcs_path,
+            output_directory=output_dir_gcs_path
+        )
+        
+        storage = StorageManager()
+        report_path = os.path.join(output_dir_gcs_path, "extraction_report.json")
+        storage.write_json(report_path, result)
+
+        print(f"Successfully extracted audio from {input_gcs_path}. Report at: {report_path}")
+        return {"status": "success", "report_path": report_path}, 200
+
+    except Exception as e:
+        print(f"Error extracting audio from {input_gcs_path}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

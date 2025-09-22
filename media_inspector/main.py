@@ -1,50 +1,51 @@
-import click
+from fastapi import FastAPI, Request, HTTPException
+import base64
 import json
 import os
 from .inspector import inspect_media, MediaInspectionError
+from common.storage import StorageManager
 
-@click.command()
-@click.argument('file_path', type=click.Path(exists=True, resolve_path=True))
-@click.option('--output-dir', '-o', 'output_dir', type=click.Path(resolve_path=True), help="Directory to save the inspection report.")
-def main(file_path, output_dir):
+app = FastAPI()
+
+@app.post("/")
+async def handle_gcs_event(request: Request):
     """
-    Inspects a media file and prints its metadata as JSON.
+    Handles incoming CloudEvents from GCS for media inspection.
     """
+    body = await request.json()
+    print(f"Received CloudEvent: {body}")
+
+    if not body or "message" not in body or "data" not in body["message"]:
+        raise HTTPException(status_code=400, detail="Invalid CloudEvent payload: missing message data")
+
     try:
-        metadata = inspect_media(file_path)
-        
-        if output_dir:
-            os.makedirs(output_dir, exist_ok=True)
-            base_filename = os.path.splitext(os.path.basename(file_path))[0]
-            output_path = os.path.join(output_dir, f"{base_filename}_metadata.json")
-            
-            with open(output_path, 'w') as f:
-                json.dump(metadata, f, indent=4)
-            
-            click.echo(f"Inspection report saved to: {output_path}")
-        else:
-            click.echo(json.dumps(metadata, indent=4))
+        message_data = base64.b64decode(body["message"]["data"]).decode("utf-8")
+        event_data = json.loads(message_data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error decoding message data: {e}")
 
-    except MediaInspectionError as e:
-        error_result = {
-            "file_path": file_path,
-            "status": "error",
-            "message": str(e)
-        }
-        
-        if output_dir:
-            os.makedirs(output_dir, exist_ok=True)
-            base_filename = os.path.splitext(os.path.basename(file_path))[0]
-            output_path = os.path.join(output_dir, f"{base_filename}_error.json")
-            
-            with open(output_path, 'w') as f:
-                json.dump(error_result, f, indent=4)
-            
-            click.echo(f"Error report saved to: {output_path}", err=True)
-        else:
-            click.echo(json.dumps(error_result, indent=4), err=True)
-        
-        exit(1)
+    bucket = event_data.get("bucket")
+    name = event_data.get("name")
 
-if __name__ == '__main__':
-    main()
+    if not bucket or not name:
+        raise HTTPException(status_code=400, detail="Invalid GCS event data: missing bucket or name")
+
+    input_gcs_path = f"gs://{bucket}/{name}"
+    output_dir_gcs_path = f"gs://{bucket}/processed/media_inspector/"
+
+    print(f"Starting media inspection for: {input_gcs_path}")
+
+    try:
+        metadata = inspect_media(file_path=input_gcs_path)
+        
+        storage = StorageManager()
+        base_filename = os.path.splitext(os.path.basename(name))[0]
+        report_path = os.path.join(output_dir_gcs_path, f"{base_filename}_metadata.json")
+        storage.write_json(report_path, metadata)
+
+        print(f"Successfully inspected {input_gcs_path}. Report at: {report_path}")
+        return {"status": "success", "report_path": report_path}, 200
+
+    except Exception as e:
+        print(f"Error inspecting {input_gcs_path}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

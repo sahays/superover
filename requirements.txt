@@ -1,8 +1,8 @@
+google-cloud-storage
 fastapi
 uvicorn
-click
-pymediainfo
-pydantic
-ffmpeg-python
-google-generativeai
 python-dotenv
+ffmpeg-python
+pymediainfo
+click
+google-generativeai

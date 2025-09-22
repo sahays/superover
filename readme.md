@@ -1,124 +1,127 @@
-# **Super Over Technical Summary**
+# Super Over Alchemy
 
-## **1\. Project Summary**
+**Super Over Alchemy** is a Gemini-powered narrative analytics platform designed for cloud-native, event-driven video processing. The system deconstructs video content scene-by-scene to analyze characters, dialogue, emotional tone, and more, providing data-driven insights for creative decision-making.
 
-**Project Super Over** is a Gemini-powered narrative analytics platform that combines audience engagement data and
-creative decision-making for streaming platforms. The system deconstructs video content scene-by-scene—analyzing
-characters, dialogue, and emotional tone—and correlates these narrative elements directly with viewer behavior like
-drop-offs and plays. This provides writers, showrunners, and studio executives with unprecedented, data-driven insights
-to optimize plotlines, enhance character arcs, and ultimately de-risk future productions by creating content that more
-effectively retains its audience.
+This project is structured as a pipeline of independent microservices, each packaged as a container and designed to be deployed on Google Cloud Run.
 
 ---
 
-## **2\. System Architecture: The Component Library**
+## System Architecture
 
-The system is designed as a collection of discrete, single-purpose modules, or "LEGO blocks." This design ensures
-maximum flexibility, allowing any component to be used independently or composed into a larger workflow. The library is
-organized into three layers: foundational **Media Processing**, **Core AI Analysis**, and high-level **Narrative
-Synthesis**.
+The system is a collection of serverless microservices that communicate via Google Cloud Storage (GCS) events, orchestrated by Eventarc.
 
-Each module will have its own folder e.g. media_inspector with a CLI and API frontend. A root cli can invoke each module
-separately. Use python libs for CLI and API authoring.
+**Workflow:**
+1.  A video is uploaded to a GCS bucket.
+2.  An Eventarc trigger invokes the **`video-processor-service`**, which chunks the video into manageable segments and writes them back to GCS.
+3.  The creation of these chunks (and a manifest file) triggers the **`audio_extractor`** and **`scene_analyzer`** services.
+4.  Each service processes its input and writes its output (e.g., extracted audio, JSON analysis) to a designated GCS path.
 
----
+This decoupled architecture allows for flexible, scalable, and independent processing of media files.
 
-## **3\. Module Breakdown**
+### Core Services (Modules)
 
-The following table details each individual component within the library, outlining its specific purpose, inputs, and
-outputs.
-
-| Module Name (.py)         | Purpose (Its Single Job)                                                          | Primary Input(s)                                                             | Primary Output(s)                                                                              |
-| :------------------------ | :-------------------------------------------------------------------------------- | :--------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------- |
-| **media_inspector**       | 🔍 Reads the technical metadata of a media file.                                  | A file path to a video or audio file.                                        | A JSON object with properties (e.g., resolution, fps, duration).                               |
-| **audio_extractor**       | 🎵 Extracts the audio stream from a video file.                                   | A file path to a video file.                                                 | A JSON object detailing the input path, output path, and status.                               |
-| **video_processor**       | 📼 Splits, chunks, and/or compresses video files in a configurable pipeline.      | A file path to a video file and operation switches (e.g., --chunk-duration). | A JSON object detailing all the operations performed and the output file paths.                |
-| **scene_analyzer**        | ✨ Takes a media chunk, sends it to Gemini, and retrieves the rich JSON metadata. | A video chunk file path and its corresponding audio chunk.                   | A single JSON object with metadata for that chunk (characters, emotions, actions, transcript). |
-| **engagement_correlator** | 📈 Aligns engagement events to specific time-coded scenes.                        | A list of Scene objects with timestamps and a list of engagement events.     | The same list of Scene objects, now enriched with aggregated engagement data.                  |
-| **character_tracker**     | 👤 Filters all scene data to create a timeline for a single character.            | A list of all Scene JSON objects and a character name.                       | A JSON object detailing that character's arc (screen time, emotional journey).                 |
-| **relationship_mapper**   | 🔗 Analyzes all interactions between two specific characters.                     | A list of all Scene JSON objects and two character names.                    | A JSON report on the relationship's evolution (e.g., sentiment change over time).              |
-| **dialogue_generator**    | 💬 Generates alternative lines of dialogue for a scene.                           | A Scene JSON object and a creative prompt (e.g., "make this funnier").       | A JSON object with a list of {'dialogue_options': \[...\]}.                                    |
-| **plot_suggester**        | 💡 Brainstorms potential plot developments based on a scene's context.            | A Scene JSON object.                                                         | A JSON object with a list of {'plot_twists': \[...\]}.                                         |
+| Service Name | Purpose | Input Trigger | Primary Output(s) |
+| :--- | :--- | :--- | :--- |
+| **`media-inspector`** | 🔍 Reads the technical metadata of a media file. | GCS file upload | A `_metadata.json` file. |
+| **`audio-extractor`** | 🎵 Extracts audio channels from a video file. | GCS file upload | FLAC audio files for each channel. |
+| **`video-processor`** | 📼 Chunks a video file into smaller segments. | GCS file upload | Segmented `.mp4` files and a manifest. |
+| **`scene-analyzer`** | ✨ Analyzes a video chunk with Gemini for rich metadata. | GCS manifest upload | A detailed `_analysis.json` for each chunk. |
 
 ---
 
-## **4. Command-Line Tool Usage**
+## Local Development and Testing
 
-After installing the project with `pip install -e .`, the following command-line tools are available.
+Each service can be run locally as a web server. Testing is done by sending a simulated GCS event payload using `curl`.
 
-### **`media-inspector`**
+### 1. Run the Service Locally
 
-Inspects a media file and prints its technical metadata as a JSON object.
-
-```bash
-media-inspector /path/to/your/video.mov
-```
-
-### **`audio-extractor`**
-
-Extracts all audio tracks from a video file. It creates a separate file for each track and one combined file with all
-tracks mixed together.
+Use `uvicorn` to start the web server for the module you want to test.
 
 ```bash
-# Basic usage
-audio-extractor /path/to/your/video.mp4
-
-# Specify an output directory for the extracted files
-audio-extractor /path/to/your/video.mp4 --output-dir ./audio_files
+# Example for the video-processor
+uvicorn video_processor.main:app --reload --port 8080
 ```
+The `--reload` flag automatically restarts the server on code changes.
 
-### **`video-processor`**
+### 2. Simulate a GCS Event
 
-A multi-purpose tool to split, chunk, and/or compress video files. Operations can be chained together.
+In a separate terminal, use `curl` to send an HTTP POST request to your running service. The payload must mimic a CloudEvent from GCS.
 
-**Common Options:**
-
-- `--output-dir <path>`: Specify a directory for all output files.
-- `--compress-first`: If present, compression will be performed _before_ splitting or chunking.
-
-**Examples:**
-
-```bash
-# Compress a video to 720p
-video-processor /path/to/video.mp4 --compress-resolution 720p
-
-# Chunk a video into 10-second segments
-video-processor /path/to/video.mp4 --chunk-duration 10
-
-# Split a video into specific scenes
-video-processor /path/to/video.mp4 --split-timestamps "00:01:30-00:02:00,00:05:15-00:06:00"
-
-# Chunk a video into 30-second clips, then compress each clip to 480p
-video-processor /path/to/video.mp4 --chunk-duration 30 --compress-resolution 480p
-
-# Compress a video to 1080p first, then split the compressed video into scenes
-video-processor /path/to/video.mp4 --compress-resolution 1080p --split-timestamps "00:10:00-00:12:30" --compress-first
-```
-
-### **`scene-analyzer`**
-
-Takes the JSON report from `video-processor` as input, analyzes each video chunk via the Gemini API, and outputs a new, highly-detailed JSON analysis file.
-
-**Prerequisites:**
-- A `GEMINI_API_KEY` must be set in the `.env` file at the project root.
-
-**Example:**
-
-```bash
-# Create a directory for the analysis output
-mkdir ./analysis_output
-
-# Run the analyzer on a report from the video-processor
-scene-analyzer ./video-output/my_video_report.json --output-dir ./analysis_output
-```
+**Steps:**
+1.  Create a JSON file with the event data. For local file testing, this can just be a local path.
+    ```json
+    // Save as /tmp/event.json
+    {
+      "bucket": "local-bucket",
+      "name": "inputs/your_test_video.mp4" 
+    }
+    ```
+2.  Base64-encode this data.
+    ```bash
+    # On macOS
+    BASE64_DATA=$(base64 -i /tmp/event.json)
+    # On Linux
+    BASE64_DATA=$(base64 -w 0 /tmp/event.json)
+    ```
+3.  Send the `curl` request.
+    ```bash
+    curl -X POST http://127.0.0.1:8080 \
+      -H "Content-Type: application/json" \
+      -d '{ "message": { "data": "'"$BASE64_DATA"'" } }'
+    ```
+4.  Observe the log output in your `uvicorn` terminal.
 
 ---
 
-## **5. Internal Documentation**
+## Cloud Deployment on Google Cloud Run
 
-For more detailed technical designs, please see the Low-Level Design (LLD) documents for each module:
+Each service is deployed from the project root as a separate Cloud Run instance.
+
+### Prerequisites
+1.  Enable the Cloud Run, Cloud Build, and Artifact Registry APIs.
+2.  Authenticate Docker: `gcloud auth configure-docker <region>-docker.pkg.dev`
+3.  Create an Artifact Registry repo: `gcloud artifacts repositories create <repo-name> --repository-format=docker --location=<region>`
+
+### Deploy a Service
+
+The following command builds and deploys a service (e.g., `video-processor`). Run it from the project root.
+
+```bash
+gcloud run deploy video-processor-service \
+  --source . \
+  --region <your-region> \
+  --set-env-vars="CHUNK_DURATION=60" \
+  --allow-unauthenticated 
+```
+*   `--source .`: Builds the container from the current directory using the `Dockerfile`.
+*   `--set-env-vars`: Sets environment variables to configure the service's behavior.
+*   To redeploy, simply run the same command again after pushing your code changes.
+
+### Connect Services with Eventarc
+
+After deploying your services, create Eventarc triggers to connect them to GCS events.
+
+```bash
+# Example: Trigger for the video-processor when a file lands in a bucket
+gcloud eventarc triggers create video-processor-trigger \
+  --destination-run-service=video-processor-service \
+  --destination-run-region=<your-region> \
+  --location=<your-region> \
+  --event-filters="type=google.cloud.storage.object.v1.finalized" \
+  --event-filters="bucket=<your-input-bucket-name>" \
+  --service-account="<your-project-number>-compute@developer.gserviceaccount.com"
+```
+Repeat this process to create triggers for the other services, filtering on the specific output files they should respond to (e.g., `..._report.json` for the `scene-analyzer`).
+
+---
+
+## Internal Design Documents
+
+For more detailed technical designs of each module's core logic, please see the Low-Level Design (LLD) documents:
 
 - [Media Inspector LLD](./docs/media_inspector_lld.md)
 - [Audio Extractor LLD](./docs/audio_extractor_lld.md)
 - [Video Processor LLD](./docs/video_processor_lld.md)
 - [Scene Analyzer LLD](./docs/scene_analyzer_lld.md)
+
+```

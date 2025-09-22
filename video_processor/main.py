@@ -1,50 +1,63 @@
-import click
+from fastapi import FastAPI, Request, HTTPException
+import base64
 import json
 import os
 from .processor import process_video, VideoProcessingError
+from common.storage import StorageManager
 
-@click.command()
-@click.argument('video_file_path', type=click.Path(exists=True, resolve_path=True))
-@click.option('--output-dir', '-o', 'output_directory', type=click.Path(resolve_path=True), help="Directory to save the output files.")
-@click.option('--split-timestamps', help='Comma-separated timestamps to split the video, e.g., "00:10-00:20,01:30-01:45".')
-@click.option('--chunk-duration', type=int, help='Duration in seconds to chunk the video into.')
-@click.option('--compress-resolution', help='Resolution to compress to, e.g., "1280x720" or "720p", "4K".')
-@click.option('--compress-first', is_flag=True, help='Compress the video before splitting or chunking.')
-def main(video_file_path, output_directory, split_timestamps, chunk_duration, compress_resolution, compress_first):
+app = FastAPI()
+
+@app.post("/")
+async def handle_gcs_event(request: Request):
     """
-    Processes a video by splitting, chunking, and/or compressing it.
+    Handles incoming CloudEvents from GCS via Eventarc.
     """
+    body = await request.json()
+    print(f"Received CloudEvent: {body}")
+
+    # Extract the GCS event data from the CloudEvent payload
+    if not body or "message" not in body or "data" not in body["message"]:
+        raise HTTPException(status_code=400, detail="Invalid CloudEvent payload: missing message data")
+
     try:
+        message_data = base64.b64decode(body["message"]["data"]).decode("utf-8")
+        event_data = json.loads(message_data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error decoding message data: {e}")
+
+    bucket = event_data.get("bucket")
+    name = event_data.get("name")
+
+    if not bucket or not name:
+        raise HTTPException(status_code=400, detail="Invalid GCS event data: missing bucket or name")
+
+    # Define input and output paths
+    input_gcs_path = f"gs://{bucket}/{name}"
+    
+    # Define a structured output path. Example: gs://my-bucket/processed/video_processor/original_filename/
+    output_dir_gcs_path = f"gs://{bucket}/processed/video_processor/{os.path.splitext(os.path.basename(name))[0]}/"
+
+    print(f"Processing file: {input_gcs_path}")
+
+    try:
+        # The core processing logic is called here.
+        # Parameters like chunk_duration can be passed via environment variables.
         result = process_video(
-            video_file_path=video_file_path,
-            output_directory=output_directory,
-            split_timestamps=split_timestamps,
-            chunk_duration=chunk_duration,
-            compress_resolution=compress_resolution,
-            compress_first=compress_first
+            video_file_path=input_gcs_path,
+            output_directory=output_dir_gcs_path,
+            chunk_duration=int(os.getenv("CHUNK_DURATION", 60)), # Example: configure via env var
+            compress_resolution=os.getenv("COMPRESS_RESOLUTION") # Example
         )
         
-        # Determine output directory for the JSON report
-        if not output_directory:
-            output_directory = os.path.dirname(video_file_path)
-        
-        # Create and save the JSON report
-        base_filename = os.path.splitext(os.path.basename(video_file_path))[0]
-        json_report_path = os.path.join(output_directory, f"{base_filename}_report.json")
-        
-        with open(json_report_path, 'w') as f:
-            json.dump(result, f, indent=4)
-            
-        click.echo(f"Processing complete. Report saved to: {json_report_path}")
+        # Save the final report to the output directory in GCS
+        storage = StorageManager()
+        report_path = os.path.join(output_dir_gcs_path, "processing_report.json")
+        storage.write_json(report_path, result)
 
-    except (FileNotFoundError, VideoProcessingError) as e:
-        error_result = {
-            "input_video_path": video_file_path,
-            "status": "error",
-            "message": str(e)
-        }
-        click.echo(json.dumps(error_result, indent=4), err=True)
-        exit(1)
+        print(f"Successfully processed {input_gcs_path}. Report at: {report_path}")
+        return {"status": "success", "report_path": report_path}, 200
 
-if __name__ == '__main__':
-    main()
+    except Exception as e:
+        print(f"Error processing {input_gcs_path}: {e}")
+        # A non-2xx status code will cause Eventarc to attempt a retry.
+        raise HTTPException(status_code=500, detail=str(e))
