@@ -59,7 +59,14 @@ def _split_video(input_path, timestamps, output_dir):
 def _chunk_video(input_path, duration, output_dir):
     logging.info(f"Chunking video '{input_path}' into {duration}-second segments.")
     output_template = os.path.join(output_dir, f"chunk_%03d_{os.path.basename(input_path)}")
-    stream = ffmpeg.input(input_path).output(output_template, map=0, f='segment', segment_time=duration, c='copy')
+    stream = ffmpeg.input(input_path).output(
+        output_template,
+        map=0,
+        f='segment',
+        segment_time=duration,
+        reset_timestamps=1,
+        sc_threshold=0  # Ensure keyframes at segment boundaries
+    )
     _run_ffmpeg(stream, overwrite_output=True)
     
     output_files = [os.path.join(output_dir, f) for f in sorted(os.listdir(output_dir)) if f.startswith('chunk_') and f.endswith(os.path.basename(input_path))]

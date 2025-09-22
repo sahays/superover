@@ -12,23 +12,30 @@ def main(manifest_file_path, output_directory):
     """
     try:
         click.echo(f"Starting scene analysis for: {manifest_file_path}")
-            
-        result = analyze_scenes(manifest_file_path)
         
-        # Determine output directory
+        # Determine and create output directory
         if not output_directory:
             output_directory = os.path.dirname(manifest_file_path)
-        else:
-            os.makedirs(output_directory, exist_ok=True)
-
+        os.makedirs(output_directory, exist_ok=True)
+            
+        report_paths, time_taken = analyze_scenes(manifest_file_path, output_directory)
+        
+        # Create the final manifest report
         base_filename = os.path.splitext(os.path.basename(manifest_file_path))[0]
+        manifest_report_path = os.path.join(output_directory, f"{base_filename}_analysis_manifest.json")
+        
+        result = {
+            "source_manifest_path": manifest_file_path,
+            "analysis_reports": report_paths,
+            "status": "success",
+            "message": f"Successfully analyzed {len(report_paths)} scenes and created individual reports.",
+            "time_taken_seconds": round(time_taken, 2)
+        }
 
-        # Save the analysis report
-        report_path = os.path.join(output_directory, f"{base_filename}_analyzed.json")
-        with open(report_path, 'w', encoding='utf-8') as f:
+        with open(manifest_report_path, 'w', encoding='utf-8') as f:
             json.dump(result, f, indent=4, ensure_ascii=False)
         
-        click.echo(f"Analysis complete. Report saved to: {report_path}")
+        click.echo(f"Analysis complete. Final manifest saved to: {manifest_report_path}")
 
     except (FileNotFoundError, SceneAnalysisError) as e:
         error_result = {

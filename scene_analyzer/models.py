@@ -8,30 +8,48 @@ class CharacterDialogue(BaseModel):
     character_name: str = Field(description="The name of the character speaking.")
     dialogue: str = Field(description="The line of dialogue spoken by the character.")
     detected_language: str = Field(description="The detected language of the dialogue, e.g., 'English', 'Telugu'.")
+    start_timestamp_seconds: float = Field(description="The timestamp (in seconds) when the dialogue begins.")
+
+class KeyEvent(BaseModel):
+    event: str = Field(description="A key event or action.")
+    start_timestamp_seconds: float = Field(description="The timestamp (in seconds) when the event occurs.")
+
+class VisibleObject(BaseModel):
+    object: str = Field(description="A significant visible object.")
+    start_timestamp_seconds: float = Field(description="The timestamp (in seconds) when the object first appears or becomes significant.")
+
+class SoundEffect(BaseModel):
+    sound: str = Field(description="A notable non-dialogue sound.")
+    start_timestamp_seconds: float = Field(description="The timestamp (in seconds) when the sound occurs.")
+
+class ModerationFlag(BaseModel):
+    flag: str = Field(description="A content moderation flag, e.g., 'Violence'.")
+    start_timestamp_seconds: float = Field(description="The timestamp (in seconds) when the flagged content appears.")
 
 class BrandRecognition(BaseModel):
     brand_name: str = Field(description="The recognized brand name.")
-    object_type: str = Field(description="The type of object the brand is associated with, e.g., 'Car', 'Phone', 'Clothing'.")
-    description: str = Field(description="A brief description of where the brand appears in the scene.")
+    object_type: str = Field(description="The type of object the brand is associated with.")
+    description: str = Field(description="A brief description of where the brand appears.")
+    start_timestamp_seconds: float = Field(description="The timestamp (in seconds) when the brand appears.")
 
 class SceneAnalysis(BaseModel):
-    start_timestamp_seconds: float = Field(description="Start time of the scene in seconds from the beginning of the original video.")
-    end_timestamp_seconds: float = Field(description="End time of the scene in seconds from the beginning of the original video.")
-    summary: str = Field(description="A concise, one-paragraph summary of the scene's plot and purpose.")
-    setting: str = Field(description="A detailed description of the environment, e.g., 'A dimly lit, modern office at night, with rain visible on the windows.'")
-    emotional_tone: str = Field(description="A single, descriptive term for the dominant emotion of the scene, e.g., 'Tense', 'Comedic', 'Somber'.")
-    key_events: List[str] = Field(description="A list of the most important actions or plot developments that occur in this scene.")
-    characters_present: List[str] = Field(description="A list of all characters who are visibly present in the scene.")
-    dialogue_transcript: List[CharacterDialogue] = Field(description="A structured, chronological transcript of the dialogue.")
-    visible_objects: List[str] = Field(description="A list of significant objects, vehicles, or symbols visible in the scene, e.g., ['Laptop', 'Red sports car', 'Golden key'].")
-    camera_movement: str = Field(description="A description of the camera work, e.g., 'Static shot', 'Slow pan from left to right', 'Handheld shaky cam'.")
-    sound_design: List[str] = Field(description="A list of notable non-dialogue sounds, e.g., ['Distant siren', 'Ticking clock', 'Sudden gunshot'].")
-    moderation_flags: List[str] = Field(description="A list of content moderation flags, e.g., ['Smoking', 'Alcohol Consumption', 'Violence']. An empty list if none are present.")
-    brand_recognition: List[BrandRecognition] = Field(description="A list of recognized brands and their context within the scene.")
+    start_timestamp_seconds: float = Field(description="Start time of the scene in seconds.")
+    end_timestamp_seconds: float = Field(description="End time of the scene in seconds.")
+    summary: str = Field(description="A concise summary of the scene.")
+    setting: str = Field(description="A detailed description of the environment.")
+    emotional_tone: str = Field(description="The dominant emotion of the scene.")
+    key_events: List[KeyEvent] = Field(description="A list of key events with timestamps.")
+    characters_present: List[str] = Field(description="A list of all characters present.")
+    dialogue_transcript: List[CharacterDialogue] = Field(description="A structured transcript with timestamps.")
+    visible_objects: List[VisibleObject] = Field(description="A list of significant objects with timestamps.")
+    camera_movement: str = Field(description="A description of the camera work.")
+    sound_design: List[SoundEffect] = Field(description="A list of notable sounds with timestamps.")
+    moderation_flags: List[ModerationFlag] = Field(description="A list of moderation flags with timestamps.")
+    brand_recognition: List[BrandRecognition] = Field(description="A list of recognized brands with timestamps.")
 
 class SceneAnalysisResult(BaseModel):
     source_manifest_path: str
-    analyzed_scenes: List[SceneAnalysis]
+    analysis_reports: List[str]
     status: str
     message: str
     time_taken_seconds: float

@@ -2,4 +2,5 @@
 .venv
 .DS_Store
 *egg-info
-*-output
+outputs/
+inputs/
