@@ -5,9 +5,7 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Install system dependencies required by ffmpeg and other libraries
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends     ffmpeg     && rm -rf /var/lib/apt/lists/*
 
 # Copy the requirements file into the container
 COPY requirements.txt .
@@ -15,8 +13,11 @@ COPY requirements.txt .
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the entire project into the container
-COPY . .
+# Copy the common library code
+COPY common/ ./common/
+
+# Copy the specific service code
+COPY audio_extractor/ ./audio_extractor/
 
 # Set the Python path to include the current directory
 ENV PYTHONPATH=/app

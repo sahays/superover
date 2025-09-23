@@ -1,10 +1,6 @@
-resource "google_pubsub_topic" "topic" {
-  name = var.topic_name
-}
-
 resource "google_pubsub_subscription" "subscription" {
   name  = var.subscription_name
-  topic = google_pubsub_topic.topic.name
+  topic = var.topic_name
 
   push_config {
     push_endpoint = var.push_endpoint
@@ -34,15 +30,9 @@ resource "google_pubsub_subscription_iam_member" "subscriber" {
 
 # Grant Cloud Run invoker permission
 resource "google_cloud_run_service_iam_member" "invoker" {
-  location = data.google_cloud_run_service.service.location
+  location = var.service_location
   project  = var.project_id
-  service  = data.google_cloud_run_service.service.name
+  service  = var.service_name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${var.service_account_email}"
-}
-
-data "google_cloud_run_service" "service" {
-  name     = regex("services/([^/]+)$", var.push_endpoint)[0]
-  location = regex("locations/([^/]+)/", var.push_endpoint)[0]
-  project  = var.project_id
 }

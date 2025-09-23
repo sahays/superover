@@ -66,16 +66,6 @@ check_prerequisites() {
     log_success "Prerequisites checked"
 }
 
-configure_docker() {
-    log_info "Configuring Docker for Artifact Registry..."
-
-    if gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet; then
-        log_success "Docker configured for Artifact Registry"
-    else
-        log_error "Failed to configure Docker for Artifact Registry"
-        exit 1
-    fi
-}
 
 build_and_push_service() {
     local service_name=$1
@@ -90,21 +80,28 @@ build_and_push_service() {
         return 1
     fi
 
-    # Create service-specific Dockerfile if it doesn't exist
     local dockerfile_path="${service_dir}/Dockerfile"
-    if [[ ! -f "$dockerfile_path" ]]; then
-        log_info "Creating Dockerfile for ${service_name}..."
-        create_service_dockerfile "$service_dir" "$service_name"
-    fi
+    local root_dockerfile="./Dockerfile"
 
-    # Build using Cloud Build (use global region to match bucket location)
-    log_info "Using global Cloud Build region to match bucket location..."
-    if gcloud builds submit --tag "$image_tag" "$service_dir/" --region=global; then
+    # Always recreate the Dockerfile to ensure it is correct
+    log_info "Creating Dockerfile for ${service_name} at ${dockerfile_path}..."
+    create_service_dockerfile "$service_dir" "$service_name"
+
+    log_info "Copying Dockerfile to project root for build..."
+    cp "$dockerfile_path" "$root_dockerfile"
+
+    # Use a trap to ensure the temporary Dockerfile is always removed
+    trap 'rm -f "$root_dockerfile"' RETURN
+
+    # Build using Cloud Build from the project root as context
+    log_info "Using project root as build context..."
+    log_info "Building with region: $REGION"
+    if gcloud builds submit --tag "$image_tag" . --region="$REGION"; then
         log_success "Built and pushed ${service_name}"
     else
-        log_warn "Global region failed, trying default region..."
-        # Fallback to default region if global fails
-        if gcloud builds submit --tag "$image_tag" "$service_dir/"; then
+        log_warn "Regional build failed, trying global region..."
+        # Fallback to global region if regional fails
+        if gcloud builds submit --tag "$image_tag" . --region=global; then
             log_success "Built and pushed ${service_name}"
         else
             log_error "Failed to build ${service_name}"
@@ -126,8 +123,8 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Install system dependencies required by ffmpeg and other libraries
-RUN apt-get update && apt-get install -y --no-install-recommends \\
-    ffmpeg \\
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the requirements file into the container
@@ -136,8 +133,11 @@ COPY requirements.txt .
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the entire project into the container
-COPY . .
+# Copy the common library code
+COPY common/ ./common/
+
+# Copy the specific service code
+COPY $service_dir/ ./$service_dir/
 
 # Set the Python path to include the current directory
 ENV PYTHONPATH=/app
@@ -146,7 +146,7 @@ ENV PYTHONPATH=/app
 EXPOSE 8080
 
 # Command to run the specific service
-CMD ["uvicorn", "${service_dir}.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "$service_dir.main:app", "--host", "0.0.0.0", "--port", "8080"]
 EOF
 
     log_success "Created Dockerfile for ${service_name}"
@@ -192,7 +192,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Environment Variables:"
             echo "  PROJECT_ID           GCP project ID"
-            echo "  REGION              GCP region (default: us-central1)"
+            echo "  REGION              GCP region (default: from terraform.tfvars or us-central1)"
             echo "  REPOSITORY          Artifact Registry repository (default: super-over-alchemy)"
             exit 0
             ;;

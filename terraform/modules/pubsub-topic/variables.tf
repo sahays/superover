@@ -18,6 +18,16 @@ variable "push_endpoint" {
   type        = string
 }
 
+variable "service_name" {
+  description = "Cloud Run service name"
+  type        = string
+}
+
+variable "service_location" {
+  description = "Cloud Run service location"
+  type        = string
+}
+
 variable "project_id" {
   description = "GCP project ID"
   type        = string

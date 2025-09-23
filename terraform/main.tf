@@ -159,6 +159,8 @@ module "video_processor_pubsub" {
   subscription_name     = "video-processor-sub"
   service_account_email = module.service_accounts.pubsub_invoker_email
   push_endpoint         = module.video_processor_service.service_url
+  service_name          = "video-processor-service"
+  service_location      = var.region
   project_id            = var.project_id
 }
 
@@ -169,6 +171,8 @@ module "audio_extractor_pubsub" {
   subscription_name     = "audio-extractor-sub"
   service_account_email = module.service_accounts.pubsub_invoker_email
   push_endpoint         = module.audio_extractor_service.service_url
+  service_name          = "audio-extractor-service"
+  service_location      = var.region
   project_id            = var.project_id
 }
 
@@ -179,6 +183,8 @@ module "scene_analyzer_pubsub" {
   subscription_name     = "scene-analyzer-sub"
   service_account_email = module.service_accounts.pubsub_invoker_email
   push_endpoint         = module.scene_analyzer_service.service_url
+  service_name          = "scene-analyzer-service"
+  service_location      = var.region
   project_id            = var.project_id
 }
 
@@ -189,6 +195,8 @@ module "media_inspector_pubsub" {
   subscription_name     = "media-inspector-sub"
   service_account_email = module.service_accounts.pubsub_invoker_email
   push_endpoint         = module.media_inspector_service.service_url
+  service_name          = "media-inspector-service"
+  service_location      = var.region
   project_id            = var.project_id
 }
 
@@ -237,6 +245,12 @@ resource "google_project_iam_member" "compute_sa_cloudbuild_editor" {
 resource "google_project_iam_member" "compute_sa_storage_admin" {
   project = var.project_id
   role    = "roles/storage.admin"
+  member  = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
+}
+
+resource "google_project_iam_member" "compute_sa_artifact_writer" {
+  project = var.project_id
+  role    = "roles/artifactregistry.writer"
   member  = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
 }
 

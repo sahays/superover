@@ -101,12 +101,12 @@ deploy_services() {
 
     log_info "Applying remaining terraform configuration..."
 
-    # Show what will be changed
-    log_info "Planning remaining changes..."
-    terraform plan
+    # Target only the Pub/Sub subscription modules since Cloud Run services are already deployed
+    log_info "Planning Pub/Sub subscriptions deployment..."
+    terraform plan -target=module.video_processor_pubsub -target=module.audio_extractor_pubsub -target=module.scene_analyzer_pubsub -target=module.media_inspector_pubsub
 
-    # Apply with auto-approve
-    if ! terraform apply -auto-approve; then
+    # Apply with auto-approve, targeting only the subscription modules
+    if ! terraform apply -auto-approve -target=module.video_processor_pubsub -target=module.audio_extractor_pubsub -target=module.scene_analyzer_pubsub -target=module.media_inspector_pubsub; then
         log_error "Service deployment failed"
         exit 1
     fi
@@ -135,6 +135,10 @@ main() {
 
     check_prerequisites
     deploy_infrastructure
+
+    log_info "Waiting for 20 seconds for IAM permissions to propagate..."
+    sleep 20
+
     build_and_push
     deploy_services
 
