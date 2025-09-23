@@ -192,7 +192,7 @@ module "media_inspector_pubsub" {
   project_id            = var.project_id
 }
 
-# Create Firestore database
+# Create Firestore database (import existing if present)
 resource "google_firestore_database" "database" {
   project     = var.project_id
   name        = "(default)"
@@ -200,6 +200,11 @@ resource "google_firestore_database" "database" {
   type        = "FIRESTORE_NATIVE"
 
   depends_on = [google_project_service.required_apis]
+
+  lifecycle {
+    # Prevent destruction of database with data
+    prevent_destroy = false
+  }
 }
 
 # Grant Cloud Build service account necessary permissions
@@ -219,6 +224,20 @@ resource "google_project_iam_member" "cloudbuild_artifact_writer" {
   project = var.project_id
   role    = "roles/artifactregistry.writer"
   member  = "serviceAccount:${data.google_project.project.number}@cloudbuild.gserviceaccount.com"
+}
+
+# Grant the default Compute Engine service account permissions to submit builds
+# This is often needed when running gcloud builds submit from a GCE VM or Cloud Shell
+resource "google_project_iam_member" "compute_sa_cloudbuild_editor" {
+  project = var.project_id
+  role    = "roles/cloudbuild.builds.editor"
+  member  = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
+}
+
+resource "google_project_iam_member" "compute_sa_storage_admin" {
+  project = var.project_id
+  role    = "roles/storage.admin"
+  member  = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
 }
 
 data "google_project" "project" {

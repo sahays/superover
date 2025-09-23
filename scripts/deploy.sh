@@ -82,7 +82,12 @@ deploy_infrastructure() {
         -target=google_pubsub_topic.scene_analyzer_jobs \
         -target=google_pubsub_topic.media_inspector_jobs \
         -target=google_firestore_database.database \
-        -target=module.storage
+        -target=module.storage \
+        -target=google_project_iam_member.cloudbuild_logs_writer \
+        -target=google_project_iam_member.cloudbuild_storage_admin \
+        -target=google_project_iam_member.cloudbuild_artifact_writer \
+        -target=google_project_iam_member.compute_sa_cloudbuild_editor \
+        -target=google_project_iam_member.compute_sa_storage_admin
 
     cd ..
     log_success "Foundation infrastructure deployed"

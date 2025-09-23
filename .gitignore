@@ -5,4 +5,5 @@
 outputs/
 inputs/
 terraform.tfvars
-.terraform
+*.terraform*
+*.tfstate*

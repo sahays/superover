@@ -97,12 +97,19 @@ build_and_push_service() {
         create_service_dockerfile "$service_dir" "$service_name"
     fi
 
-    # Build using Cloud Build
-    if gcloud builds submit --tag "$image_tag" "$service_dir/"; then
+    # Build using Cloud Build (use global region to match bucket location)
+    log_info "Using global Cloud Build region to match bucket location..."
+    if gcloud builds submit --tag "$image_tag" "$service_dir/" --region=global; then
         log_success "Built and pushed ${service_name}"
     else
-        log_error "Failed to build ${service_name}"
-        return 1
+        log_warn "Global region failed, trying default region..."
+        # Fallback to default region if global fails
+        if gcloud builds submit --tag "$image_tag" "$service_dir/"; then
+            log_success "Built and pushed ${service_name}"
+        else
+            log_error "Failed to build ${service_name}"
+            return 1
+        fi
     fi
 }
 
