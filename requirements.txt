@@ -1,6 +1,3 @@
-google-cloud-storage
-google-cloud-firestore
-google-cloud-workflows-executions
 fastapi
 uvicorn
 python-dotenv
@@ -8,4 +5,4 @@ ffmpeg-python
 pymediainfo
 click
 google-generativeai
-functions-framework
+google-cloud-storage

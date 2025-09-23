@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file into the container at /app
+# Copy the requirements file into the container
 COPY requirements.txt .
 
 # Install any needed packages specified in requirements.txt
@@ -18,5 +18,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the entire project into the container
 COPY . .
 
-# Default command to run - this will be overridden by Cloud Run
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Set the Python path to include the current directory
+ENV PYTHONPATH=/app
+
+# Expose port 8080 for Cloud Run
+EXPOSE 8080
+
+# Command to run the specific service
+CMD ["uvicorn", "video_processor.main:app", "--host", "0.0.0.0", "--port", "8080"]
