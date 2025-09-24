@@ -254,6 +254,12 @@ resource "google_project_iam_member" "compute_sa_artifact_writer" {
   member  = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
 }
 
+resource "google_project_iam_member" "compute_sa_logs_writer" {
+  project = var.project_id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
+}
+
 data "google_project" "project" {
   project_id = var.project_id
 }

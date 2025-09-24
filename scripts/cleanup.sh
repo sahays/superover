@@ -90,10 +90,28 @@ destroy_infrastructure() {
         exit 1
     fi
 
+    # Remove Firestore database from Terraform state first (it requires special deletion handling)
+    log_info "Removing Firestore database from Terraform state..."
+    terraform state rm google_firestore_database.database 2>/dev/null || log_warn "Firestore database not in state"
+
+    # Run terraform destroy (everything except Firestore)
+    log_info "Running terraform destroy..."
     if ! terraform destroy -auto-approve; then
         log_error "Terraform destroy failed"
         log_warn "You may need to manually clean up some resources"
         exit 1
+    fi
+
+    # Now manually delete the Firestore database
+    log_info "Manually deleting Firestore database..."
+    if gcloud firestore databases delete --database="(default)" --quiet 2>/dev/null; then
+        log_success "Firestore database deleted"
+    elif gcloud firestore databases describe --database="(default)" >/dev/null 2>&1; then
+        log_warn "Firestore database exists but could not be deleted automatically"
+        log_info "Manual deletion command: gcloud firestore databases delete --database='(default)'"
+        log_info "Or go to: https://console.cloud.google.com/firestore/databases"
+    else
+        log_info "No Firestore database found to delete"
     fi
 
     cd ..
