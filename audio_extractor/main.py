@@ -5,7 +5,30 @@ import os
 from .extractor import extract_audio
 from common.storage import StorageManager
 
-app = FastAPI()
+app = FastAPI(title="Audio Extractor Service", version="1.0.0")
+
+@app.get("/")
+async def root():
+    """Root endpoint with service information."""
+    return {
+        "service": "Audio Extractor Service",
+        "version": "1.0.0",
+        "status": "running",
+        "endpoints": [
+            "GET / - Service info",
+            "GET /health - Health check",
+            "POST / - Process Pub/Sub message"
+        ]
+    }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "service": "audio-extractor",
+        "timestamp": __import__("datetime").datetime.utcnow().isoformat()
+    }
 
 @app.post("/")
 async def handle_pubsub_message(request: Request):

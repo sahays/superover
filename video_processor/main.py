@@ -5,7 +5,35 @@ import os
 from .processor import process_video
 from common.storage import StorageManager
 
-app = FastAPI()
+app = FastAPI(title="Video Processor Service", version="1.0.0")
+
+@app.get("/")
+async def root():
+    """Root endpoint with service information."""
+    return {
+        "service": "Video Processor Service",
+        "version": "1.0.0",
+        "status": "running",
+        "endpoints": [
+            "GET / - Service info",
+            "GET /health - Health check",
+            "POST / - Process Pub/Sub message"
+        ]
+    }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "service": "video-processor",
+        "timestamp": __import__("datetime").datetime.utcnow().isoformat(),
+        "config": {
+            "chunk_duration": int(os.getenv("CHUNK_DURATION", 60)),
+            "compress_resolution": os.getenv("COMPRESS_RESOLUTION"),
+            "compress_first": os.getenv("COMPRESS_FIRST", "false")
+        }
+    }
 
 @app.post("/")
 async def handle_pubsub_message(request: Request):

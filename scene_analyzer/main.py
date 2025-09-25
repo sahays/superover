@@ -5,7 +5,34 @@ import os
 from .analyzer import analyze_scenes
 from common.storage import StorageManager
 
-app = FastAPI()
+app = FastAPI(title="Scene Analyzer Service", version="1.0.0")
+
+@app.get("/")
+async def root():
+    """Root endpoint with service information."""
+    return {
+        "service": "Scene Analyzer Service",
+        "version": "1.0.0",
+        "status": "running",
+        "endpoints": [
+            "GET / - Service info",
+            "GET /health - Health check",
+            "POST / - Process Pub/Sub message"
+        ]
+    }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "service": "scene-analyzer",
+        "timestamp": __import__("datetime").datetime.utcnow().isoformat(),
+        "config": {
+            "gemini_api_key_configured": bool(os.getenv("GEMINI_API_KEY")),
+            "gemini_model": os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        }
+    }
 
 @app.post("/")
 async def handle_pubsub_message(request: Request):

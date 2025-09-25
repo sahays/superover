@@ -5,7 +5,30 @@ import os
 from .inspector import inspect_media
 from common.storage import StorageManager
 
-app = FastAPI()
+app = FastAPI(title="Media Inspector Service", version="1.0.0")
+
+@app.get("/")
+async def root():
+    """Root endpoint with service information."""
+    return {
+        "service": "Media Inspector Service",
+        "version": "1.0.0",
+        "status": "running",
+        "endpoints": [
+            "GET / - Service info",
+            "GET /health - Health check",
+            "POST / - Process Pub/Sub message"
+        ]
+    }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "service": "media-inspector",
+        "timestamp": __import__("datetime").datetime.utcnow().isoformat()
+    }
 
 @app.post("/")
 async def handle_pubsub_message(request: Request):
