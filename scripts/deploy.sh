@@ -101,6 +101,10 @@ deploy_services() {
 
     log_info "Applying remaining terraform configuration..."
 
+    # Deploy the new services that don't have Pub/Sub subscriptions
+    log_info "Deploying new services (workflow-manager, job-creator)..."
+    terraform apply -auto-approve -target=module.workflow_manager_service -target=module.job_creator_service
+
     # Target only the Pub/Sub subscription modules since Cloud Run services are already deployed
     log_info "Planning Pub/Sub subscriptions deployment..."
     terraform plan -target=module.video_processor_pubsub -target=module.audio_extractor_pubsub -target=module.scene_analyzer_pubsub -target=module.media_inspector_pubsub

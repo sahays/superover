@@ -1,6 +1,0 @@
-# Required by all Google Cloud Functions
-functions-framework==3.*
-
-# Dependencies for the job creator logic
-google-cloud-firestore==2.*
-google-cloud-workflows-executions==0.*

@@ -7,6 +7,7 @@ resource "google_cloud_run_service" "service" {
     metadata {
       annotations = {
         "autoscaling.knative.dev/maxScale" = tostring(var.max_instances)
+        "autoscaling.knative.dev/minScale" = tostring(var.min_instances)
         "run.googleapis.com/execution-environment" = "gen2"
       }
     }

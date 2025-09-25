@@ -35,6 +35,12 @@ variable "max_instances" {
   default     = 10
 }
 
+variable "min_instances" {
+  description = "Minimum number of instances"
+  type        = number
+  default     = 1
+}
+
 variable "timeout_seconds" {
   description = "Request timeout in seconds"
   type        = number

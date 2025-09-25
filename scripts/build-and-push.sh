@@ -25,7 +25,7 @@ fi
 REPOSITORY=${REPOSITORY:-super-over-alchemy}
 
 # Service definitions (service-name:directory-name)
-SERVICES="video-processor:video_processor audio-extractor:audio_extractor scene-analyzer:scene_analyzer media-inspector:media_inspector"
+SERVICES="video-processor:services/video_processor audio-extractor:services/audio_extractor scene-analyzer:services/scene_analyzer media-inspector:services/media_inspector workflow-manager:services/workflow_manager job-creator:services/job_creator"
 
 # Functions
 log_info() {
@@ -115,6 +115,9 @@ create_service_dockerfile() {
     local service_name=$2
     local dockerfile_path="${service_dir}/Dockerfile"
 
+    # Convert directory path to Python module path (replace / with .)
+    local python_module_path=$(echo "$service_dir" | tr '/' '.')
+
     cat > "$dockerfile_path" << EOF
 # Use an official Python runtime as a parent image
 FROM python:3.9-slim
@@ -127,17 +130,15 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file into the container
-COPY requirements.txt .
-
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
-
 # Copy the common library code
 COPY common/ ./common/
 
 # Copy the specific service code
 COPY $service_dir/ ./$service_dir/
+
+# Copy and install service-specific requirements
+COPY $service_dir/requirements.txt ./service_requirements.txt
+RUN pip install --no-cache-dir -r service_requirements.txt
 
 # Set the Python path to include the current directory
 ENV PYTHONPATH=/app
@@ -146,7 +147,7 @@ ENV PYTHONPATH=/app
 EXPOSE 8080
 
 # Command to run the specific service
-CMD ["uvicorn", "$service_dir.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "$python_module_path.main:app", "--host", "0.0.0.0", "--port", "8080"]
 EOF
 
     log_success "Created Dockerfile for ${service_name}"

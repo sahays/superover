@@ -151,6 +151,36 @@ module "media_inspector_service" {
   depends_on = [google_artifact_registry_repository.repository]
 }
 
+module "workflow_manager_service" {
+  source = "./modules/cloud-run-service"
+
+  service_name          = "workflow-manager-service"
+  location              = var.region
+  project_id            = var.project_id
+  image_url             = "${var.region}-docker.pkg.dev/${var.project_id}/${var.artifact_registry_repository}/workflow-manager:latest"
+  service_account_email = module.service_accounts.services_sa_email
+
+  depends_on = [google_artifact_registry_repository.repository]
+}
+
+module "job_creator_service" {
+  source = "./modules/cloud-run-service"
+
+  service_name          = "job-creator-service"
+  location              = var.region
+  project_id            = var.project_id
+  image_url             = "${var.region}-docker.pkg.dev/${var.project_id}/${var.artifact_registry_repository}/job-creator:latest"
+  service_account_email = module.service_accounts.services_sa_email
+
+  environment_variables = {
+    GCP_PROJECT    = var.project_id
+    GCP_LOCATION   = var.region
+    WORKFLOW_NAME  = var.workflow_name
+  }
+
+  depends_on = [google_artifact_registry_repository.repository]
+}
+
 # Create Pub/Sub subscriptions
 module "video_processor_pubsub" {
   source = "./modules/pubsub-topic"

@@ -1,5 +1,6 @@
-# Required by all Google Cloud Functions
-functions-framework==3.*
+# FastAPI and web server dependencies
+fastapi==0.104.*
+uvicorn==0.24.*
 
 # Dependencies for the workflow manager logic
 google-cloud-firestore==2.*

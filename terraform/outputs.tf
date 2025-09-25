@@ -20,6 +20,8 @@ output "service_urls" {
     audio_extractor  = module.audio_extractor_service.service_url
     scene_analyzer   = module.scene_analyzer_service.service_url
     media_inspector  = module.media_inspector_service.service_url
+    workflow_manager = module.workflow_manager_service.service_url
+    job_creator      = module.job_creator_service.service_url
   }
 }
 

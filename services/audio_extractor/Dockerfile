@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY common/ ./common/
 
 # Copy the specific service code
-COPY audio_extractor/ ./audio_extractor/
+COPY services/audio_extractor/ ./services/audio_extractor/
 
 # Set the Python path to include the current directory
 ENV PYTHONPATH=/app
@@ -26,4 +26,4 @@ ENV PYTHONPATH=/app
 EXPOSE 8080
 
 # Command to run the specific service
-CMD ["uvicorn", "audio_extractor.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "services.audio_extractor.main:app", "--host", "0.0.0.0", "--port", "8080"]
