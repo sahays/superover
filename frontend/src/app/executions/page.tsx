@@ -32,7 +32,7 @@ export default function ExecutionsPage() {
   const executions = executionsData?.data || [];
 
   const filteredExecutions = executions.filter((execution: WorkflowExecution) => {
-    const matchesSearch = execution.pipelineName.toLowerCase().includes(search.toLowerCase()) ||
+    const matchesSearch = execution.workflowName.toLowerCase().includes(search.toLowerCase()) ||
       execution.sourceFileName.toLowerCase().includes(search.toLowerCase());
     const matchesStatus = !statusFilter || statusFilter === 'all' || execution.status === statusFilter;
     return matchesSearch && matchesStatus;
@@ -234,7 +234,7 @@ export default function ExecutionsPage() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <CardTitle className="text-lg font-semibold truncate">
-                        {execution.pipelineName}
+                        {execution.workflowName}
                       </CardTitle>
                       <Badge variant="outline" className={`${getStatusColor(execution.status)} mt-2 w-fit`}>
                         {execution.status}

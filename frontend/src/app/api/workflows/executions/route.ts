@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
   const page = parseInt(searchParams.get('page') || '1');
   const limit = parseInt(searchParams.get('limit') || '10');
   const status = searchParams.get('status');
-  const pipelineId = searchParams.get('pipelineId');
+  const workflowType = searchParams.get('workflowType');
 
   let filteredExecutions = [...mockExecutions];
 
@@ -15,8 +15,8 @@ export async function GET(request: NextRequest) {
     filteredExecutions = filteredExecutions.filter(execution => execution.status === status);
   }
 
-  if (pipelineId) {
-    filteredExecutions = filteredExecutions.filter(execution => execution.pipelineId === pipelineId);
+  if (workflowType) {
+    filteredExecutions = filteredExecutions.filter(execution => execution.workflowType === workflowType);
   }
 
   // Apply pagination
@@ -45,11 +45,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { pipelineId, fileIds } = body;
+    const { workflowType, fileIds } = body;
 
-    if (!pipelineId || !fileIds || !Array.isArray(fileIds)) {
+    if (!workflowType || !fileIds || !Array.isArray(fileIds)) {
       return NextResponse.json(
-        { success: false, error: 'Pipeline ID and file IDs are required' },
+        { success: false, error: 'Workflow type and file IDs are required' },
         { status: 400 }
       );
     }
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     // In real implementation, trigger workflow execution
     const newExecution = {
       id: `execution-${Date.now()}`,
-      pipelineId,
+      workflowType,
       fileIds,
       status: 'running' as const,
       startedAt: new Date().toISOString(),

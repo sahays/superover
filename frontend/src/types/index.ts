@@ -40,26 +40,7 @@ export interface FileUploadProgress {
   error?: string;
 }
 
-// Pipeline and Workflow Types
-export interface PipelineStep {
-  order: number;
-  serviceName: string;
-  topic: string;
-  parameters?: Record<string, unknown>;
-}
-
-export interface Pipeline {
-  id: string;
-  name: string;
-  description: string;
-  steps: PipelineStep[];
-  defaultParameters: Record<string, unknown>;
-  estimatedDuration?: number;
-  category: 'video' | 'audio' | 'analysis' | 'full';
-  status: 'active' | 'draft' | 'inactive';
-  createdAt: string;
-  updatedAt: string;
-}
+// Workflow Types
 
 export interface WorkflowParameters {
   // Video processing parameters
@@ -88,7 +69,7 @@ export interface WorkflowParameters {
 // Job and Execution Types
 export interface Job {
   id: string;
-  pipelineId: string;
+  workflowType: string;
   sourceFile: string;
   status: JobStatus;
   createdAt: string;
@@ -104,8 +85,8 @@ export interface Job {
 export interface WorkflowExecution {
   id: string;
   jobId: string;
-  pipelineId: string;
-  pipelineName: string;
+  workflowType: string;
+  workflowName: string;
   sourceFileName: string;
   parameters: WorkflowParameters;
   status: ExecutionStatus;
@@ -203,7 +184,7 @@ export interface FileFilters {
 
 export interface ExecutionFilters {
   status?: ExecutionStatus[];
-  pipelineId?: string[];
+  workflowType?: string[];
   startedAfter?: string;
   startedBefore?: string;
   search?: string;
@@ -229,7 +210,6 @@ export interface UserPreferences {
   theme: 'light' | 'dark' | 'system';
   notifications: boolean;
   autoRefresh: boolean;
-  defaultPipeline?: string;
 }
 
 export interface Notification {
@@ -245,14 +225,14 @@ export interface Notification {
 // Form Types
 export interface FileUploadForm {
   files: FileList;
-  pipelineId?: string;
+  workflowType?: string;
   parameters?: WorkflowParameters;
 }
 
 export interface WorkflowCreateForm {
   name: string;
   description: string;
-  pipelineId: string;
+  workflowType: string;
   parameters: WorkflowParameters;
   sourceFileId: string;
 }

@@ -1,32 +1,42 @@
 import { apiClient } from './client';
-import { Pipeline, ApiResponse } from '@/types';
+import { ApiResponse } from '@/types';
+
+interface Workflow {
+  id: string;
+  name: string;
+  description: string;
+  type: string;
+  status: 'active' | 'draft' | 'inactive';
+  createdAt: string;
+  updatedAt: string;
+}
 
 export class WorkflowsApi {
-  // Get available pipelines
-  async getPipelines(): Promise<ApiResponse<Pipeline[]>> {
-    return apiClient.get<ApiResponse<Pipeline[]>>('/workflows/pipelines');
+  // Get available workflows
+  async getWorkflows(): Promise<ApiResponse<Workflow[]>> {
+    return apiClient.get<ApiResponse<Workflow[]>>('/workflows');
   }
 
-  // Get single pipeline by ID
-  async getPipeline(id: string): Promise<ApiResponse<Pipeline>> {
-    return apiClient.get<ApiResponse<Pipeline>>(`/workflows/pipelines/${id}`);
+  // Get single workflow by ID
+  async getWorkflow(id: string): Promise<ApiResponse<Workflow>> {
+    return apiClient.get<ApiResponse<Workflow>>(`/workflows/${id}`);
   }
 
-  // Create new workflow (not implemented in MVP)
+  // Create new workflow
   async createWorkflow(workflow: {
     name: string;
     description: string;
-    steps: unknown[];
-  }): Promise<ApiResponse<Pipeline>> {
-    return apiClient.post<ApiResponse<Pipeline>>('/workflows', workflow);
+    type: string;
+  }): Promise<ApiResponse<Workflow>> {
+    return apiClient.post<ApiResponse<Workflow>>('/workflows', workflow);
   }
 
-  // Update workflow (not implemented in MVP)
-  async updateWorkflow(id: string, updates: Partial<Pipeline>): Promise<ApiResponse<Pipeline>> {
-    return apiClient.put<ApiResponse<Pipeline>>(`/workflows/${id}`, updates);
+  // Update workflow
+  async updateWorkflow(id: string, updates: Partial<Workflow>): Promise<ApiResponse<Workflow>> {
+    return apiClient.put<ApiResponse<Workflow>>(`/workflows/${id}`, updates);
   }
 
-  // Delete workflow (not implemented in MVP)
+  // Delete workflow
   async deleteWorkflow(id: string): Promise<ApiResponse<void>> {
     return apiClient.delete<ApiResponse<void>>(`/workflows/${id}`);
   }

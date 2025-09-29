@@ -16,8 +16,8 @@ export class ExecutionsApi {
     if (params?.filters?.status?.length) {
       params.filters.status.forEach(status => searchParams.append('status', status));
     }
-    if (params?.filters?.pipelineId?.length) {
-      params.filters.pipelineId.forEach(id => searchParams.append('pipelineId', id));
+    if (params?.filters?.workflowType?.length) {
+      params.filters.workflowType.forEach(type => searchParams.append('workflowType', type));
     }
 
     return apiClient.get<PaginatedResponse<WorkflowExecution>>(`/workflows/executions?${searchParams.toString()}`);
@@ -31,7 +31,7 @@ export class ExecutionsApi {
   // Create new execution
   async createExecution(execution: {
     sourceFileId: string;
-    pipelineId: string;
+    workflowType: string;
     parameters?: WorkflowParameters;
   }): Promise<ApiResponse<WorkflowExecution>> {
     return apiClient.post<ApiResponse<WorkflowExecution>>('/workflows/executions', execution);

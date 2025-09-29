@@ -1,4 +1,4 @@
-import { FileItem, Pipeline, Job, WorkflowExecution, OutputFile, AnalysisResult } from '@/types';
+import { FileItem, Job, WorkflowExecution, OutputFile, AnalysisResult } from '@/types';
 
 // Mock data for development and testing
 export const mockFiles: FileItem[] = [
@@ -132,137 +132,11 @@ export const mockFiles: FileItem[] = [
   },
 ];
 
-export const mockPipelines: Pipeline[] = [
-  {
-    id: 'full-analysis',
-    name: 'Full Media Analysis',
-    description: 'A comprehensive analysis pipeline for video files.',
-    category: 'full',
-    estimatedDuration: 3600,
-    defaultParameters: {
-      resolution: '1080p',
-      chunkDuration: 10,
-      videoCodec: 'h264',
-      audioCodec: 'aac',
-      analysisDepth: 'detailed',
-    },
-    steps: [
-      { order: 1, serviceName: 'media_inspector', topic: 'media_inspection_jobs' },
-      { order: 2, serviceName: 'audio_extractor', topic: 'audio_extraction_jobs' },
-      { order: 3, serviceName: 'video_processor', topic: 'video_processing_jobs' },
-      { order: 4, serviceName: 'thumbnail_generator', topic: 'thumbnail_generation_jobs' },
-      { order: 5, serviceName: 'scene_analyzer', topic: 'scene_analysis_jobs' },
-      { order: 6, serviceName: 'subtitle_generator', topic: 'subtitle_generation_jobs' },
-      { order: 7, serviceName: 'script_evaluator', topic: 'script_evaluation_jobs' },
-    ],
-    status: 'active',
-    createdAt: '2023-01-01T12:00:00Z',
-    updatedAt: '2023-01-01T12:00:00Z',
-  },
-  {
-    id: 'video-only',
-    name: 'Video Processing Only',
-    description: 'Process video files with chunking and basic metadata extraction.',
-    category: 'video',
-    estimatedDuration: 1800,
-    defaultParameters: {
-      resolution: '1080p',
-      chunkDuration: 10,
-      videoCodec: 'h264',
-    },
-    steps: [
-      { order: 1, serviceName: 'media_inspector', topic: 'media_inspection_jobs' },
-      { order: 2, serviceName: 'video_processor', topic: 'video_processing_jobs' },
-      { order: 3, serviceName: 'thumbnail_generator', topic: 'thumbnail_generation_jobs' },
-      { order: 4, serviceName: 'transcoder', topic: 'transcoding_jobs' },
-    ],
-    status: 'active',
-    createdAt: '2023-01-01T12:00:00Z',
-    updatedAt: '2023-01-01T12:00:00Z',
-  },
-  {
-    id: 'audio-analysis',
-    name: 'Audio Analysis',
-    description: 'Extract audio and perform analysis.',
-    category: 'audio',
-    estimatedDuration: 1200,
-    defaultParameters: {
-      audioCodec: 'aac',
-      audioBitrate: 128,
-    },
-    steps: [
-      { order: 1, serviceName: 'media_inspector', topic: 'media_inspection_jobs' },
-      { order: 2, serviceName: 'audio_extractor', topic: 'audio_extraction_jobs' },
-      { order: 3, serviceName: 'scene_analyzer', topic: 'scene_analysis_jobs' },
-      { order: 4, serviceName: 'subtitle_generator', topic: 'subtitle_generation_jobs' },
-      { order: 5, serviceName: 'dubbing_generator', topic: 'dubbing_generation_jobs' },
-    ],
-    status: 'active',
-    createdAt: '2023-01-01T12:00:00Z',
-    updatedAt: '2023-01-01T12:00:00Z',
-  },
-  {
-    id: 'metadata-only',
-    name: 'Metadata Extraction',
-    description: 'Quickly extract metadata from a media file.',
-    category: 'analysis',
-    estimatedDuration: 300,
-    defaultParameters: {},
-    steps: [
-      { order: 1, serviceName: 'media_inspector', topic: 'media_inspection_jobs' },
-      { order: 2, serviceName: 'script_evaluator', topic: 'script_evaluation_jobs' },
-    ],
-    status: 'draft',
-    createdAt: '2023-01-01T12:00:00Z',
-    updatedAt: '2023-01-01T12:00:00Z',
-  },
-  {
-    id: 'content-localization',
-    name: 'Content Localization',
-    description: 'Generate subtitles and dubbing for multiple languages.',
-    category: 'full',
-    estimatedDuration: 2700,
-    defaultParameters: {
-      targetLanguages: ['es', 'fr', 'de'],
-      subtitleFormat: 'srt',
-      voiceGender: 'auto',
-    },
-    steps: [
-      { order: 1, serviceName: 'media_inspector', topic: 'media_inspection_jobs' },
-      { order: 2, serviceName: 'audio_extractor', topic: 'audio_extraction_jobs' },
-      { order: 3, serviceName: 'subtitle_generator', topic: 'subtitle_generation_jobs' },
-      { order: 4, serviceName: 'dubbing_generator', topic: 'dubbing_generation_jobs' },
-    ],
-    status: 'active',
-    createdAt: '2023-01-01T12:00:00Z',
-    updatedAt: '2023-01-01T12:00:00Z',
-  },
-  {
-    id: 'streaming-prep',
-    name: 'Streaming Preparation',
-    description: 'Prepare video for streaming with thumbnails and multiple formats.',
-    category: 'video',
-    estimatedDuration: 2100,
-    defaultParameters: {
-      outputFormats: ['mp4', 'webm', 'hls'],
-      thumbnailCount: 10,
-      adaptiveBitrate: true,
-    },
-    steps: [
-      { order: 1, serviceName: 'media_inspector', topic: 'media_inspection_jobs' },
-      { order: 2, serviceName: 'thumbnail_generator', topic: 'thumbnail_generation_jobs' },
-      { order: 3, serviceName: 'transcoder', topic: 'transcoding_jobs' },
-    ],
-    status: 'active',
-    createdAt: '2023-01-01T12:00:00Z',
-    updatedAt: '2023-01-01T12:00:00Z',
-  },
-];
 
 export const mockJobs: Job[] = [
   {
     id: 'job-1',
-    pipelineId: 'full-analysis',
+    workflowType: 'scene-analyzer',
     sourceFile: 'gs://super-over-alchemy/raw/sample_video_1.mp4',
     status: 'completed',
     createdAt: '2024-09-25T10:35:00Z',
@@ -296,7 +170,7 @@ export const mockJobs: Job[] = [
   },
   {
     id: 'job-2',
-    pipelineId: 'video-only',
+    workflowType: 'transcoder',
     sourceFile: 'gs://super-over-alchemy/raw/conference_call.wav',
     status: 'running',
     createdAt: '2024-09-25T09:20:00Z',
@@ -320,7 +194,7 @@ export const mockJobs: Job[] = [
   },
   {
     id: 'job-3',
-    pipelineId: 'full-analysis',
+    workflowType: 'scene-analyzer',
     sourceFile: 'gs://super-over-alchemy/raw/interview_raw.mp4',
     status: 'failed',
     createdAt: '2024-09-23T16:50:00Z',
@@ -353,8 +227,8 @@ export const mockExecutions: WorkflowExecution[] = [
   {
     id: 'exec-1',
     jobId: 'job-1',
-    pipelineId: 'full-analysis',
-    pipelineName: 'Full Video Analysis',
+    workflowType: 'scene-analyzer',
+    workflowName: 'Scene Analysis',
     sourceFileName: 'sample_video_1.mp4',
     status: 'completed',
     startedAt: '2024-09-25T10:35:00Z',
@@ -435,8 +309,8 @@ export const mockExecutions: WorkflowExecution[] = [
   {
     id: 'exec-2',
     jobId: 'job-2',
-    pipelineId: 'video-only',
-    pipelineName: 'Video Processing Only',
+    workflowType: 'transcoder',
+    workflowName: 'Video Transcoding',
     sourceFileName: 'conference_call.wav',
     status: 'running',
     startedAt: '2024-09-25T09:20:00Z',

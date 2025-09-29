@@ -7,22 +7,28 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
   FileText,
-  Play,
-  Download,
   Menu,
   X,
   Bell,
   User,
   Home,
-  Zap,
+  Eye,
+  Video,
+  Subtitles,
+  Mic,
+  Image,
+  Shuffle,
 } from 'lucide-react';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: Home },
+  { name: 'Scene Analyzer', href: '/scene-analyzer', icon: Eye },
+  { name: 'Transcoder', href: '/transcoder', icon: Video },
+  { name: 'Subtitle Generator', href: '/subtitle-generator', icon: Subtitles },
+  { name: 'Dubbing Generator', href: '/dubbing-generator', icon: Mic },
+  { name: 'Thumbnail Generator', href: '/thumbnail-generator', icon: Image },
+  { name: 'Audio/Video Mixer', href: '/mixer', icon: Shuffle },
   { name: 'Files', href: '/files', icon: FileText },
-  { name: 'Pipelines', href: '/pipelines', icon: Play },
-  { name: 'Executions', href: '/executions', icon: Zap },
-  { name: 'Outputs', href: '/outputs', icon: Download },
 ];
 
 interface DashboardLayoutProps {

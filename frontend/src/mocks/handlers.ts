@@ -1,7 +1,6 @@
 import { http, HttpResponse } from 'msw';
 import {
   mockFiles,
-  mockPipelines,
   mockJobs,
   mockExecutions,
   mockOutputFiles,
@@ -124,23 +123,6 @@ export const handlers = [
     });
   }),
 
-  // Pipelines API
-  http.get('/api/workflows/pipelines', async () => {
-    await delay(300);
-    return HttpResponse.json({ success: true, data: mockPipelines });
-  }),
-
-  http.get('/api/workflows/pipelines/:id', async ({ params }) => {
-    await delay(200);
-    const pipeline = mockPipelines.find(p => p.id === params.id);
-    if (!pipeline) {
-      return HttpResponse.json(
-        { success: false, error: 'Pipeline not found' },
-        { status: 404 }
-      );
-    }
-    return HttpResponse.json({ success: true, data: pipeline });
-  }),
 
   // Executions API
   http.get('/api/executions', async ({ request }) => {
@@ -149,7 +131,7 @@ export const handlers = [
     const page = parseInt(url.searchParams.get('page') || '1');
     const limit = parseInt(url.searchParams.get('limit') || '10');
     const status = url.searchParams.get('status');
-    const pipelineId = url.searchParams.get('pipelineId');
+    const workflowType = url.searchParams.get('workflowType');
 
     let filteredExecutions = mockExecutions;
 
@@ -157,8 +139,8 @@ export const handlers = [
       filteredExecutions = filteredExecutions.filter(exec => exec.status === status);
     }
 
-    if (pipelineId) {
-      filteredExecutions = filteredExecutions.filter(exec => exec.pipelineId === pipelineId);
+    if (workflowType) {
+      filteredExecutions = filteredExecutions.filter(exec => exec.workflowType === workflowType);
     }
 
     return HttpResponse.json(createPaginatedResponse(filteredExecutions, page, limit));
@@ -183,15 +165,15 @@ export const handlers = [
     const newExecution = {
       id: `exec-${Date.now()}`,
       jobId: `job-${Date.now()}`,
-      pipelineId: body.pipelineId,
-      pipelineName: mockPipelines.find(p => p.id === body.pipelineId)?.name || 'Unknown',
+      workflowType: body.workflowType || 'unknown',
+      workflowName: body.workflowName || 'Unknown Workflow',
       sourceFileName: body.sourceFileName || 'unknown.file',
       status: 'pending' as const,
       startedAt: new Date().toISOString(),
       progress: {
         currentStep: 'initializing',
         completed: 0,
-        total: mockPipelines.find(p => p.id === body.pipelineId)?.steps.length || 1,
+        total: 3, // Default number of steps
         percentage: 0,
       },
       parameters: body.parameters || {},

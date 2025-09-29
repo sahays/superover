@@ -2,15 +2,15 @@ import { filesApi as filesApiClass } from './api/files';
 import { workflowsApi as workflowsApiClass } from './api/workflows';
 import { executionsApi as executionsApiClass } from './api/executions';
 import { outputsApi as outputsApiClass } from './api/outputs';
-import { Pipeline, ExecutionFilters, WorkflowParameters, FileFilters } from '@/types';
+import { ExecutionFilters, WorkflowParameters, FileFilters } from '@/types';
 
 // Simple wrapper functions that match the component usage
 export const workflowsApi = {
-  getPipelines: () => workflowsApiClass.getPipelines(),
-  getPipeline: (id: string) => workflowsApiClass.getPipeline(id),
-  createPipeline: (data: { name: string; description: string; steps: unknown[] }) => workflowsApiClass.createWorkflow(data),
-  updatePipeline: (id: string, data: Partial<Pipeline>) => workflowsApiClass.updateWorkflow(id, data),
-  deletePipeline: (id: string) => workflowsApiClass.deleteWorkflow(id),
+  getWorkflows: () => workflowsApiClass.getWorkflows(),
+  getWorkflow: (id: string) => workflowsApiClass.getWorkflow(id),
+  createWorkflow: (data: { name: string; description: string; type: string }) => workflowsApiClass.createWorkflow(data),
+  updateWorkflow: (id: string, data: Record<string, unknown>) => workflowsApiClass.updateWorkflow(id, data),
+  deleteWorkflow: (id: string) => workflowsApiClass.deleteWorkflow(id),
 };
 
 export const executionsApi = {
@@ -22,7 +22,7 @@ export const executionsApi = {
   getExecution: (id: string) => executionsApiClass.getExecution(id),
   createExecution: (data: {
     sourceFileId: string;
-    pipelineId: string;
+    workflowType: string;
     parameters?: WorkflowParameters;
   }) => executionsApiClass.createExecution(data),
   controlExecution: (id: string, action: string) => {

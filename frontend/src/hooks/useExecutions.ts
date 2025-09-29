@@ -56,7 +56,7 @@ export function useCreateExecution() {
   return useMutation({
     mutationFn: (execution: {
       sourceFileId: string;
-      pipelineId: string;
+      workflowType: string;
       parameters?: WorkflowParameters;
     }) => executionsApi.createExecution(execution),
     onSuccess: (data) => {
