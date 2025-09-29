@@ -20,12 +20,12 @@ export class ExecutionsApi {
       params.filters.pipelineId.forEach(id => searchParams.append('pipelineId', id));
     }
 
-    return apiClient.get<PaginatedResponse<WorkflowExecution>>(`/executions?${searchParams.toString()}`);
+    return apiClient.get<PaginatedResponse<WorkflowExecution>>(`/workflows/executions?${searchParams.toString()}`);
   }
 
   // Get single execution by ID
   async getExecution(id: string): Promise<ApiResponse<WorkflowExecution>> {
-    return apiClient.get<ApiResponse<WorkflowExecution>>(`/executions/${id}`);
+    return apiClient.get<ApiResponse<WorkflowExecution>>(`/workflows/executions/${id}`);
   }
 
   // Create new execution
@@ -34,22 +34,22 @@ export class ExecutionsApi {
     pipelineId: string;
     parameters?: WorkflowParameters;
   }): Promise<ApiResponse<WorkflowExecution>> {
-    return apiClient.post<ApiResponse<WorkflowExecution>>('/executions', execution);
+    return apiClient.post<ApiResponse<WorkflowExecution>>('/workflows/executions', execution);
   }
 
   // Retry failed execution
   async retryExecution(id: string): Promise<ApiResponse<WorkflowExecution>> {
-    return apiClient.post<ApiResponse<WorkflowExecution>>(`/executions/${id}/retry`);
+    return apiClient.post<ApiResponse<WorkflowExecution>>(`/workflows/executions/${id}/retry`);
   }
 
   // Cancel running execution
   async cancelExecution(id: string): Promise<ApiResponse<void>> {
-    return apiClient.post<ApiResponse<void>>(`/executions/${id}/cancel`);
+    return apiClient.post<ApiResponse<void>>(`/workflows/executions/${id}/cancel`);
   }
 
   // Get real-time execution status (for SSE or polling)
   async getExecutionStatus(id: string): Promise<ApiResponse<WorkflowExecution>> {
-    return apiClient.get<ApiResponse<WorkflowExecution>>(`/executions/${id}/stream`);
+    return apiClient.get<ApiResponse<WorkflowExecution>>(`/workflows/executions/${id}/stream`);
   }
 }
 

@@ -56,6 +56,9 @@ export interface Pipeline {
   defaultParameters: Record<string, unknown>;
   estimatedDuration?: number;
   category: 'video' | 'audio' | 'analysis' | 'full';
+  status: 'active' | 'draft' | 'inactive';
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface WorkflowParameters {
