@@ -67,16 +67,18 @@ module "api_service" {
   project_id            = local.env_vars.GCP_PROJECT_ID
   image_url             = "${local.env_vars.GCP_REGION}-docker.pkg.dev/${local.env_vars.GCP_PROJECT_ID}/super-over-alchemy/api-service:latest"
   service_account_email = module.service_accounts.services_sa_email
-  allow_public_access   = false
+  allow_public_access   = true  # Required for CORS preflight requests from browser
   min_instances         = 1
   ingress               = "all"
   environment_variables = {
-    GCP_PROJECT_ID          = local.env_vars.GCP_PROJECT_ID
-    RAW_UPLOADS_BUCKET_NAME = local.env_vars.RAW_UPLOADS_BUCKET_NAME
-    JOBS_TOPIC_ID           = google_pubsub_topic.scene_analysis_jobs.name
-    FRONTEND_URL            = "https://frontend-service-p2irpfu5ya-el.a.run.app"
+    GCP_PROJECT_ID               = local.env_vars.GCP_PROJECT_ID
+    GCP_REGION                   = local.env_vars.GCP_REGION
+    RAW_UPLOADS_BUCKET_NAME      = local.env_vars.RAW_UPLOADS_BUCKET_NAME
+    JOBS_TOPIC_ID                = google_pubsub_topic.scene_analysis_jobs.name
+    FRONTEND_URL                 = module.frontend_service.service_url
+    GOOGLE_SERVICE_ACCOUNT_EMAIL = module.service_accounts.services_sa_email
   }
-  depends_on = [google_pubsub_topic.scene_analysis_jobs]
+  depends_on = [google_pubsub_topic.scene_analysis_jobs, module.frontend_service]
 }
 
 module "scene_analyzer_worker" {
@@ -98,83 +100,7 @@ module "scene_analyzer_worker" {
   depends_on = [google_artifact_registry_repository.repository]
 }
 
-# --- Load Balancer ---
-resource "google_compute_global_address" "frontend_ip" {
-  name = "frontend-lb-ip"
-}
-
-resource "google_compute_region_network_endpoint_group" "frontend_neg" {
-  name                  = "frontend-serverless-neg"
-  network_endpoint_type = "SERVERLESS"
-  region                = local.env_vars.GCP_REGION
-  cloud_run {
-    service = module.frontend_service.service_name
-  }
-}
-
-resource "google_compute_region_network_endpoint_group" "api_neg" {
-  name                  = "api-serverless-neg"
-  network_endpoint_type = "SERVERLESS"
-  region                = local.env_vars.GCP_REGION
-  cloud_run {
-    service = module.api_service.service_name
-  }
-}
-
-resource "google_compute_backend_service" "frontend_backend" {
-  name                  = "frontend-backend-service"
-  protocol              = "HTTP"
-  port_name             = "http"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-  backend {
-    group = google_compute_region_network_endpoint_group.frontend_neg.id
-  }
-}
-
-resource "google_compute_backend_service" "api_backend" {
-  name                  = "api-backend-service"
-  protocol              = "HTTP"
-  port_name             = "http"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-  backend {
-    group = google_compute_region_network_endpoint_group.api_neg.id
-  }
-}
-
-resource "google_compute_url_map" "frontend_url_map" {
-  name            = "frontend-lb-url-map"
-  default_service = google_compute_backend_service.frontend_backend.id
-
-  path_matcher {
-    name            = "api-paths"
-    default_service = google_compute_backend_service.frontend_backend.id
-    path_rule {
-      paths   = ["/api/*"]
-      service = google_compute_backend_service.api_backend.id
-    }
-  }
-}
-
-resource "google_compute_managed_ssl_certificate" "frontend_ssl" {
-  name = "frontend-ssl-cert"
-  managed {
-    domains = ["${replace(google_compute_global_address.frontend_ip.address, ".", "-")}.sslip.io"]
-  }
-}
-
-resource "google_compute_target_https_proxy" "frontend_proxy" {
-  name             = "frontend-https-proxy"
-  url_map          = google_compute_url_map.frontend_url_map.id
-  ssl_certificates = [google_compute_managed_ssl_certificate.frontend_ssl.id]
-}
-
-resource "google_compute_global_forwarding_rule" "frontend_forwarding_rule" {
-  name                  = "frontend-forwarding-rule"
-  target                = google_compute_target_https_proxy.frontend_proxy.id
-  ip_address            = google_compute_global_address.frontend_ip.address
-  port_range            = "443"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-}
+# Load balancer removed - using Cloud Run URLs directly
 
 # --- Pub/Sub for Task Queue ---
 resource "google_pubsub_topic" "scene_analysis_jobs" {
@@ -284,16 +210,3 @@ resource "google_project_iam_binding" "ar_writer_bindings" {
 }
 
 
-# Temporary HTTP forwarding rule for testing while SSL provisions
-resource "google_compute_target_http_proxy" "frontend_http_proxy" {
-  name    = "frontend-http-proxy"
-  url_map = google_compute_url_map.frontend_url_map.id
-}
-
-resource "google_compute_global_forwarding_rule" "frontend_http_forwarding_rule" {
-  name                  = "frontend-http-forwarding-rule"
-  target                = google_compute_target_http_proxy.frontend_http_proxy.id
-  ip_address            = google_compute_global_address.frontend_ip.address
-  port_range            = "80"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-}

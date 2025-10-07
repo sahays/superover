@@ -14,6 +14,7 @@ interface Pipeline {
     name: string;
     size: string;
     type: string;
+    url?: string;
   }>;
 }
 
@@ -24,10 +25,15 @@ interface ViewOutputsModalProps {
 }
 
 export function ViewOutputsModal({ open, onClose, pipeline }: ViewOutputsModalProps) {
-  const handleDownload = (outputId: string, filename: string) => {
-    // TODO: Implement actual download
-    console.log('Downloading:', outputId, filename);
-    alert(`Downloading ${filename}...`);
+  const handleDownload = (outputId: string, filename: string, url?: string) => {
+    if (url) {
+      // Open the URL in a new tab or trigger download
+      window.open(url, '_blank');
+    } else {
+      // TODO: Implement actual download
+      console.log('Downloading:', outputId, filename);
+      alert(`Downloading ${filename}...`);
+    }
   };
 
   if (!open) return null;
@@ -92,7 +98,7 @@ export function ViewOutputsModal({ open, onClose, pipeline }: ViewOutputsModalPr
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => handleDownload(output.id, output.name)}
+                        onClick={() => handleDownload(output.id, output.name, output.url)}
                       >
                         <Download className="h-3 w-3 mr-1" />
                         Download

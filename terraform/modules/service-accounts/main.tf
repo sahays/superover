@@ -43,3 +43,10 @@ resource "google_project_iam_member" "services_pubsub_publisher" {
   role    = "roles/pubsub.publisher"
   member  = "serviceAccount:${google_service_account.services.email}"
 }
+
+# Grant services SA permission to sign URLs (for GCS signed URL generation)
+resource "google_service_account_iam_member" "services_token_creator" {
+  service_account_id = google_service_account.services.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.services.email}"
+}

@@ -1,30 +1,27 @@
 # This file tells the gcloud CLI tools to ignore these files and directories
+
 # when creating a build context to upload to Cloud Build.
 
 # Git and gcloudignore itself
-.gcloudignore
-.git
-.gitignore
+
+.gcloudignore .git .gitignore
 
 # Node.js dependencies and build artifacts
-**/node_modules
-frontend/.next/
+
+\*\*/node_modules frontend/.next/
 
 # Python virtual environment and cache
-.venv/
-**/__pycache__
-**/*.pyc
+
+.venv/ **/**pycache** **/\*.pyc
 
 # Terraform state and configuration
-terraform/.terraform/
-terraform/*.tfstate
-terraform/*.tfstate.*
+
+terraform/.terraform/ terraform/_.tfstate terraform/_.tfstate.\*
 
 # Local data folders
-inputs/
-outputs/
+
+inputs/ outputs/
 
 # IDE and OS files
-.idea/
-.vscode/
-.DS_Store
+
+.idea/ .vscode/ .DS_Store

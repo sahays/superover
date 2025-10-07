@@ -84,9 +84,24 @@ main() {
     log_success "Terraform apply completed successfully."
     cd ..
 
+    # Run post-configuration script to update GCS CORS
+    log_info "Running post-configuration script..."
+    if ./scripts/configure-post-terraform.sh; then
+        log_success "Post-configuration completed successfully."
+    else
+        log_error "Post-configuration failed. Please run './scripts/configure-post-terraform.sh' manually."
+    fi
+
     echo "=============================================="
     log_success "Deployment completed successfully!"
-    echo "Your application URL will be available in the Terraform output."
+    echo ""
+    log_info "Service URLs:"
+    echo "  Frontend: Run 'gcloud run services describe frontend-service --region=\$GCP_REGION --format=\"value(status.url)\"'"
+    echo "  API:      Run 'gcloud run services describe api-service --region=\$GCP_REGION --format=\"value(status.url)\"'"
+    echo ""
+    log_info "Next steps:"
+    echo "  1. Build and push container images: ./scripts/build-and-push.sh"
+    echo "  2. Access your application at the frontend URL above"
     echo "=============================================="
 }
 

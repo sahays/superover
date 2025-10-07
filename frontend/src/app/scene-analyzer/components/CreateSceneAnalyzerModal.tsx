@@ -6,20 +6,26 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { X, Upload, Eye } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
+import { X, Upload, Eye, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Portal } from '@/components/ui/portal';
+import { sceneAnalyzerApi } from '@/lib/api/scene-analyzer';
 
 interface CreateSceneAnalyzerModalProps {
   open: boolean;
   onClose: () => void;
+  onJobCreated?: (jobId: string) => void;
 }
 
-export function CreateSceneAnalyzerModal({ open, onClose }: CreateSceneAnalyzerModalProps) {
+export function CreateSceneAnalyzerModal({ open, onClose, onJobCreated }: CreateSceneAnalyzerModalProps) {
   const [pipelineName, setPipelineName] = useState('');
   const [compressionRate, setCompressionRate] = useState<string>('720p');
   const [chunkLength, setChunkLength] = useState<string>('30');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'creating' | 'success' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -32,33 +38,52 @@ export function CreateSceneAnalyzerModal({ open, onClose }: CreateSceneAnalyzerM
     if (!pipelineName.trim() || !selectedFile) return;
 
     setIsSubmitting(true);
+    setUploadStatus('uploading');
+    setErrorMessage('');
+
     try {
-      // TODO: Replace with actual API call
-      console.log('Creating Scene Analyzer pipeline:', {
-        name: pipelineName,
-        file: selectedFile,
-        settings: {
-          compressionRate,
-          chunkLength: Math.max(parseInt(chunkLength) || 30, 10),
-        },
-      });
+      // Upload file and create job
+      const { jobId } = await sceneAnalyzerApi.uploadAndCreateJob(
+        selectedFile,
+        (progress) => {
+          setUploadProgress(progress);
+          if (progress === 100) {
+            setUploadStatus('creating');
+          }
+        }
+      );
 
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      setUploadStatus('success');
+      setUploadProgress(100);
 
-      alert('Scene Analyzer pipeline created successfully!');
-      onClose();
-      // Reset form
-      setPipelineName('');
-      setSelectedFile(null);
-      setCompressionRate('720p');
-      setChunkLength('30');
+      // Notify parent component
+      if (onJobCreated) {
+        onJobCreated(jobId);
+      }
+
+      // Close modal after a short delay to show success state
+      setTimeout(() => {
+        onClose();
+        resetForm();
+      }, 1500);
+
     } catch (error) {
-      console.error('Failed to create pipeline:', error);
-      alert('Failed to create pipeline. Please try again.');
+      console.error('Failed to create job:', error);
+      setUploadStatus('error');
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to create job. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const resetForm = () => {
+    setPipelineName('');
+    setSelectedFile(null);
+    setCompressionRate('720p');
+    setChunkLength('30');
+    setUploadProgress(0);
+    setUploadStatus('idle');
+    setErrorMessage('');
   };
 
   const canSubmit = pipelineName.trim() && selectedFile && !isSubmitting;
@@ -152,9 +177,43 @@ export function CreateSceneAnalyzerModal({ open, onClose }: CreateSceneAnalyzerM
             </div>
           </div>
 
+          {/* Upload Progress */}
+          {uploadStatus !== 'idle' && (
+            <div className="space-y-3 pt-4 border-t">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium">
+                  {uploadStatus === 'uploading' && 'Uploading video...'}
+                  {uploadStatus === 'creating' && 'Creating analysis job...'}
+                  {uploadStatus === 'success' && 'Job created successfully!'}
+                  {uploadStatus === 'error' && 'Upload failed'}
+                </span>
+                {uploadStatus === 'success' && <CheckCircle2 className="h-5 w-5 text-green-600" />}
+                {uploadStatus === 'error' && <AlertCircle className="h-5 w-5 text-red-600" />}
+              </div>
+
+              {uploadStatus !== 'error' && (
+                <Progress value={uploadProgress} className="h-2" />
+              )}
+
+              {errorMessage && (
+                <div className="text-sm text-red-600 bg-red-50 p-3 rounded-md">
+                  {errorMessage}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex gap-3 pt-4">
-            <Button variant="outline" onClick={onClose} className="flex-1">
+            <Button
+              variant="outline"
+              onClick={() => {
+                onClose();
+                resetForm();
+              }}
+              className="flex-1"
+              disabled={isSubmitting}
+            >
               Cancel
             </Button>
             <Button
@@ -162,7 +221,10 @@ export function CreateSceneAnalyzerModal({ open, onClose }: CreateSceneAnalyzerM
               disabled={!canSubmit}
               className="flex-1"
             >
-              {isSubmitting ? 'Creating...' : 'Create Scene Analyzer'}
+              {uploadStatus === 'uploading' && `Uploading ${Math.round(uploadProgress)}%`}
+              {uploadStatus === 'creating' && 'Creating Job...'}
+              {uploadStatus === 'success' && 'Success!'}
+              {(uploadStatus === 'idle' || uploadStatus === 'error') && 'Create & Upload'}
             </Button>
           </div>
         </CardContent>

@@ -1,157 +1,186 @@
-# Super Over Alchemy Terraform Infrastructure
+# Super Over Alchemy - Infrastructure Setup
 
-This Terraform configuration deploys the complete Super Over Alchemy infrastructure on Google Cloud Platform.
+This directory contains Terraform configuration for deploying the Super Over Alchemy application to Google Cloud Platform.
 
-## Prerequisites
+## Quick Start
 
-1. **GCP Project**: Create a GCP project with billing enabled
-2. **Terraform**: Install Terraform >= 1.0
-3. **gcloud CLI**: Install and authenticate with `gcloud auth application-default login`
-4. **Docker**: For building and pushing container images
-5. **Gemini API Key**: Get your API key from Google AI Studio
+### Prerequisites
+- Google Cloud SDK (`gcloud`) installed and authenticated
+- Terraform >= 1.0 installed
+- Project configured in `.env` file at project root
+- Gemini API Key (for video analysis)
 
-## Quick Setup
+### Deployment Steps
 
-1. **Configure variables**:
+1. **Initialize Terraform:**
    ```bash
-   cp terraform.tfvars.example terraform.tfvars
-   # Edit terraform.tfvars with your values
+   cd terraform
+   terraform init
    ```
 
-2. **Initialize and deploy**:
+2. **Review planned changes:**
    ```bash
-   terraform init
    terraform plan
+   ```
+
+3. **Apply infrastructure:**
+   ```bash
    terraform apply
    ```
 
-3. **Build and push container images**:
+4. **Run post-configuration script:**
    ```bash
-   # Configure Docker for Artifact Registry
-   gcloud auth configure-docker <region>-docker.pkg.dev
+   cd ..
+   ./scripts/configure-post-terraform.sh
+   ```
+   This script updates GCS bucket CORS with the actual Cloud Run service URLs.
 
-   # Build and push each service
+5. **Build and deploy services:**
+   ```bash
    ./scripts/build-and-push.sh
    ```
 
-## Infrastructure Components
+## Architecture
+
+The infrastructure consists of:
 
 ### Core Services
-- **4x Cloud Run Services**: video-processor, audio-extractor, scene-analyzer, media-inspector
-- **4x Pub/Sub Topics + Subscriptions**: Event-driven communication
-- **2x Cloud Storage Buckets**: Raw videos and processed outputs
-- **Artifact Registry**: Container image storage
-- **Firestore**: Job and pipeline state storage
-- **Service Accounts**: Secure access control
+- **frontend-service**: Next.js web application (Cloud Run)
+- **api-service**: FastAPI backend (Cloud Run)
+- **scene-analyzer-worker**: Video processing worker (Cloud Run Job)
 
-### Event Flow
-1. Video uploaded to raw videos bucket
-2. GCS notification → video-processor-jobs topic → video-processor service
-3. Processed chunks trigger scene-analyzer and audio-extractor services
-4. Results stored in processed outputs bucket
+### Storage
+- **Raw Videos Bucket**: Stores uploaded videos with CORS enabled for direct browser uploads
+- **Processed Outputs Bucket**: Stores analysis results
 
-## Environment Variables
+### Messaging
+- **Pub/Sub Topic**: `scene-analysis-jobs` for job queueing
+- **Push Subscription**: Triggers scene-analyzer-worker when new jobs are created
 
-The system reads configuration from environment variables:
+### Security
+- **Service Account**: `super-over-services` with permissions for:
+  - Cloud Storage (admin)
+  - Firestore (user)
+  - Pub/Sub (publisher/subscriber)
+  - IAM Token Creator (for signed URLs)
+- **Public Access**: API service allows public access for CORS preflight requests
 
-### Required
-- `project_id`: Your GCP project ID
-- `raw_videos_bucket_name`: Bucket for raw video uploads
-- `processed_outputs_bucket_name`: Bucket for processed outputs
-- `gemini_api_key`: Your Gemini API key
+## Configuration
 
-### Optional (with defaults)
-- `region`: GCP region (default: us-central1)
-- `chunk_duration`: Video chunk duration in seconds (default: 60)
-- `gemini_model`: Gemini model version (default: models/gemini-1.5-pro-latest)
-
-## Deployment Commands
+All configuration is read from the root `.env` file:
 
 ```bash
-# Initialize Terraform
-terraform init
+# GCP Configuration
+GCP_PROJECT_ID="your-project-id"
+GCP_REGION="asia-south1"
 
-# Validate configuration
-terraform validate
+# Storage
+RAW_UPLOADS_BUCKET_NAME="alchemy-super-over-inputs"
+PROCESSED_OUTPUTS_BUCKET_NAME="alchemy-super-over-outputs"
 
-# Plan deployment
-terraform plan
+# Pub/Sub
+JOBS_TOPIC_ID="scene-analysis-jobs"
 
-# Deploy infrastructure
-terraform apply
-
-# Destroy infrastructure
-terraform destroy
+# Gemini API
+GEMINI_API_KEY="your-gemini-api-key"
+GEMINI_MODEL="models/gemini-2.5-pro"
 ```
 
-## Container Image Management
+## Post-Deployment Configuration
 
-After infrastructure deployment, you need to build and push container images:
+The `scripts/configure-post-terraform.sh` script handles configuration that requires runtime information:
 
-```bash
-# Get the Artifact Registry URL from Terraform output
-REPO_URL=$(terraform output -raw artifact_registry_repository_url)
+1. **GCS CORS Configuration**: Updates the raw uploads bucket with specific Cloud Run service URLs
+   - Terraform creates the bucket with wildcard CORS (`*.run.app`)
+   - Post-script updates it with the actual frontend URL for better security
 
-# Build and tag images for each service
-docker build -t $REPO_URL/video-processor:latest .
-docker build -t $REPO_URL/audio-extractor:latest .
-docker build -t $REPO_URL/scene-analyzer:latest .
-docker build -t $REPO_URL/media-inspector:latest .
+**What it does:**
+- Fetches the actual frontend-service URL from Cloud Run
+- Updates GCS bucket CORS to allow that specific URL
+- Also allows `localhost:3000` for local development
 
-# Push images
-docker push $REPO_URL/video-processor:latest
-docker push $REPO_URL/audio-extractor:latest
-docker push $REPO_URL/scene-analyzer:latest
-docker push $REPO_URL/media-inspector:latest
+This approach ensures CORS works immediately after `terraform apply` (via wildcard), then tightens security with specific URLs.
+
+## Manual Changes Captured in Terraform
+
+The following manual configurations are now automated:
+
+✅ **Service Account Permissions**
+- Self-signing permission (`serviceAccountTokenCreator`) for GCS signed URLs
+
+✅ **API Service Configuration**
+- Public access enabled (required for CORS preflight requests from browsers)
+- Environment variables including:
+  - `GOOGLE_SERVICE_ACCOUNT_EMAIL` for signed URL generation
+  - `FRONTEND_URL` dynamically set from frontend service output
+  - `GCP_REGION` for constructing proper URLs
+
+✅ **GCS CORS Configuration**
+- Initial wildcard configuration in Terraform
+- Specific URL configuration via post-script
+
+✅ **Frontend Service URL**
+- API service references frontend URL dynamically via Terraform outputs
+- No hardcoded URLs in infrastructure code
+
+## Service URL Construction
+
+Cloud Run service URLs follow the format:
+```
+https://{service-name}-{project-number}.{region}.run.app
 ```
 
-## Module Structure
-
-```
-terraform/
-├── modules/
-│   ├── cloud-run-service/     # Reusable Cloud Run service module
-│   ├── pubsub-topic/          # Pub/Sub topic + subscription + IAM
-│   ├── service-accounts/      # Service accounts and IAM roles
-│   └── storage/               # GCS buckets + notifications
-├── main.tf                    # Main infrastructure configuration
-├── variables.tf               # Input variables
-├── outputs.tf                 # Output values
-└── terraform.tfvars.example   # Example configuration
-```
-
-## Security Features
-
-- **Private Cloud Run services**: No public access, Pub/Sub authentication only
-- **IAM least privilege**: Service accounts with minimal required permissions
-- **Secure container images**: Images stored in private Artifact Registry
-- **Firestore native mode**: ACID transactions and strong consistency
-
-## Monitoring and Logs
-
-- **Cloud Run logs**: Available in Cloud Logging
-- **Pub/Sub metrics**: Monitor message flow and delivery
-- **Storage notifications**: Track file upload events
-- **Service health**: Cloud Run provides built-in health checks
+The build scripts (`scripts/build-and-push.sh`) automatically:
+1. Fetch the project number at runtime
+2. Construct correct URLs for the API service
+3. Bake the API URL into the frontend build
 
 ## Troubleshooting
 
-### Common Issues
+### CORS Errors
+If you see CORS errors, ensure:
+1. Post-configuration script has been run
+2. GCS bucket CORS includes the frontend URL
+3. API service has `allow_public_access = true`
 
-1. **API not enabled**: Terraform automatically enables required APIs
-2. **Permission denied**: Ensure your account has Project Editor role
-3. **Container not found**: Build and push images after infrastructure deployment
-4. **Pub/Sub delivery failures**: Check Cloud Run service logs for errors
+### Signed URL Errors
+If signed URL generation fails:
+1. Verify service account has `serviceAccountTokenCreator` role
+2. Check `GOOGLE_SERVICE_ACCOUNT_EMAIL` environment variable is set
+3. Ensure service account email matches the running service
+
+### Service Not Found
+If services aren't accessible:
+1. Check they were built and pushed: `./scripts/build-and-push.sh`
+2. Verify images exist in Artifact Registry
+3. Check Cloud Run service logs for errors
 
 ### Useful Commands
 
 ```bash
 # Check service status
-gcloud run services list --region=<region>
+gcloud run services list --region=asia-south1
 
 # View service logs
-gcloud logs read "resource.type=cloud_run_revision" --limit=50
+gcloud run services logs read api-service --region=asia-south1 --limit=50
 
-# Test Pub/Sub message
-gcloud pubsub topics publish video-processor-jobs --message='{"bucket":"test","name":"test.mp4"}'
+# Check bucket CORS configuration
+gcloud storage buckets describe gs://alchemy-super-over-inputs --format="json(cors)"
+
+# Manually trigger post-configuration
+./scripts/configure-post-terraform.sh
 ```
+
+## Architecture Decisions
+
+### Why No Load Balancer?
+- Removed load balancer complexity in favor of direct Cloud Run URLs
+- Simpler architecture with fewer moving parts
+- Lower costs (no load balancer charges)
+- Easier to debug and maintain
+
+### Why Post-Configuration Script?
+- Cloud Run service URLs are only known after creation
+- Terraform can't reference URLs during the same apply
+- Post-script provides clean separation of concerns
+- Idempotent and safe to run multiple times

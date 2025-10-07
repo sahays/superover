@@ -6,6 +6,15 @@ resource "google_storage_bucket" "raw_videos" {
 
   uniform_bucket_level_access = true
 
+  # CORS configuration for direct browser uploads
+  # Allows Cloud Run services and localhost development
+  cors {
+    origin          = ["https://*.run.app", "http://localhost:3000", "http://localhost:3001"]
+    method          = ["GET", "HEAD", "PUT", "POST", "DELETE"]
+    response_header = ["Content-Type", "Content-Length", "Content-MD5", "x-goog-resumable"]
+    max_age_seconds = 3600
+  }
+
   versioning {
     enabled = false
   }

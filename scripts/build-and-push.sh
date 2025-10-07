@@ -24,7 +24,7 @@ REGION=${REGION:-${GCP_REGION:-us-central1}}
 REPOSITORY=${REPOSITORY:-super-over-alchemy}
 
 # Service definitions (service-name:directory-name)
-SERVICES="frontend:frontend api-service:services/api_service scene-analyzer-worker:services/scene_analyzer_worker"
+SERVICES="frontend-service:frontend api-service:services/api_service scene-analyzer-worker:services/scene_analyzer_worker"
 
 # Functions
 log_info() {
@@ -55,6 +55,14 @@ check_prerequisites() {
         log_error "PROJECT_ID not set. Run: gcloud config set project YOUR_PROJECT_ID"
         exit 1
     fi
+
+    # Get project number for Cloud Run URLs
+    PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
+    if [[ -z "$PROJECT_NUMBER" ]]; then
+        log_error "Could not get project number for $PROJECT_ID"
+        exit 1
+    fi
+    log_info "Project number: $PROJECT_NUMBER"
 
     # Check if Cloud Build API is enabled
     if ! gcloud services list --enabled --filter="name:cloudbuild.googleapis.com" --format="value(name)" | grep -q cloudbuild; then
@@ -95,6 +103,7 @@ build_and_push_service() {
     # Build using Cloud Build from the project root as context
     log_info "Using project root as build context..."
     log_info "Building with region: $REGION"
+
     if gcloud builds submit --tag "$image_tag" . --region="$REGION"; then
         log_success "Built and pushed ${service_name}"
     else
@@ -114,7 +123,11 @@ create_service_dockerfile() {
     local service_name=$2
     local dockerfile_path="${service_dir}/Dockerfile"
 
-    if [[ "$service_name" == "frontend" ]]; then
+    if [[ "$service_name" == "frontend-service" ]]; then
+        # Construct API URL using project number (not project ID)
+        local api_url="https://api-service-${PROJECT_NUMBER}.${REGION}.run.app"
+        log_info "Baking API URL into frontend build: $api_url"
+
         # Create Next.js Dockerfile
         cat > "$dockerfile_path" << EOF
 # Use Node.js 18 Alpine image
@@ -135,6 +148,9 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY $service_dir/ .
+
+# Set API URL for Next.js build
+ENV NEXT_PUBLIC_API_URL=$api_url
 
 # Next.js collects completely anonymous telemetry data about general usage.
 # Learn more here: https://nextjs.org/telemetry

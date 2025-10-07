@@ -24,14 +24,14 @@ echo "  Super Over Alchemy - Deployment Status"
 echo "=============================================="
 echo ""
 
-# Get Load Balancer IP
-LB_IP=$(gcloud compute addresses list --global --project="$PROJECT_ID" --filter="name=frontend-lb-ip" --format="value(address)" 2>/dev/null || echo "")
+# Get Cloud Run service URLs
+FRONTEND_URL=$(gcloud run services describe frontend-service --region="$REGION" --project="$PROJECT_ID" --format="value(status.url)" 2>/dev/null || echo "")
+API_URL=$(gcloud run services describe api-service --region="$REGION" --project="$PROJECT_ID" --format="value(status.url)" 2>/dev/null || echo "")
 
-if [[ -n "$LB_IP" ]]; then
-    DOMAIN="${LB_IP//./-}.sslip.io"
+if [[ -n "$FRONTEND_URL" ]] || [[ -n "$API_URL" ]]; then
     echo -e "${GREEN}🌐 Application URLs${NC}"
-    echo "   Frontend: https://$DOMAIN"
-    echo "   API:      https://$DOMAIN/api"
+    [[ -n "$FRONTEND_URL" ]] && echo "   Frontend: $FRONTEND_URL"
+    [[ -n "$API_URL" ]] && echo "   API:      $API_URL"
     echo ""
 fi
 
