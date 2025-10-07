@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Eye, Plus, Play, Settings, Download, Calendar, Clock } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Eye, Plus, Play, Settings, Download, Calendar, Clock, MoreVertical, FileText } from 'lucide-react';
 import { CreateSceneAnalyzerModal } from './components/CreateSceneAnalyzerModal';
 import { ViewSettingsModal } from './components/ViewSettingsModal';
 import { ViewOutputsModal } from './components/ViewOutputsModal';
@@ -127,7 +128,7 @@ export default function SceneAnalyzerPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {mockSceneAnalyzerPipelines.map((pipeline) => (
-              <Card key={pipeline.id} className="hover:shadow-md transition-shadow">
+              <Card key={pipeline.id} className="hover:shadow-md transition-shadow flex flex-col">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
@@ -138,11 +139,30 @@ export default function SceneAnalyzerPage() {
                         {pipeline.status}
                       </Badge>
                     </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleViewSettings(pipeline.id)}>
+                          <Settings className="h-4 w-4 mr-2" />
+                          Settings
+                        </DropdownMenuItem>
+                        {pipeline.status === 'completed' && (
+                          <DropdownMenuItem onClick={() => handleViewOutputs(pipeline.id)}>
+                            <Download className="h-4 w-4 mr-2" />
+                            Outputs
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </CardHeader>
 
-                <CardContent className="pt-0">
-                  <div className="space-y-3">
+                <CardContent className="pt-0 flex-1 flex flex-col">
+                  <div className="space-y-3 flex-1">
                     <div className="flex items-center justify-between text-sm text-muted-foreground">
                       <div className="flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
@@ -156,39 +176,31 @@ export default function SceneAnalyzerPage() {
                         <span>Last run {pipeline.lastRun}</span>
                       </div>
                     )}
+                  </div>
 
-                    <div className="flex gap-2 pt-3">
+                  <div className="flex justify-end pt-3 mt-auto">
+                    {pipeline.status === 'completed' ? (
                       <Button
-                        variant="outline"
                         size="sm"
-                        onClick={() => handleViewSettings(pipeline.id)}
-                        className="flex-1"
+                        onClick={() => handleViewOutputs(pipeline.id)}
                       >
-                        <Settings className="h-3 w-3 mr-1" />
-                        Settings
+                        <FileText className="h-3 w-3 mr-1" />
+                        See Analysis
                       </Button>
-
-                      {pipeline.status === 'completed' && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleViewOutputs(pipeline.id)}
-                          className="flex-1"
-                        >
-                          <Download className="h-3 w-3 mr-1" />
-                          Outputs
-                        </Button>
-                      )}
-
+                    ) : pipeline.status === 'running' ? (
                       <Button
                         size="sm"
-                        disabled={pipeline.status === 'running'}
-                        className="flex-1"
+                        disabled
                       >
                         <Play className="h-3 w-3 mr-1" />
-                        {pipeline.status === 'running' ? 'Running...' : 'Run'}
+                        Running...
                       </Button>
-                    </div>
+                    ) : (
+                      <Button size="sm">
+                        <Play className="h-3 w-3 mr-1" />
+                        Run
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>

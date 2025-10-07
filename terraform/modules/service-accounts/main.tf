@@ -24,16 +24,22 @@ resource "google_project_iam_member" "services_firestore_user" {
   member  = "serviceAccount:${google_service_account.services.email}"
 }
 
-# Grant services SA access to Cloud Functions (for job creator)
-resource "google_project_iam_member" "services_functions_invoker" {
+# Grant services SA access to Cloud Logging
+resource "google_project_iam_member" "services_logging_writer" {
   project = var.project_id
-  role    = "roles/cloudfunctions.invoker"
+  role    = "roles/logging.logWriter"
   member  = "serviceAccount:${google_service_account.services.email}"
 }
 
-# Grant services SA access to Workflows
-resource "google_project_iam_member" "services_workflows_invoker" {
+# Grant services SA access to Pub/Sub
+resource "google_project_iam_member" "services_pubsub_subscriber" {
   project = var.project_id
-  role    = "roles/workflows.invoker"
+  role    = "roles/pubsub.subscriber"
+  member  = "serviceAccount:${google_service_account.services.email}"
+}
+
+resource "google_project_iam_member" "services_pubsub_publisher" {
+  project = var.project_id
+  role    = "roles/pubsub.publisher"
   member  = "serviceAccount:${google_service_account.services.email}"
 }

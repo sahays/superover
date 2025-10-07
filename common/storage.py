@@ -90,11 +90,24 @@ class StorageManager:
                 logging.error(f"Error removing temporary file {f}: {e}")
         self.temp_files = []
 
+    def read(self, path: str) -> str:
+        """Reads content from GCS or local file."""
+        if self.is_gcs_path(path):
+            bucket_name, blob_name = self._parse_gcs_path(path)
+            bucket = self.gcs_client.bucket(bucket_name)
+            blob = bucket.blob(blob_name)
+            return blob.download_as_text()
+        else:
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"Local file not found: {path}")
+            with open(path, 'r') as f:
+                return f.read()
+
     def write_json(self, path: str, data: dict):
         """Writes a dictionary to a JSON file on either local disk or GCS."""
         import json
         content = json.dumps(data, indent=4).encode('utf-8') # Encode to bytes
-        
+
         if self.is_gcs_path(path):
             bucket_name, blob_name = self._parse_gcs_path(path)
             bucket = self.gcs_client.bucket(bucket_name)

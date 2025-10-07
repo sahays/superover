@@ -3,6 +3,12 @@ resource "google_cloud_run_service" "service" {
   location = var.location
   project  = var.project_id
 
+  metadata {
+    annotations = {
+      "run.googleapis.com/ingress" = var.ingress
+    }
+  }
+
   template {
     metadata {
       annotations = {
@@ -26,8 +32,11 @@ resource "google_cloud_run_service" "service" {
           }
         }
 
-        ports {
-          container_port = 8080
+        dynamic "ports" {
+          for_each = var.is_worker ? [] : [1]
+          content {
+            container_port = var.port
+          }
         }
 
         dynamic "env" {
@@ -53,20 +62,15 @@ resource "google_cloud_run_service" "service" {
   }
 }
 
-# Make the service private (no public access)
-data "google_iam_policy" "noauth" {
-  binding {
-    role = "roles/run.invoker"
-    members = [
-      "serviceAccount:${var.service_account_email}",
-    ]
-  }
-}
-
-resource "google_cloud_run_service_iam_policy" "noauth" {
+# Configure service access (public or private) using the more robust iam_binding resource
+resource "google_cloud_run_service_iam_binding" "invoker" {
   location = google_cloud_run_service.service.location
   project  = google_cloud_run_service.service.project
   service  = google_cloud_run_service.service.name
-
-  policy_data = data.google_iam_policy.noauth.policy_data
+  role     = "roles/run.invoker"
+  members = var.allow_public_access ? [
+    "allUsers",
+  ] : [
+    "serviceAccount:${var.service_account_email}",
+  ]
 }

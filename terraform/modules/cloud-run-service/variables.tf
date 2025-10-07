@@ -58,3 +58,27 @@ variable "cpu_limit" {
   type        = string
   default     = "2"
 }
+
+variable "allow_public_access" {
+  description = "Whether to allow public access to the service"
+  type        = bool
+  default     = false
+}
+
+variable "port" {
+  description = "Container port"
+  type        = number
+  default     = 8080
+}
+
+variable "ingress" {
+  description = "Ingress traffic setting for the service"
+  type        = string
+  default     = "all"
+}
+
+variable "is_worker" {
+  description = "If true, configures the service as a background worker with no HTTP health check."
+  type        = bool
+  default     = false
+}

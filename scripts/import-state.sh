@@ -23,19 +23,17 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Configuration - can be overridden with environment variables
-PROJECT_ID=${PROJECT_ID:-$(gcloud config get-value project)}
-
-# Try to read region from terraform.tfvars, fallback to environment or default
-if [[ -f "terraform/terraform.tfvars" ]]; then
-    REGION=${REGION:-$(grep '^region' terraform/terraform.tfvars | cut -d'"' -f2 2>/dev/null || echo "us-central1")}
-else
-    REGION=${REGION:-us-central1}
+# Configuration - read from .env file
+if [[ -f ".env" ]]; then
+    # Source .env file to load variables
+    export $(grep -v '^#' .env | xargs)
 fi
 
+PROJECT_ID=${PROJECT_ID:-${GCP_PROJECT_ID:-$(gcloud config get-value project)}}
+REGION=${REGION:-${GCP_REGION:-us-central1}}
 REPOSITORY=${REPOSITORY:-super-over-alchemy}
-RAW_BUCKET=${RAW_BUCKET:-alchemy-super-over-inputs}
-PROCESSED_BUCKET=${PROCESSED_BUCKET:-alchemy-super-over-outputs}
+RAW_BUCKET=${RAW_BUCKET:-${RAW_UPLOADS_BUCKET_NAME:-alchemy-super-over-inputs}}
+PROCESSED_BUCKET=${PROCESSED_BUCKET:-${PROCESSED_OUTPUTS_BUCKET_NAME:-alchemy-super-over-outputs}}
 
 # --- Main Import Logic ---
 main() {
@@ -54,21 +52,37 @@ main() {
 
     log_info "Starting import process. This may take a few minutes..."
 
+    # Function to safely import (ignore errors if resource already in state)
+    safe_import() {
+        local resource=$1
+        local id=$2
+        log_info "Importing $resource..."
+        if terraform import "$resource" "$id" 2>&1 | grep -q "Resource already managed"; then
+            log_info "  Already in state, skipping."
+        fi
+    }
+
     # Import core resources
-    terraform import google_artifact_registry_repository.repository "projects/$PROJECT_ID/locations/$REGION/repositories/$REPOSITORY"
-    terraform import google_pubsub_topic.video_processor_jobs video-processor-jobs
-    terraform import google_pubsub_topic.audio_extractor_jobs audio-extractor-jobs
-    terraform import google_pubsub_topic.scene_analyzer_jobs scene-analyzer-jobs
-    terraform import google_pubsub_topic.media_inspector_jobs media-inspector-jobs
-    terraform import 'google_firestore_database.database' '(default)'
+    safe_import "google_artifact_registry_repository.repository" "projects/$PROJECT_ID/locations/$REGION/repositories/$REPOSITORY"
+    safe_import "google_compute_global_address.frontend_ip" "projects/$PROJECT_ID/global/addresses/frontend-lb-ip"
+    safe_import "google_compute_managed_ssl_certificate.frontend_ssl" "projects/$PROJECT_ID/global/sslCertificates/frontend-ssl-cert"
+    safe_import "google_pubsub_topic.scene_analysis_jobs" "projects/$PROJECT_ID/topics/scene-analysis-jobs"
+    safe_import "google_firestore_database.database" "projects/$PROJECT_ID/databases/(default)"
 
     # Import service accounts (from module)
-    terraform import module.service_accounts.google_service_account.pubsub_invoker "projects/$PROJECT_ID/serviceAccounts/pubsub-invoker@$PROJECT_ID.iam.gserviceaccount.com"
-    terraform import module.service_accounts.google_service_account.services "projects/$PROJECT_ID/serviceAccounts/super-over-services@$PROJECT_ID.iam.gserviceaccount.com"
+    safe_import "module.service_accounts.google_service_account.pubsub_invoker" "projects/$PROJECT_ID/serviceAccounts/pubsub-invoker@$PROJECT_ID.iam.gserviceaccount.com"
+    safe_import "module.service_accounts.google_service_account.services" "projects/$PROJECT_ID/serviceAccounts/super-over-services@$PROJECT_ID.iam.gserviceaccount.com"
 
     # Import storage buckets (from module)
-    terraform import module.storage.google_storage_bucket.raw_videos "$RAW_BUCKET"
-    terraform import module.storage.google_storage_bucket.processed_outputs "$PROCESSED_BUCKET"
+    safe_import "module.storage.google_storage_bucket.raw_videos" "$RAW_BUCKET"
+    safe_import "module.storage.google_storage_bucket.processed_outputs" "$PROCESSED_BUCKET"
+
+    # Import Cloud Run services
+    safe_import "module.frontend_service.google_cloud_run_service.service" "locations/$REGION/namespaces/$PROJECT_ID/services/frontend-service"
+    safe_import "module.api_service.google_cloud_run_service.service" "locations/$REGION/namespaces/$PROJECT_ID/services/api-service"
+
+    # Import Cloud Run job
+    safe_import "module.scene_analyzer_worker.google_cloud_run_v2_job.job" "projects/$PROJECT_ID/locations/$REGION/jobs/scene-analyzer-worker"
 
     echo "=============================================="
     log_success "State import completed successfully!"

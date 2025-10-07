@@ -12,20 +12,19 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Configuration - can be overridden with environment variables
-PROJECT_ID=${PROJECT_ID:-$(gcloud config get-value project)}
-
-# Try to read region from terraform.tfvars, fallback to environment or default
-if [[ -f "terraform/terraform.tfvars" ]]; then
-    REGION=${REGION:-$(grep '^region' terraform/terraform.tfvars | cut -d'"' -f2 2>/dev/null || echo "us-central1")}
-else
-    REGION=${REGION:-us-central1}
+# Configuration - read from .env file
+if [[ -f ".env" ]]; then
+    # Source .env file to load variables
+    export $(grep -v '^#' .env | xargs)
 fi
+
+PROJECT_ID=${PROJECT_ID:-${GCP_PROJECT_ID:-$(gcloud config get-value project)}}
+REGION=${REGION:-${GCP_REGION:-us-central1}}
 
 REPOSITORY=${REPOSITORY:-super-over-alchemy}
 
 # Service definitions (service-name:directory-name)
-SERVICES="video-processor:services/video_processor audio-extractor:services/audio_extractor scene-analyzer:services/scene_analyzer media-inspector:services/media_inspector workflow-manager:services/workflow_manager job-creator:services/job_creator"
+SERVICES="frontend:frontend api-service:services/api_service scene-analyzer-worker:services/scene_analyzer_worker"
 
 # Functions
 log_info() {
@@ -115,10 +114,85 @@ create_service_dockerfile() {
     local service_name=$2
     local dockerfile_path="${service_dir}/Dockerfile"
 
-    # Convert directory path to Python module path (replace / with .)
-    local python_module_path=$(echo "$service_dir" | tr '/' '.')
+    if [[ "$service_name" == "frontend" ]]; then
+        # Create Next.js Dockerfile
+        cat > "$dockerfile_path" << EOF
+# Use Node.js 18 Alpine image
+FROM node:18-alpine AS base
 
-    cat > "$dockerfile_path" << EOF
+# Install dependencies only when needed
+FROM base AS deps
+# Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+# Install dependencies based on the preferred package manager
+COPY $service_dir/package.json $service_dir/package-lock.json* ./
+RUN npm ci
+
+# Rebuild the source code only when needed
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY $service_dir/ .
+
+# Next.js collects completely anonymous telemetry data about general usage.
+# Learn more here: https://nextjs.org/telemetry
+# Uncomment the following line in case you want to disable telemetry during the build.
+ENV NEXT_TELEMETRY_DISABLED 1
+
+RUN npm run build
+
+# Production image, copy all the files and run next
+FROM base AS runner
+WORKDIR /app
+
+ENV NODE_ENV production
+# Uncomment the following line in case you want to disable telemetry during runtime.
+ENV NEXT_TELEMETRY_DISABLED 1
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+COPY --from=builder /app/public ./public
+
+# Set the correct permission for prerender cache
+RUN mkdir .next
+RUN chown nextjs:nodejs .next
+
+# Automatically leverage output traces to reduce image size
+# https://nextjs.org/docs/advanced-features/output-file-tracing
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
+
+EXPOSE 3000
+
+ENV PORT 3000
+# set hostname to localhost
+ENV HOSTNAME "0.0.0.0"
+
+# server.js is created by next build from the standalone output
+# https://nextjs.org/docs/pages/api-reference/next-config-js/output
+CMD ["node", "server.js"]
+EOF
+    else
+        # Create Python service Dockerfile
+        # Convert directory path to Python module path (replace / with .)
+        local python_module_path=$(echo "$service_dir" | tr '/' '.')
+
+        # Determine if this is a worker or API service
+        local cmd_line
+        if [[ "$service_name" == *"worker"* ]]; then
+            # Worker service - runs as standalone Python script
+            cmd_line='CMD ["python", "-u", "'"$service_dir"'/main.py"]'
+        else
+            # API service - runs with uvicorn
+            cmd_line='CMD ["uvicorn", "'"$python_module_path"'.main:app", "--host", "0.0.0.0", "--port", "8080"]'
+        fi
+
+        cat > "$dockerfile_path" << EOF
 # Use an official Python runtime as a parent image
 FROM python:3.9-slim
 
@@ -132,6 +206,9 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 
 # Copy the common library code
 COPY common/ ./common/
+
+# Install the media_utils package if it exists
+RUN if [ -d "./common/media_utils" ]; then pip install --no-cache-dir ./common/media_utils; fi
 
 # Copy the specific service code
 COPY $service_dir/ ./$service_dir/
@@ -147,8 +224,9 @@ ENV PYTHONPATH=/app
 EXPOSE 8080
 
 # Command to run the specific service
-CMD ["uvicorn", "$python_module_path.main:app", "--host", "0.0.0.0", "--port", "8080"]
+$cmd_line
 EOF
+    fi
 
     log_success "Created Dockerfile for ${service_name}"
 }
@@ -157,16 +235,30 @@ update_cloud_run_service() {
     local service_name=$1
     local image_tag="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${service_name}:latest"
 
-    log_info "Updating Cloud Run service: ${service_name}-service..."
+    # Check if this is a worker (job) or a service
+    if [[ "$service_name" == *"worker"* ]]; then
+        log_info "Updating Cloud Run job: ${service_name}..."
 
-    if gcloud run deploy "${service_name}-service" \
-        --image="$image_tag" \
-        --region="$REGION" \
-        --platform=managed \
-        --quiet; then
-        log_success "Updated ${service_name}-service"
+        if gcloud run jobs update "${service_name}" \
+            --image="$image_tag" \
+            --region="$REGION" \
+            --quiet 2>/dev/null; then
+            log_success "Updated ${service_name} job"
+        else
+            log_warn "Failed to update ${service_name} job (may not exist yet - will be created by Terraform)"
+        fi
     else
-        log_warn "Failed to update ${service_name}-service (may not exist yet)"
+        log_info "Updating Cloud Run service: ${service_name}..."
+
+        if gcloud run services update "${service_name}" \
+            --image="$image_tag" \
+            --region="$REGION" \
+            --platform=managed \
+            --quiet 2>/dev/null; then
+            log_success "Updated ${service_name} service"
+        else
+            log_warn "Failed to update ${service_name} service (may not exist yet - will be created by Terraform)"
+        fi
     fi
 }
 
@@ -192,8 +284,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --help               Show this help message"
             echo ""
             echo "Environment Variables:"
-            echo "  PROJECT_ID           GCP project ID"
-            echo "  REGION              GCP region (default: from terraform.tfvars or us-central1)"
+            echo "  PROJECT_ID           GCP project ID (or set GCP_PROJECT_ID in .env)"
+            echo "  REGION              GCP region (or set GCP_REGION in .env, default: us-central1)"
             echo "  REPOSITORY          Artifact Registry repository (default: super-over-alchemy)"
             exit 0
             ;;

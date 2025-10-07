@@ -17,7 +17,7 @@ interface CreateSceneAnalyzerModalProps {
 export function CreateSceneAnalyzerModal({ open, onClose }: CreateSceneAnalyzerModalProps) {
   const [pipelineName, setPipelineName] = useState('');
   const [compressionRate, setCompressionRate] = useState<string>('720p');
-  const [chunkLength, setChunkLength] = useState<number>(30);
+  const [chunkLength, setChunkLength] = useState<string>('30');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -39,7 +39,7 @@ export function CreateSceneAnalyzerModal({ open, onClose }: CreateSceneAnalyzerM
         file: selectedFile,
         settings: {
           compressionRate,
-          chunkLength,
+          chunkLength: Math.max(parseInt(chunkLength) || 30, 10),
         },
       });
 
@@ -52,7 +52,7 @@ export function CreateSceneAnalyzerModal({ open, onClose }: CreateSceneAnalyzerM
       setPipelineName('');
       setSelectedFile(null);
       setCompressionRate('720p');
-      setChunkLength(30);
+      setChunkLength('30');
     } catch (error) {
       console.error('Failed to create pipeline:', error);
       alert('Failed to create pipeline. Please try again.');
@@ -67,7 +67,7 @@ export function CreateSceneAnalyzerModal({ open, onClose }: CreateSceneAnalyzerM
 
   return (
     <Portal>
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50" onClick={onClose}>
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-50" onClick={onClose}>
         <Card className="w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
           <div className="flex items-center gap-3">
@@ -84,7 +84,7 @@ export function CreateSceneAnalyzerModal({ open, onClose }: CreateSceneAnalyzerM
         <CardContent className="space-y-6">
           {/* Pipeline Name */}
           <div className="space-y-2">
-            <Label htmlFor="name">Pipeline Name</Label>
+            <Label htmlFor="name">Scene Analyzer Name</Label>
             <Input
               id="name"
               placeholder="e.g., Movie Trailer Analysis"
@@ -127,7 +127,7 @@ export function CreateSceneAnalyzerModal({ open, onClose }: CreateSceneAnalyzerM
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="z-[110]">
                     <SelectItem value="240p">240p</SelectItem>
                     <SelectItem value="360p">360p</SelectItem>
                     <SelectItem value="480p">480p</SelectItem>
@@ -143,10 +143,10 @@ export function CreateSceneAnalyzerModal({ open, onClose }: CreateSceneAnalyzerM
                 <Input
                   id="chunk"
                   type="number"
-                  min="1"
+                  min="10"
                   max="60"
                   value={chunkLength}
-                  onChange={(e) => setChunkLength(parseInt(e.target.value) || 30)}
+                  onChange={(e) => setChunkLength(e.target.value)}
                 />
               </div>
             </div>
@@ -162,7 +162,7 @@ export function CreateSceneAnalyzerModal({ open, onClose }: CreateSceneAnalyzerM
               disabled={!canSubmit}
               className="flex-1"
             >
-              {isSubmitting ? 'Creating...' : 'Create Pipeline'}
+              {isSubmitting ? 'Creating...' : 'Create Scene Analyzer'}
             </Button>
           </div>
         </CardContent>

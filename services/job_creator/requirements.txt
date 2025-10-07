@@ -1,7 +1,0 @@
-# FastAPI and web server dependencies
-fastapi==0.104.*
-uvicorn==0.24.*
-
-# Dependencies for the job creator logic
-google-cloud-firestore==2.*
-google-cloud-workflows==1.*

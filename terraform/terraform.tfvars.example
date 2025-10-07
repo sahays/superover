@@ -1,16 +1,5 @@
-# Copy this file to terraform.tfvars and fill in your values
-
-# Required variables
-project_id                      = "your-gcp-project-id"
-raw_videos_bucket_name         = "your-project-raw-videos"
-processed_outputs_bucket_name  = "your-project-processed-outputs"
-gemini_api_key                 = "your-gemini-api-key"
-
-# Optional variables (defaults shown)
-region                         = "us-central1"
-zone                          = "us-central1-a"
-artifact_registry_repository  = "super-over-alchemy"
-gemini_model                  = "models/gemini-1.5-pro-latest"
-chunk_duration                = 60
-compress_resolution           = ""
-workflow_name                 = "pipeline-orchestrator"
+# NOTE: This infrastructure now reads all configuration from the ../.env file
+# You no longer need terraform.tfvars - all variables are read from .env
+#
+# Please configure your environment variables in the ../.env file instead.
+# See the ../.env file for all available configuration options.

@@ -85,8 +85,8 @@ destroy_infrastructure() {
 
     cd terraform
 
-    if [[ ! -f "terraform.tfvars" ]]; then
-        log_error "terraform/terraform.tfvars not found"
+    if [[ ! -f "../.env" ]]; then
+        log_error ".env file not found"
         exit 1
     fi
 

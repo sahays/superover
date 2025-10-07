@@ -10,11 +10,14 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 # Copy the common library code
 COPY common/ ./common/
 
+# Install the media_utils package if it exists
+RUN if [ -d "./common/media_utils" ]; then pip install --no-cache-dir ./common/media_utils; fi
+
 # Copy the specific service code
-COPY services/workflow_manager/ ./services/workflow_manager/
+COPY services/scene_analyzer_worker/ ./services/scene_analyzer_worker/
 
 # Copy and install service-specific requirements
-COPY services/workflow_manager/requirements.txt ./service_requirements.txt
+COPY services/scene_analyzer_worker/requirements.txt ./service_requirements.txt
 RUN pip install --no-cache-dir -r service_requirements.txt
 
 # Set the Python path to include the current directory
@@ -24,4 +27,4 @@ ENV PYTHONPATH=/app
 EXPOSE 8080
 
 # Command to run the specific service
-CMD ["uvicorn", "services.workflow_manager.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["python", "-u", "services/scene_analyzer_worker/main.py"]
