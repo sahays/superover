@@ -1,54 +1,40 @@
-# Ignore large files and directories that don't need to be in containers
-inputs/
-outputs/
-.git/
-.venv/
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
+*.py[cod]
+*$py.class
 *.so
-.coverage
-.pytest_cache/
-.DS_Store
-*.mp4
-*.avi
-*.mov
-*.mkv
-*.flv
-*.wmv
-*.webm
-*.m4v
-*.3gp
-*.wav
-*.mp3
-*.flac
-*.aac
-*.ogg
+.Python
+venv/
+env/
+ENV/
+.venv
 
-# Terraform files
-terraform/
-*.tfstate
-*.tfstate.*
-*.tfvars
-.terraform/
-
-# IDE files
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 
+# Storage
+storage/temp/
+v0/
+
+# Environment
+.env
+.env.local
+
+# Frontend
+frontend/
+node_modules/
+
+# Tests
+tests/
+.pytest_cache/
+
+# Git
+.git/
+.gitignore
+
 # Documentation
+README.md
 docs/
-*.md
-!requirements.txt
-
-# Scripts (not needed in container)
-scripts/
-
-# Temporary files
-*.tmp
-*.temp
-.tmp/

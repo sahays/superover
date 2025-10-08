@@ -1,5 +1,0 @@
-# NOTE: This infrastructure now reads all configuration from the ../.env file
-# You no longer need terraform.tfvars - all variables are read from .env
-#
-# Please configure your environment variables in the ../.env file instead.
-# See the ../.env file for all available configuration options.
