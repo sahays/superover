@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { videoApi } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { formatBytes, formatDuration } from '@/lib/utils'
 
 export default function VideoDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -67,7 +68,7 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto max-w-6xl px-4 py-8">
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <Link href="/">
@@ -131,31 +132,52 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
                 <CardHeader>
                   <CardTitle>Processing Info</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  {manifest.chunks && (
-                    <div>
-                      <h4 className="font-medium">Chunks</h4>
-                      <p className="text-sm text-muted-foreground">
-                        {manifest.chunks.count} chunks × {manifest.chunks.duration_per_chunk}s each
-                      </p>
-                    </div>
-                  )}
-                  {manifest.compressed && (
-                    <div>
-                      <h4 className="font-medium">Compressed</h4>
-                      <p className="text-sm text-muted-foreground font-mono text-xs">
-                        {manifest.compressed.gcs_path}
-                      </p>
-                    </div>
-                  )}
-                  {manifest.audio && (
-                    <div>
-                      <h4 className="font-medium">Audio</h4>
-                      <p className="text-sm text-muted-foreground font-mono text-xs">
-                        {manifest.audio.gcs_path}
-                      </p>
-                    </div>
-                  )}
+                <CardContent>
+                  <Accordion type="single" collapsible className="w-full">
+                    {manifest.chunks && (
+                      <AccordionItem value="chunks">
+                        <AccordionTrigger>
+                          Chunks ({manifest.chunks.count})
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          <div className="space-y-2">
+                            <p className="text-sm text-muted-foreground">
+                              {manifest.chunks.count} chunks × {manifest.chunks.duration_per_chunk}s each
+                            </p>
+                            {manifest.chunks.items && (
+                              <div className="space-y-1">
+                                {manifest.chunks.items.map((chunk: any, idx: number) => (
+                                  <div key={idx} className="text-xs font-mono text-muted-foreground">
+                                    Chunk {idx}: {chunk.filename}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    )}
+                    {manifest.compressed && (
+                      <AccordionItem value="compressed">
+                        <AccordionTrigger>Compressed Video</AccordionTrigger>
+                        <AccordionContent>
+                          <p className="text-sm text-muted-foreground font-mono break-all">
+                            {manifest.compressed.gcs_path}
+                          </p>
+                        </AccordionContent>
+                      </AccordionItem>
+                    )}
+                    {manifest.audio && (
+                      <AccordionItem value="audio">
+                        <AccordionTrigger>Audio</AccordionTrigger>
+                        <AccordionContent>
+                          <p className="text-sm text-muted-foreground font-mono break-all">
+                            {manifest.audio.gcs_path}
+                          </p>
+                        </AccordionContent>
+                      </AccordionItem>
+                    )}
+                  </Accordion>
                 </CardContent>
               </Card>
             )}
@@ -164,22 +186,24 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
             {results && results.length > 0 && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Analysis Results</CardTitle>
-                  <CardDescription>{results.length} results found</CardDescription>
+                  <CardTitle>Scene Analysis</CardTitle>
+                  <CardDescription>{results.length} chunks analyzed</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    {results.map((result: any) => (
-                      <div key={result.result_id} className="rounded-lg border p-4">
-                        <h4 className="font-medium capitalize">
-                          {result.result_type.replace('_', ' ')}
-                        </h4>
-                        <pre className="mt-2 overflow-x-auto rounded bg-slate-100 p-3 text-xs dark:bg-slate-800">
-                          {JSON.stringify(result.result_data, null, 2)}
-                        </pre>
-                      </div>
+                  <Accordion type="single" collapsible className="w-full">
+                    {results.map((result: any, idx: number) => (
+                      <AccordionItem key={result.result_id} value={`result-${idx}`}>
+                        <AccordionTrigger>
+                          {result.result_type.replace('_', ' ')} - Chunk {idx}
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          <pre className="overflow-x-auto rounded bg-slate-100 p-3 text-xs dark:bg-slate-800">
+                            {JSON.stringify(result.result_data, null, 2)}
+                          </pre>
+                        </AccordionContent>
+                      </AccordionItem>
                     ))}
-                  </div>
+                  </Accordion>
                 </CardContent>
               </Card>
             )}

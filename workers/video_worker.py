@@ -224,6 +224,14 @@ class VideoWorker:
 
                 logger.info(f"Analyzing chunk {chunk_index + 1}/{len(chunks)}")
 
+                # Update progress in metadata
+                self.db.update_video_metadata(video_id, {
+                    "analysis_progress": {
+                        "completed_chunks": chunk_index,
+                        "total_chunks": len(chunks)
+                    }
+                })
+
                 # Download chunk from GCS
                 local_chunk_path = self.temp_dir / f"{video_id}_{chunk['filename']}"
                 self.storage.download_file(chunk_gcs, local_chunk_path)
@@ -252,6 +260,14 @@ class VideoWorker:
                         result_data=result
                     )
                     logger.info(f"Saved analysis result {result_id} for chunk {chunk_index}")
+
+                    # Update progress after successful analysis
+                    self.db.update_video_metadata(video_id, {
+                        "analysis_progress": {
+                            "completed_chunks": chunk_index + 1,
+                            "total_chunks": len(chunks)
+                        }
+                    })
 
                 finally:
                     # Clean up chunk file

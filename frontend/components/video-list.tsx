@@ -101,7 +101,7 @@ function VideoCard({ video, onDelete }: { video: Video; onDelete: () => void }) 
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <StatusBadge status={video.status} />
+              <StatusBadge status={video.status} video={video} />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
                   <Button
@@ -129,10 +129,15 @@ function VideoCard({ video, onDelete }: { video: Video; onDelete: () => void }) 
         </CardHeader>
         <CardContent>
           <div className="space-y-2 text-sm">
-            {video.metadata?.duration && (
+            {video.metadata?.duration && !isNaN(video.metadata.duration) && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Clock className="h-4 w-4" />
                 {formatDuration(video.metadata.duration)}
+              </div>
+            )}
+            {video.metadata?.width && video.metadata?.height && (
+              <div className="text-muted-foreground">
+                {video.metadata.width} × {video.metadata.height}
               </div>
             )}
             {video.error_message && (
@@ -147,7 +152,7 @@ function VideoCard({ video, onDelete }: { video: Video; onDelete: () => void }) 
   )
 }
 
-function StatusBadge({ status }: { status: VideoStatus }) {
+function StatusBadge({ status, video }: { status: VideoStatus; video?: Video }) {
   const config = {
     [VideoStatus.UPLOADED]: {
       icon: Clock,
@@ -200,10 +205,20 @@ function StatusBadge({ status }: { status: VideoStatus }) {
   const { icon: Icon, label, className } = statusConfig
   const animate = 'animate' in statusConfig ? statusConfig.animate : false
 
+  // Calculate progress for analyzing status
+  let displayLabel = label
+  if (status === VideoStatus.ANALYZING && video?.metadata?.analysis_progress) {
+    const { completed_chunks, total_chunks } = video.metadata.analysis_progress
+    if (total_chunks > 0) {
+      const percentage = Math.round((completed_chunks / total_chunks) * 100)
+      displayLabel = `Analyzing ${percentage}%`
+    }
+  }
+
   return (
     <div className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${className}`}>
       <Icon className={`h-3.5 w-3.5 ${animate ? 'animate-spin' : ''}`} />
-      {label}
+      {displayLabel}
     </div>
   )
 }
