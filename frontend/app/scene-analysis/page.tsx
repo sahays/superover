@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Video as VideoIcon, FileVideo, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
-import { videoApi } from '@/lib/api-client'
+import { videoApi, mediaApi } from '@/lib/api-client'
 import { Video, VideoStatus } from '@/lib/types'
 import { VideoPicker } from '@/components/video-picker'
 import { VideoList } from '@/components/video-list'
@@ -14,24 +14,27 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 export default function SceneAnalysisPage() {
   const [showPicker, setShowPicker] = useState(false)
 
-  const { data: scenes, isLoading, refetch } = useQuery({
-    queryKey: ['scenes'],
-    queryFn: () => videoApi.listVideos(),
+  const { data: videosWithJobs, isLoading, refetch } = useQuery({
+    queryKey: ['videos-with-jobs-scenes'],
+    queryFn: () => mediaApi.getAllVideosWithJobs(),
     refetchInterval: (query) => {
-      // Auto-refresh if any video is being processed
-      const activeStatuses = [
-        VideoStatus.EXTRACTING_METADATA,
-        VideoStatus.EXTRACTING_AUDIO,
-        VideoStatus.COMPRESSING,
-        VideoStatus.CHUNKING,
-        VideoStatus.ANALYZING,
-      ]
-      const hasActiveVideos = query.state.data?.some(
-        (v: Video) => activeStatuses.includes(v.status)
+      const hasActiveJobs = query.state.data?.some((v: any) =>
+        v.jobs.some((j: any) => ['pending', 'processing'].includes(j.status))
       )
-      return hasActiveVideos ? 3000 : false // 3 seconds
+      return hasActiveJobs ? 3000 : false
     },
   })
+
+  // Adapt the new data structure to the existing VideoList component
+  const scenes: Video[] = videosWithJobs?.map((v: any) => ({
+    video_id: v.video_id,
+    filename: v.filename,
+    gcs_path: v.gcs_path,
+    status: v.status || VideoStatus.UPLOADED, // Use the video's actual status
+    created_at: v.created_at,
+    updated_at: v.updated_at,
+    metadata: v.metadata,
+  })) || []
 
   const handleVideoSelect = async (videoId: string, isCompressed: boolean, gcsPath: string, chunkDuration: number) => {
     // Start scene analysis for the selected (already compressed) video

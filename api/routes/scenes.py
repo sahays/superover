@@ -16,7 +16,7 @@ from api.models.schemas import (
     ResultResponse,
 )
 from libs.storage import get_storage
-from libs.database import get_db, VideoStatus, TaskStatus
+from libs.database import get_db, VideoStatus, TaskStatus, SceneJobStatus
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/scenes", tags=["scenes"])
@@ -117,41 +117,44 @@ async def get_video(video_id: str):
 @router.get("", response_model=List[VideoResponse])
 async def list_videos(
     limit: int = 50,
-    status_filter: VideoStatus = None
+    status_filter: SceneJobStatus = None
 ):
     """
-    List videos that have scene jobs.
-
-    This endpoint only returns videos that have been through the scene workflow,
-    not just uploaded/media-processed videos.
+    List scene jobs with their associated video information.
     """
     try:
         db = get_db()
 
-        # Get all scene jobs to find videos with scene data
-        job_docs = db.scene_jobs.limit(limit * 2).stream()  # Get more jobs since multiple per video
-        video_ids_with_jobs = set()
+        # Base query for scene jobs
+        query = db.scene_jobs
+
+        # Apply status filter if provided
+        if status_filter:
+            query = query.where("status", "==", status_filter.value)
+
+        # Order by creation date and limit results
+        job_docs = query.order_by("created_at", direction="DESCENDING").limit(limit).stream()
+
+        # Combine job data with video data
+        videos_with_jobs = []
         for doc in job_docs:
             job = doc.to_dict()
-            if job.get("video_id"):
-                video_ids_with_jobs.add(job["video_id"])
-
-        # Get videos that have scene jobs
-        videos = []
-        for video_id in video_ids_with_jobs:
-            video = db.get_video(video_id)
+            video = db.get_video(job["video_id"])
             if video:
-                # Apply status filter if provided
-                if status_filter is None or video.get("status") == status_filter:
-                    videos.append(video)
+                # Combine video info with job status
+                response_data = {
+                    "video_id": video["video_id"],
+                    "filename": video["filename"],
+                    "gcs_path": video["gcs_path"],
+                    "status": job["status"],  # Use job status as the primary status
+                    "created_at": job["created_at"],
+                    "updated_at": job["updated_at"],
+                    "metadata": video.get("metadata", {}),
+                    "error_message": job.get("error_message"),
+                }
+                videos_with_jobs.append(response_data)
 
-        # Sort by created_at descending
-        videos.sort(key=lambda v: v.get("created_at", 0), reverse=True)
-
-        # Limit results
-        videos = videos[:limit]
-
-        return [VideoResponse(**v) for v in videos]
+        return [VideoResponse(**v) for v in videos_with_jobs]
 
     except Exception as e:
         logger.error(f"Failed to list videos: {e}")

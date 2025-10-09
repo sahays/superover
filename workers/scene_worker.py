@@ -14,7 +14,7 @@ import time
 import traceback
 import uuid
 from config import settings
-from libs.database import get_db, TaskStatus, VideoStatus
+from libs.database import get_db, TaskStatus, SceneJobStatus
 from libs.storage import get_storage
 from libs.video_processing import (
     extract_metadata,
@@ -86,9 +86,13 @@ class SceneWorker:
                         TaskStatus.FAILED,
                         error_message=str(e)
                     )
-                    # Also update the video status to failed
-                    self.db.update_video_status(task["video_id"], VideoStatus.FAILED)
-
+                    # Also update the scene job status to failed
+                    if task.get("scene_job_id"):
+                        self.db.update_scene_job_status(
+                            task["scene_job_id"],
+                            SceneJobStatus.FAILED,
+                            error_message=str(e)
+                        )
         except Exception as e:
             logger.error(f"Error polling tasks: {e}")
             logger.error(traceback.format_exc())
@@ -96,8 +100,11 @@ class SceneWorker:
     def _process_task(self, task: dict):
         """Process a single task."""
         task_id = task["task_id"]
-        task_type = task["task_type"]
         video_id = task["video_id"]
+        scene_job_id = task.get("scene_job_id")
+
+        if not scene_job_id:
+            raise ValueError(f"Task {task_id} is missing a scene_job_id")
 
         logger.info(f"Processing task {task_id}: {task_type} for video {video_id}")
 
@@ -121,7 +128,11 @@ class SceneWorker:
         """
         task_id = task["task_id"]
         video_id = task["video_id"]
+        scene_job_id = task["scene_job_id"]
         input_data = task.get("input_data", {})
+
+        # Update job status to processing
+        self.db.update_scene_job_status(scene_job_id, SceneJobStatus.PROCESSING)
 
         compressed_video_path = input_data.get("compressed_video_path")
         chunk_duration = input_data.get("chunk_duration", 30)
@@ -134,27 +145,39 @@ class SceneWorker:
         if not video:
             raise ValueError(f"Video not found: {video_id}")
 
-        if not compressed_video_path:
-            raise ValueError(f"No compressed_video_path provided for video {video_id}")
+        # Determine which video path to use (compressed or original)
+        video_path_to_process = compressed_video_path
+        if not video_path_to_process:
+            logger.warning(f"No compressed video path provided for {video_id}. Falling back to original video.")
+            video_path_to_process = video.get("gcs_path")
 
-        # Download compressed video from GCS
-        local_video_path = self.temp_dir / f"{video_id}_compressed.mp4"
-        self.storage.download_file(compressed_video_path, local_video_path)
+        if not video_path_to_process:
+            raise ValueError(f"No video path available for processing video {video_id}")
+
+        logger.info(f"Processing video from GCS path: {video_path_to_process}")
+
+        # Download the video from GCS
+        file_ext = Path(video_path_to_process).suffix or ".mp4"
+        local_video_path = self.temp_dir / f"{video_id}_source{file_ext}"
+        self.storage.download_file(video_path_to_process, local_video_path)
 
         processed_files = [local_video_path]
         manifest_data = {
-            "compressed_path": compressed_video_path
+            "processed_path": video_path_to_process
         }
 
         try:
             # ===== STEP 1: Chunk the video (if needed) =====
             if should_chunk and chunk_duration > 0:
                 logger.info(f"[STEP 1/2] Chunking video into {chunk_duration}s segments for {video_id}")
-                self.db.update_video_status(video_id, VideoStatus.CHUNKING)
+                self.db.update_scene_job_status(scene_job_id, SceneJobStatus.PROCESSING, {"step": "chunking"})
 
                 chunks_dir = self.temp_dir / f"{video_id}_chunks"
-                # TODO: Pass chunk_duration to chunk_video function
-                chunks = chunk_video(local_video_path, chunks_dir)
+                chunks = chunk_video(
+                    input_path=local_video_path,
+                    output_dir=chunks_dir,
+                    chunk_duration=chunk_duration
+                )
 
                 # Upload chunks to GCS
                 for chunk in chunks:
@@ -182,7 +205,7 @@ class SceneWorker:
 
             # ===== STEP 2: Analyze each chunk with Gemini =====
             logger.info(f"[STEP 2/2] Analyzing {len(chunks)} chunk(s) with Gemini for {video_id}")
-            self.db.update_video_status(video_id, VideoStatus.ANALYZING)
+            self.db.update_scene_job_status(scene_job_id, SceneJobStatus.PROCESSING, {"step": "analyzing"})
 
             # Get the prompt text once for all chunks
             prompt_text = self.analyzer.get_prompt_text()
@@ -194,12 +217,16 @@ class SceneWorker:
                 logger.info(f"Analyzing chunk {chunk_index + 1}/{len(chunks)}")
 
                 # Update progress in metadata
-                self.db.update_video_metadata(video_id, {
-                    "scene_analysis_progress": {
-                        "completed_chunks": chunk_index,
-                        "total_chunks": len(chunks)
+                self.db.update_scene_job_status(
+                    scene_job_id,
+                    SceneJobStatus.PROCESSING,
+                    results={
+                        "progress": {
+                            "completed_chunks": chunk_index,
+                            "total_chunks": len(chunks)
+                        }
                     }
-                })
+                )
 
                 # Download chunk from GCS
                 local_chunk_path = self.temp_dir / f"{video_id}_{chunk['filename']}"
@@ -231,30 +258,23 @@ class SceneWorker:
                     logger.info(f"Saved analysis result {result_id} for chunk {chunk_index}")
 
                     # Update progress after successful scene analysis
-                    self.db.update_video_metadata(video_id, {
-                        "scene_analysis_progress": {
-                            "completed_chunks": chunk_index + 1,
-                            "total_chunks": len(chunks)
+                    self.db.update_scene_job_status(
+                        scene_job_id,
+                        SceneJobStatus.PROCESSING,
+                        results={
+                            "progress": {
+                                "completed_chunks": chunk_index + 1,
+                                "total_chunks": len(chunks)
+                            }
                         }
-                    })
+                    )
 
                 finally:
                     # Clean up chunk file
                     if local_chunk_path.exists():
                         local_chunk_path.unlink()
 
-            # Update video status to completed
-            self.db.update_video_status(video_id, VideoStatus.COMPLETED)
-
-            # Mark task as completed
-            self.db.update_task_status(
-                task_id,
-                TaskStatus.COMPLETED,
-                result_data={
-                    "manifest_created": True,
-                    "chunks_analyzed": len(chunks)
-                }
-            )
+                        # Update scene job status to completed            self.db.update_scene_job_status(                scene_job_id,                SceneJobStatus.COMPLETED,                results={                    "manifest_created": True,                    "chunks_analyzed": len(chunks)                }            )            # Mark task as completed            self.db.update_task_status(                task_id,                TaskStatus.COMPLETED,                result_data={                    "message": "Scene job completed successfully"                }            )
 
             logger.info(f"Successfully processed scene for video {video_id}")
 

@@ -239,6 +239,7 @@ async def get_all_videos_with_jobs():
                 "gcs_path": video.get("gcs_path"),
                 "size_bytes": video.get("size_bytes"),
                 "metadata": video.get("metadata"),
+                "status": video.get("status"),  # Include the video's top-level status
                 "jobs": [MediaJobResponse(**job) for job in jobs],
                 "hasCompressed": has_compressed
             })
