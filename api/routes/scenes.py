@@ -372,20 +372,20 @@ async def delete_scene(video_id: str):
         manifest = db.get_manifest(video_id)
         if manifest:
             # Delete compressed video from scene workflow
-            if manifest.get("compressed", {}).get("gcs_path"):
-                storage.delete_file(manifest["compressed"]["gcs_path"])
-                logger.info(f"Deleted compressed video: {manifest['compressed']['gcs_path']}")
+            if manifest.get("compressed_path"):
+                storage.delete_file(manifest["compressed_path"])
+                logger.info(f"Deleted compressed video: {manifest['compressed_path']}")
 
             # Delete chunks from scene workflow
-            for chunk in manifest.get("chunks", {}).get("items", []):
+            for chunk in manifest.get("chunks", []):
                 if chunk.get("gcs_path"):
                     storage.delete_file(chunk["gcs_path"])
                     logger.info(f"Deleted chunk: {chunk['gcs_path']}")
 
             # Delete audio from scene workflow
-            if manifest.get("audio", {}).get("gcs_path"):
-                storage.delete_file(manifest["audio"]["gcs_path"])
-                logger.info(f"Deleted audio: {manifest['audio']['gcs_path']}")
+            if manifest.get("audio_path"):
+                storage.delete_file(manifest["audio_path"])
+                logger.info(f"Deleted audio: {manifest['audio_path']}")
 
         # Reset video status to uploaded (preserving the video record and original file)
         db.update_video_status(video_id, VideoStatus.UPLOADED)
