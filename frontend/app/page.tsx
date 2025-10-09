@@ -1,148 +1,159 @@
 'use client'
 
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Video as VideoIcon, Upload, PlayCircle, AlertCircle } from 'lucide-react'
-import { videoApi } from '@/lib/api-client'
-import { Video, VideoStatus } from '@/lib/types'
-import { UploadVideo } from '@/components/upload-video'
-import { VideoList } from '@/components/video-list'
+import { Video as VideoIcon, Film, Sparkles, ArrowRight } from 'lucide-react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 export default function HomePage() {
-  const [showUpload, setShowUpload] = useState(false)
-
-  const { data: videos, isLoading, error, refetch } = useQuery({
-    queryKey: ['videos'],
-    queryFn: () => videoApi.listVideos(),
-    refetchInterval: (query) => {
-      // Auto-refresh if any video is being processed
-      const activeStatuses = [
-        VideoStatus.EXTRACTING_METADATA,
-        VideoStatus.EXTRACTING_AUDIO,
-        VideoStatus.COMPRESSING,
-        VideoStatus.CHUNKING,
-        VideoStatus.ANALYZING,
-      ]
-      const hasActiveVideos = query.state.data?.some(
-        (v: Video) => activeStatuses.includes(v.status)
-      )
-      return hasActiveVideos ? 3000 : false // 3 seconds
-    },
-  })
-
-  const handleUploadComplete = () => {
-    setShowUpload(false)
-    refetch()
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
       {/* Header */}
       <header className="border-b bg-white/50 backdrop-blur-sm dark:bg-slate-900/50">
         <div className="container mx-auto max-w-6xl px-4 py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <VideoIcon className="h-6 w-6" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold">Super Over Alchemy</h1>
-                <p className="text-sm text-muted-foreground">AI-Powered Video Analysis</p>
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <VideoIcon className="h-6 w-6" />
             </div>
-            <Button onClick={() => setShowUpload(true)} size="lg">
-              <Upload className="mr-2 h-4 w-4" />
-              Upload Video
-            </Button>
+            <div>
+              <h1 className="text-2xl font-bold">Super Over Alchemy</h1>
+              <p className="text-sm text-muted-foreground">AI-Powered Video Processing Platform</p>
+            </div>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto max-w-6xl px-4 py-8">
-        {showUpload ? (
-          <div className="mx-auto max-w-2xl">
+      <main className="container mx-auto max-w-6xl px-4 py-12">
+        <div className="text-center mb-12">
+          <h2 className="text-4xl font-bold mb-4">Choose Your Workflow</h2>
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+            Select the video processing workflow that fits your needs
+          </p>
+        </div>
+
+        <div className="grid gap-8 md:grid-cols-2 max-w-5xl mx-auto">
+          {/* Video Analysis Workflow */}
+          <Card className="relative overflow-hidden transition hover:shadow-lg">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-500/20 to-transparent rounded-bl-full" />
+            <CardHeader>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-300">
+                  <Sparkles className="h-6 w-6" />
+                </div>
+                <CardTitle className="text-2xl">Video Analysis</CardTitle>
+              </div>
+              <CardDescription className="text-base">
+                AI-powered scene analysis with Gemini
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <ul className="space-y-3 text-sm text-muted-foreground">
+                <li className="flex items-start gap-2">
+                  <ArrowRight className="h-4 w-4 mt-0.5 text-purple-600 flex-shrink-0" />
+                  <span>Upload videos for intelligent scene analysis</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <ArrowRight className="h-4 w-4 mt-0.5 text-purple-600 flex-shrink-0" />
+                  <span>Automatic video chunking and processing</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <ArrowRight className="h-4 w-4 mt-0.5 text-purple-600 flex-shrink-0" />
+                  <span>Gemini AI analyzes each scene for content</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <ArrowRight className="h-4 w-4 mt-0.5 text-purple-600 flex-shrink-0" />
+                  <span>Get structured analysis results</span>
+                </li>
+              </ul>
+              <Link href="/analysis" className="block">
+                <Button className="w-full mt-4" size="lg">
+                  Start Video Analysis
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+
+          {/* Media Processing Workflow */}
+          <Card className="relative overflow-hidden transition hover:shadow-lg">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/20 to-transparent rounded-bl-full" />
+            <CardHeader>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300">
+                  <Film className="h-6 w-6" />
+                </div>
+                <CardTitle className="text-2xl">Media Processing</CardTitle>
+              </div>
+              <CardDescription className="text-base">
+                Professional video compression and audio extraction
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <ul className="space-y-3 text-sm text-muted-foreground">
+                <li className="flex items-start gap-2">
+                  <ArrowRight className="h-4 w-4 mt-0.5 text-blue-600 flex-shrink-0" />
+                  <span>Extract comprehensive video metadata</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <ArrowRight className="h-4 w-4 mt-0.5 text-blue-600 flex-shrink-0" />
+                  <span>Compress videos to multiple resolutions (480p, 720p, 1080p)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <ArrowRight className="h-4 w-4 mt-0.5 text-blue-600 flex-shrink-0" />
+                  <span>Extract audio in MP3, AAC, or WAV format</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <ArrowRight className="h-4 w-4 mt-0.5 text-blue-600 flex-shrink-0" />
+                  <span>Track processing jobs with real-time progress</span>
+                </li>
+              </ul>
+              <Link href="/media" className="block">
+                <Button className="w-full mt-4" size="lg" variant="outline">
+                  Start Media Processing
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Features Section */}
+        <div className="mt-16 text-center">
+          <h3 className="text-2xl font-bold mb-8">Platform Features</h3>
+          <div className="grid gap-6 md:grid-cols-3 max-w-4xl mx-auto">
             <Card>
               <CardHeader>
-                <CardTitle>Upload Video</CardTitle>
-                <CardDescription>
-                  Upload a video file to analyze with Gemini AI
-                </CardDescription>
+                <CardTitle className="text-lg">Cloud Storage</CardTitle>
               </CardHeader>
               <CardContent>
-                <UploadVideo
-                  onComplete={handleUploadComplete}
-                  onCancel={() => setShowUpload(false)}
-                />
+                <p className="text-sm text-muted-foreground">
+                  All files stored securely in Google Cloud Storage
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Background Processing</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  Dedicated workers process your videos asynchronously
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Real-time Updates</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  Track progress with live status updates and notifications
+                </p>
               </CardContent>
             </Card>
           </div>
-        ) : (
-          <div className="space-y-6">
-            {/* Stats */}
-            <div className="grid gap-4 md:grid-cols-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>Total Videos</CardDescription>
-                  <CardTitle className="text-3xl">{videos?.length || 0}</CardTitle>
-                </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>Processing</CardDescription>
-                  <CardTitle className="text-3xl">
-                    {videos?.filter((v: Video) =>
-                      [
-                        VideoStatus.EXTRACTING_METADATA,
-                        VideoStatus.EXTRACTING_AUDIO,
-                        VideoStatus.COMPRESSING,
-                        VideoStatus.CHUNKING
-                      ].includes(v.status)
-                    ).length || 0}
-                  </CardTitle>
-                </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>Analyzing</CardDescription>
-                  <CardTitle className="text-3xl">
-                    {videos?.filter((v: Video) => v.status === VideoStatus.ANALYZING).length || 0}
-                  </CardTitle>
-                </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>Completed</CardDescription>
-                  <CardTitle className="text-3xl">
-                    {videos?.filter((v: Video) => v.status === VideoStatus.COMPLETED).length || 0}
-                  </CardTitle>
-                </CardHeader>
-              </Card>
-            </div>
-
-            {/* Video List */}
-            {error ? (
-              <Card>
-                <CardContent className="flex items-center justify-center py-12">
-                  <div className="text-center">
-                    <AlertCircle className="mx-auto h-12 w-12 text-destructive" />
-                    <h3 className="mt-4 text-lg font-semibold">Error loading videos</h3>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      {error instanceof Error ? error.message : 'Unknown error'}
-                    </p>
-                    <Button onClick={() => refetch()} className="mt-4" variant="outline">
-                      Try Again
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <VideoList videos={videos || []} isLoading={isLoading} onRefresh={refetch} />
-            )}
-          </div>
-        )}
+        </div>
       </main>
     </div>
   )

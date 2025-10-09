@@ -121,7 +121,7 @@ function VideoCard({ video, onDelete }: { video: Video; onDelete: () => void }) 
                 {video.filename}
               </CardTitle>
               <CardDescription className="mt-1">
-                {formatBytes(video.size_bytes)}
+                {video.size_bytes ? formatBytes(video.size_bytes) : 'Size unknown'}
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -170,7 +170,7 @@ function VideoCard({ video, onDelete }: { video: Video; onDelete: () => void }) 
                                  typeof video.metadata.duration === 'number' &&
                                  video.metadata.duration > 0
               console.log('Duration check:', { hasDuration, duration: video.metadata?.duration })
-              return hasDuration ? (
+              return hasDuration && video.metadata ? (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Clock className="h-4 w-4" />
                   {formatDuration(video.metadata.duration)}
@@ -187,7 +187,7 @@ function VideoCard({ video, onDelete }: { video: Video; onDelete: () => void }) 
                 width: video.metadata?.video?.width,
                 height: video.metadata?.video?.height
               })
-              return hasResolution ? (
+              return hasResolution && video.metadata?.video ? (
                 <div className="text-muted-foreground">
                   {video.metadata.video.width} × {video.metadata.video.height}
                 </div>

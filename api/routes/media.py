@@ -1,0 +1,188 @@
+"""Media processing API routes."""
+import uuid
+import logging
+from typing import List, Optional
+from fastapi import APIRouter, HTTPException, status
+from api.models.schemas import (
+    CreateMediaJobRequest,
+    MediaJobResponse,
+    MediaPresetResponse,
+    MediaProcessingConfigRequest,
+    MediaJobResultsResponse,
+)
+from libs.database import get_db, MediaJobStatus
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/media", tags=["media"])
+
+
+@router.post("/jobs", response_model=MediaJobResponse, status_code=status.HTTP_201_CREATED)
+async def create_media_job(request: CreateMediaJobRequest):
+    """
+    Create a new media processing job.
+
+    This creates a job that will be picked up by the media worker for processing.
+    """
+    try:
+        db = get_db()
+
+        # Verify video exists
+        video = db.get_video(request.video_id)
+        if not video:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Video not found: {request.video_id}"
+            )
+
+        # Create job
+        job_id = str(uuid.uuid4())
+        job_data = db.create_media_job(
+            job_id=job_id,
+            video_id=request.video_id,
+            config=request.config.model_dump()
+        )
+
+        return MediaJobResponse(**job_data)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create media job: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create media job: {str(e)}"
+        )
+
+
+@router.get("/jobs/{job_id}", response_model=MediaJobResponse)
+async def get_media_job(job_id: str):
+    """Get media job information by ID."""
+    try:
+        db = get_db()
+        job = db.get_media_job(job_id)
+
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Media job not found: {job_id}"
+            )
+
+        return MediaJobResponse(**job)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get media job: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get media job: {str(e)}"
+        )
+
+
+@router.get("/jobs/video/{video_id}", response_model=List[MediaJobResponse])
+async def list_media_jobs_for_video(
+    video_id: str,
+    status_filter: Optional[MediaJobStatus] = None
+):
+    """List all media processing jobs for a video."""
+    try:
+        db = get_db()
+
+        # Verify video exists
+        video = db.get_video(video_id)
+        if not video:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Video not found: {video_id}"
+            )
+
+        jobs = db.list_media_jobs_for_video(video_id, status=status_filter)
+        return [MediaJobResponse(**job) for job in jobs]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list media jobs: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list media jobs: {str(e)}"
+        )
+
+
+@router.delete("/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_media_job(job_id: str):
+    """Delete a media processing job and all generated files (NOT the original video)."""
+    try:
+        from libs.storage import get_storage
+
+        db = get_db()
+        storage = get_storage()
+
+        # Verify job exists
+        job = db.get_media_job(job_id)
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Media job not found: {job_id}"
+            )
+
+        # Don't allow deleting jobs that are currently processing
+        if job["status"] == MediaJobStatus.PROCESSING:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete job that is currently processing"
+            )
+
+        # Delete generated files from GCS (NOT the original video)
+        files_deleted = []
+        if job.get("results"):
+            results = job["results"]
+
+            # Delete compressed video
+            if results.get("compressed_video_path"):
+                try:
+                    storage.delete_file(results["compressed_video_path"])
+                    files_deleted.append("compressed video")
+                    logger.info(f"Deleted compressed video: {results['compressed_video_path']}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete compressed video: {e}")
+
+            # Delete extracted audio
+            if results.get("audio_path"):
+                try:
+                    storage.delete_file(results["audio_path"])
+                    files_deleted.append("audio")
+                    logger.info(f"Deleted audio: {results['audio_path']}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete audio: {e}")
+
+        # Delete job record from database
+        db.delete_media_job(job_id)
+
+        if files_deleted:
+            logger.info(f"Deleted job {job_id} and files: {', '.join(files_deleted)}")
+        else:
+            logger.info(f"Deleted job {job_id} (no files to clean up)")
+
+        return None
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete media job: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete media job: {str(e)}"
+        )
+
+
+@router.get("/presets", response_model=MediaPresetResponse)
+async def get_media_presets():
+    """Get available media processing presets and options."""
+    return MediaPresetResponse(
+        resolutions=["360p", "480p", "720p", "1080p", "1440p", "2160p"],
+        audio_formats=["mp3", "aac", "wav"],
+        audio_bitrates=["128k", "192k", "256k", "320k"],
+        presets=["ultrafast", "fast", "medium", "slow", "veryslow"],
+        crf_range={"min": 0, "max": 51, "default": 23}
+    )

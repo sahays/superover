@@ -1,17 +1,21 @@
 'use client'
 
-import { use } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Play, Download } from 'lucide-react'
+import { use, useState } from 'react'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import { ArrowLeft, Play, Download, Settings } from 'lucide-react'
 import Link from 'next/link'
-import { videoApi } from '@/lib/api-client'
+import { videoApi, mediaApi } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { formatBytes, formatDuration } from '@/lib/utils'
+import { StartProcessing } from '@/components/media/start-processing'
+import { JobCard } from '@/components/media/job-card'
 
 export default function VideoDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
+  const [showMediaDialog, setShowMediaDialog] = useState(false)
 
   const { data: video, isLoading } = useQuery({
     queryKey: ['video', id],
@@ -35,6 +39,19 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
     queryKey: ['results', id],
     queryFn: () => videoApi.getResults(id),
     enabled: video?.status === 'completed',
+  })
+
+  const { data: mediaJobs, refetch: refetchMediaJobs } = useQuery({
+    queryKey: ['media-jobs', id],
+    queryFn: () => mediaApi.listJobsForVideo(id),
+    refetchInterval: 5000, // Poll every 5 seconds
+  })
+
+  const deleteJobMutation = useMutation({
+    mutationFn: (jobId: string) => mediaApi.deleteJob(jobId),
+    onSuccess: () => {
+      refetchMediaJobs()
+    },
   })
 
   if (isLoading) {
@@ -209,37 +226,217 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
             )}
           </div>
 
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {(video.status === 'processed' || video.status === 'failed' || video.status === 'uploaded') && (
+          {/* Media Processing Jobs */}
+          {mediaJobs && mediaJobs.length > 0 && (
+            <div className="lg:col-span-3">
               <Card>
                 <CardHeader>
-                  <CardTitle>Actions</CardTitle>
+                  <CardTitle>Media Processing Jobs</CardTitle>
+                  <CardDescription>{mediaJobs.length} job(s) total</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-2">
-                  {video.status === 'processed' && (
-                    <Button
-                      className="w-full"
-                      onClick={() => videoApi.analyzeVideo(video.video_id)}
-                    >
-                      <Play className="mr-2 h-4 w-4" />
-                      Start Analysis
-                    </Button>
-                  )}
-                  {video.status === 'failed' && (
-                    <p className="text-sm text-muted-foreground">
-                      Processing failed. Please delete and re-upload the video.
-                    </p>
-                  )}
-                  {video.status === 'uploaded' && (
-                    <p className="text-sm text-muted-foreground">
-                      Video uploaded successfully. Processing will start automatically.
-                    </p>
-                  )}
+                <CardContent>
+                  <Accordion type="single" collapsible className="w-full">
+                    {mediaJobs.map((job: any, idx: number) => (
+                      <AccordionItem key={job.job_id} value={`job-${idx}`}>
+                        <AccordionTrigger>
+                          <div className="flex items-center justify-between w-full pr-4">
+                            <span>Job {idx + 1} - {job.status}</span>
+                            <span className="text-sm text-muted-foreground">
+                              {new Date(job.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          <div className="space-y-4 p-4">
+                            {/* Job ID and Timestamps */}
+                            <div className="grid gap-3 text-sm">
+                              <div className="flex justify-between">
+                                <span className="font-medium text-muted-foreground">Job ID:</span>
+                                <span className="font-mono text-xs">{job.job_id}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="font-medium text-muted-foreground">Created:</span>
+                                <span>{new Date(job.created_at).toLocaleString()}</span>
+                              </div>
+                              {job.updated_at && (
+                                <div className="flex justify-between">
+                                  <span className="font-medium text-muted-foreground">Updated:</span>
+                                  <span>{new Date(job.updated_at).toLocaleString()}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Configuration */}
+                            <div className="rounded-lg bg-slate-100 p-3 dark:bg-slate-800">
+                              <h4 className="font-semibold mb-2">Configuration</h4>
+                              <div className="grid gap-2 text-sm">
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Compression:</span>
+                                  <span>{job.config.compress ? job.config.compress_resolution : 'Disabled'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">CRF:</span>
+                                  <span>{job.config.crf}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Preset:</span>
+                                  <span>{job.config.preset}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Audio:</span>
+                                  <span>
+                                    {job.config.extract_audio
+                                      ? `${job.config.audio_format?.toUpperCase()} @ ${job.config.audio_bitrate}`
+                                      : 'Disabled'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Results */}
+                            {job.results && (
+                              <div className="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
+                                <h4 className="font-semibold mb-2 text-green-900 dark:text-green-100">Results</h4>
+                                <div className="grid gap-2 text-sm">
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Original Size:</span>
+                                    <span className="font-medium">{formatBytes(job.results.original_size_bytes)}</span>
+                                  </div>
+                                  {job.results.compressed_video_path && (
+                                    <>
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">Compressed Size:</span>
+                                        <span className="font-medium">{formatBytes(job.results.compressed_size_bytes)}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">Reduction:</span>
+                                        <span className="font-medium text-green-600 dark:text-green-400">
+                                          {job.results.compression_ratio.toFixed(1)}%
+                                        </span>
+                                      </div>
+                                      <div className="col-span-full">
+                                        <span className="text-muted-foreground">Compressed File:</span>
+                                        <p className="mt-1 font-mono text-xs break-all text-blue-600 dark:text-blue-400">
+                                          {job.results.compressed_video_path}
+                                        </p>
+                                      </div>
+                                    </>
+                                  )}
+                                  {job.results.audio_path && (
+                                    <>
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">Audio Size:</span>
+                                        <span className="font-medium">{formatBytes(job.results.audio_size_bytes)}</span>
+                                      </div>
+                                      <div className="col-span-full">
+                                        <span className="text-muted-foreground">Audio File:</span>
+                                        <p className="mt-1 font-mono text-xs break-all text-blue-600 dark:text-blue-400">
+                                          {job.results.audio_path}
+                                        </p>
+                                      </div>
+                                    </>
+                                  )}
+                                  {job.results.metadata && (
+                                    <details className="col-span-full mt-2">
+                                      <summary className="cursor-pointer text-muted-foreground">
+                                        View Full Metadata
+                                      </summary>
+                                      <pre className="mt-2 overflow-x-auto rounded bg-slate-200 p-2 text-xs dark:bg-slate-900">
+                                        {JSON.stringify(job.results.metadata, null, 2)}
+                                      </pre>
+                                    </details>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Error */}
+                            {job.error_message && (
+                              <div className="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+                                <h4 className="font-semibold mb-2 text-red-900 dark:text-red-100">Error</h4>
+                                <p className="text-sm text-red-800 dark:text-red-200">{job.error_message}</p>
+                              </div>
+                            )}
+
+                            {/* Actions */}
+                            {job.status !== 'processing' && (
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => {
+                                  if (confirm('Delete this job and all generated files? The original video will not be deleted.')) {
+                                    deleteJobMutation.mutate(job.job_id)
+                                  }
+                                }}
+                              >
+                                Delete Job & Files
+                              </Button>
+                            )}
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))}
+                  </Accordion>
                 </CardContent>
               </Card>
-            )}
-          </div>
+            </div>
+          )}
+        </div>
+
+        {/* Sidebar Actions */}
+        <div className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Actions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {video.status === 'completed' && (
+                <Dialog open={showMediaDialog} onOpenChange={setShowMediaDialog}>
+                  <DialogTrigger asChild>
+                    <Button className="w-full">
+                      <Settings className="mr-2 h-4 w-4" />
+                      Process Media
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                      <DialogTitle>Media Processing</DialogTitle>
+                      <DialogDescription>
+                        Extract metadata, compress video, and extract audio
+                      </DialogDescription>
+                    </DialogHeader>
+                    <StartProcessing
+                      videoId={id}
+                      onSuccess={() => {
+                        setShowMediaDialog(false)
+                        refetchMediaJobs()
+                      }}
+                      onCancel={() => setShowMediaDialog(false)}
+                    />
+                  </DialogContent>
+                </Dialog>
+              )}
+              {video.status === 'processed' && (
+                <Button
+                  className="w-full"
+                  onClick={() => videoApi.analyzeVideo(video.video_id)}
+                >
+                  <Play className="mr-2 h-4 w-4" />
+                  Start Analysis
+                </Button>
+              )}
+              {video.status === 'failed' && (
+                <p className="text-sm text-muted-foreground">
+                  Processing failed. Please delete and re-upload the video.
+                </p>
+              )}
+              {video.status === 'uploaded' && (
+                <p className="text-sm text-muted-foreground">
+                  Video uploaded successfully. Processing will start automatically.
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

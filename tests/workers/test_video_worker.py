@@ -200,7 +200,11 @@ class TestProcessVideo:
         assert any(call[0][1] == VideoStatus.COMPLETED for call in status_calls)
 
         # Verify metadata and audio info saved
-        mock_db.update_video_metadata.assert_called_once()
+        # Note: update_video_metadata is called multiple times:
+        # 1. Initial metadata
+        # 2. Progress updates before/after each chunk analysis
+        mock_db.update_video_metadata.assert_called()
+        assert mock_db.update_video_metadata.call_count >= 1
         mock_db.update_video_audio_info.assert_called_once()
 
         # Verify chunks analyzed
