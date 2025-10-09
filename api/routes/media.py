@@ -186,3 +186,47 @@ async def get_media_presets():
         presets=["ultrafast", "fast", "medium", "slow", "veryslow"],
         crf_range={"min": 0, "max": 51, "default": 23}
     )
+
+
+@router.get("/videos-with-jobs")
+async def get_all_videos_with_jobs():
+    """Get all videos with their associated media processing jobs."""
+    try:
+        db = get_db()
+
+        # Get all videos
+        videos = db.list_videos()
+
+        # For each video, get its media jobs
+        videos_with_jobs = []
+        for video in videos:
+            video_id = video["video_id"]
+
+            # Get all jobs for this video
+            jobs = db.list_media_jobs_for_video(video_id)
+
+            # Check if video has completed compressed versions
+            has_compressed = any(
+                job.get("status") == MediaJobStatus.COMPLETED and
+                job.get("results", {}).get("compressed_video_path")
+                for job in jobs
+            )
+
+            videos_with_jobs.append({
+                "video_id": video_id,
+                "filename": video.get("filename"),
+                "gcs_path": video.get("gcs_path"),
+                "size_bytes": video.get("size_bytes"),
+                "metadata": video.get("metadata"),
+                "jobs": [MediaJobResponse(**job) for job in jobs],
+                "hasCompressed": has_compressed
+            })
+
+        return videos_with_jobs
+
+    except Exception as e:
+        logger.error(f"Failed to get videos with jobs: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get videos with jobs: {str(e)}"
+        )

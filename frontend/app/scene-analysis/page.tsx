@@ -2,20 +2,20 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Video as VideoIcon, Upload, ArrowLeft } from 'lucide-react'
+import { Video as VideoIcon, FileVideo, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { videoApi } from '@/lib/api-client'
 import { Video, VideoStatus } from '@/lib/types'
-import { UploadVideo } from '@/components/upload-video'
+import { VideoPicker } from '@/components/video-picker'
 import { VideoList } from '@/components/video-list'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
-export default function AnalysisPage() {
-  const [showUpload, setShowUpload] = useState(false)
+export default function SceneAnalysisPage() {
+  const [showPicker, setShowPicker] = useState(false)
 
-  const { data: videos, isLoading, refetch } = useQuery({
-    queryKey: ['videos'],
+  const { data: scenes, isLoading, refetch } = useQuery({
+    queryKey: ['scenes'],
     queryFn: () => videoApi.listVideos(),
     refetchInterval: (query) => {
       // Auto-refresh if any video is being processed
@@ -33,9 +33,23 @@ export default function AnalysisPage() {
     },
   })
 
-  const handleUploadComplete = () => {
-    setShowUpload(false)
-    refetch()
+  const handleVideoSelect = async (videoId: string, isCompressed: boolean, gcsPath: string, chunkDuration: number) => {
+    // Start scene analysis for the selected (already compressed) video
+    // The video is already compressed from /media workflow, we just need to chunk and analyze
+    try {
+      // Pass chunk duration to the processing endpoint
+      // TODO: Update API to accept compressed video path and chunk duration
+      await videoApi.processVideo(videoId, {
+        compress: false, // Already compressed
+        chunk: chunkDuration > 0, // Only chunk if duration > 0
+        extract_audio: false, // Already extracted in media workflow
+      })
+      setShowPicker(false)
+      refetch()
+    } catch (error) {
+      console.error('Failed to start scene analysis:', error)
+      // TODO: Show error toast
+    }
   }
 
   return (
@@ -49,7 +63,7 @@ export default function AnalysisPage() {
                 <VideoIcon className="h-6 w-6" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold">Video Analysis</h1>
+                <h1 className="text-2xl font-bold">Scene Analysis</h1>
                 <p className="text-sm text-muted-foreground">AI-Powered Scene Analysis with Gemini</p>
               </div>
             </div>
@@ -60,9 +74,9 @@ export default function AnalysisPage() {
                   Back to Home
                 </Button>
               </Link>
-              <Button onClick={() => setShowUpload(true)} size="lg">
-                <Upload className="mr-2 h-4 w-4" />
-                Upload Video
+              <Button onClick={() => setShowPicker(true)} size="lg">
+                <FileVideo className="mr-2 h-4 w-4" />
+                Pick Video
               </Button>
             </div>
           </div>
@@ -71,19 +85,19 @@ export default function AnalysisPage() {
 
       {/* Main Content */}
       <main className="container mx-auto max-w-6xl px-4 py-8">
-        {showUpload ? (
-          <div className="mx-auto max-w-2xl">
+        {showPicker ? (
+          <div className="mx-auto max-w-4xl">
             <Card>
               <CardHeader>
-                <CardTitle>Upload Video for Analysis</CardTitle>
+                <CardTitle>Pick Video for Scene Analysis</CardTitle>
                 <CardDescription>
-                  Upload a video file to analyze with Gemini AI
+                  Select a video from your processed library for scene analysis with Gemini AI
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <UploadVideo
-                  onComplete={handleUploadComplete}
-                  onCancel={() => setShowUpload(false)}
+                <VideoPicker
+                  onSelect={handleVideoSelect}
+                  onCancel={() => setShowPicker(false)}
                 />
               </CardContent>
             </Card>
@@ -94,15 +108,15 @@ export default function AnalysisPage() {
             <div className="grid gap-4 md:grid-cols-4">
               <Card>
                 <CardHeader className="pb-2">
-                  <CardDescription>Total Videos</CardDescription>
-                  <CardTitle className="text-3xl">{videos?.length || 0}</CardTitle>
+                  <CardDescription>Total Scenes</CardDescription>
+                  <CardTitle className="text-3xl">{scenes?.length || 0}</CardTitle>
                 </CardHeader>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Processing</CardDescription>
                   <CardTitle className="text-3xl">
-                    {videos?.filter((v: Video) =>
+                    {scenes?.filter((v: Video) =>
                       [
                         VideoStatus.EXTRACTING_METADATA,
                         VideoStatus.EXTRACTING_AUDIO,
@@ -117,7 +131,7 @@ export default function AnalysisPage() {
                 <CardHeader className="pb-2">
                   <CardDescription>Analyzing</CardDescription>
                   <CardTitle className="text-3xl">
-                    {videos?.filter((v: Video) => v.status === VideoStatus.ANALYZING).length || 0}
+                    {scenes?.filter((v: Video) => v.status === VideoStatus.ANALYZING).length || 0}
                   </CardTitle>
                 </CardHeader>
               </Card>
@@ -125,14 +139,14 @@ export default function AnalysisPage() {
                 <CardHeader className="pb-2">
                   <CardDescription>Completed</CardDescription>
                   <CardTitle className="text-3xl">
-                    {videos?.filter((v: Video) => v.status === VideoStatus.COMPLETED).length || 0}
+                    {scenes?.filter((v: Video) => v.status === VideoStatus.COMPLETED).length || 0}
                   </CardTitle>
                 </CardHeader>
               </Card>
             </div>
 
-            {/* Video List */}
-            <VideoList videos={videos || []} isLoading={isLoading} onRefresh={refetch} />
+            {/* Scene List */}
+            <VideoList videos={scenes || []} isLoading={isLoading} onRefresh={refetch} />
           </div>
         )}
       </main>

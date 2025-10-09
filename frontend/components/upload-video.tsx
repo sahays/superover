@@ -38,10 +38,6 @@ export function UploadVideo({ onComplete, onCancel }: UploadVideoProps) {
         size_bytes: file.size,
       })
 
-      setUploadProgress(85)
-
-      // Step 4: Start processing
-      await videoApi.processVideo(video.video_id)
       setUploadProgress(100)
 
       return video
@@ -152,7 +148,7 @@ export function UploadVideo({ onComplete, onCancel }: UploadVideoProps) {
             <CheckCircle className="mx-auto h-12 w-12 text-green-600" />
             <h3 className="mt-4 text-lg font-semibold text-green-900">Upload Complete!</h3>
             <p className="mt-2 text-sm text-green-700">
-              Video is being processed...
+              Video uploaded successfully
             </p>
           </div>
         </div>

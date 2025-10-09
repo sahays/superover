@@ -33,7 +33,7 @@ export default function HomePage() {
         </div>
 
         <div className="grid gap-8 md:grid-cols-2 max-w-5xl mx-auto">
-          {/* Video Analysis Workflow */}
+          {/* Scene Analysis Workflow */}
           <Card className="relative overflow-hidden transition hover:shadow-lg">
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-500/20 to-transparent rounded-bl-full" />
             <CardHeader>
@@ -41,7 +41,7 @@ export default function HomePage() {
                 <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-300">
                   <Sparkles className="h-6 w-6" />
                 </div>
-                <CardTitle className="text-2xl">Video Analysis</CardTitle>
+                <CardTitle className="text-2xl">Scene Analysis</CardTitle>
               </div>
               <CardDescription className="text-base">
                 AI-powered scene analysis with Gemini
@@ -63,12 +63,12 @@ export default function HomePage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <ArrowRight className="h-4 w-4 mt-0.5 text-purple-600 flex-shrink-0" />
-                  <span>Get structured analysis results</span>
+                  <span>Get structured scene analysis results</span>
                 </li>
               </ul>
-              <Link href="/analysis" className="block">
+              <Link href="/scene-analysis" className="block">
                 <Button className="w-full mt-4" size="lg">
-                  Start Video Analysis
+                  Start Scene Analysis
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </Link>

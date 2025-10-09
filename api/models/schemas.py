@@ -29,12 +29,16 @@ class ProcessVideoRequest(BaseModel):
     extract_audio: bool = Field(True, description="Whether to extract audio")
 
 
-class AnalyzeVideoRequest(BaseModel):
-    """Request to start video analysis."""
-    analysis_types: List[str] = Field(
+class SceneAnalysisRequest(BaseModel):
+    """Request to start scene analysis."""
+    scene_types: List[str] = Field(
         default=["scene", "objects", "transcription", "moderation"],
-        description="Types of analysis to perform"
+        description="Types of scene analysis to perform"
     )
+
+
+# Backward compatibility alias
+AnalyzeVideoRequest = SceneAnalysisRequest
 
 
 # === Response Models ===
@@ -88,12 +92,16 @@ class ProcessingJobResponse(BaseModel):
     message: str
 
 
-class AnalysisJobResponse(BaseModel):
-    """Response for initiated analysis job."""
+class SceneAnalysisJobResponse(BaseModel):
+    """Response for initiated scene analysis job."""
     video_id: str
     task_ids: List[str]
     status: str
     message: str
+
+
+# Backward compatibility alias
+AnalysisJobResponse = SceneAnalysisJobResponse
 
 
 class ResultResponse(BaseModel):

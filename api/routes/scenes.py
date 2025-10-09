@@ -1,4 +1,4 @@
-"""Video management API routes."""
+"""Scene management API routes."""
 import uuid
 import logging
 from typing import List
@@ -10,8 +10,8 @@ from api.models.schemas import (
     VideoResponse,
     ProcessVideoRequest,
     ProcessingJobResponse,
-    AnalyzeVideoRequest,
-    AnalysisJobResponse,
+    SceneAnalysisRequest,
+    SceneAnalysisJobResponse,
     ManifestResponse,
     ResultResponse,
 )
@@ -19,7 +19,7 @@ from libs.storage import get_storage
 from libs.database import get_db, VideoStatus, TaskStatus
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/videos", tags=["videos"])
+router = APIRouter(prefix="/scenes", tags=["scenes"])
 
 
 @router.post("/signed-url", response_model=SignedUrlResponse)
@@ -183,12 +183,12 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
         )
 
 
-@router.post("/{video_id}/analyze", response_model=AnalysisJobResponse)
-async def analyze_video(video_id: str, request: AnalyzeVideoRequest):
+@router.post("/{video_id}/scene-analysis", response_model=SceneAnalysisJobResponse)
+async def analyze_scenes(video_id: str, request: SceneAnalysisRequest):
     """
-    Start Gemini analysis on processed video.
+    Start Gemini scene analysis on processed video.
 
-    Creates analysis tasks for each chunk/analysis type.
+    Creates scene analysis tasks for each chunk/scene type.
     """
     try:
         db = get_db()
@@ -198,13 +198,13 @@ async def analyze_video(video_id: str, request: AnalyzeVideoRequest):
         if not video:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Video not found: {video_id}"
+                detail=f"Scene not found: {video_id}"
             )
 
         if video["status"] != VideoStatus.COMPLETED:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Video must be completed before analysis. Current status: {video['status']}"
+                detail=f"Scene must be completed before analysis. Current status: {video['status']}"
             )
 
         # Get manifest
@@ -212,44 +212,44 @@ async def analyze_video(video_id: str, request: AnalyzeVideoRequest):
         if not manifest:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Manifest not found for video: {video_id}"
+                detail=f"Manifest not found for scene: {video_id}"
             )
 
         # Update video status
         db.update_video_status(video_id, VideoStatus.ANALYZING)
 
-        # Create analysis tasks for each chunk
+        # Create scene analysis tasks for each chunk
         task_ids = []
         chunks = manifest.get("chunks", {}).get("items", [])
 
         for chunk in chunks:
-            for analysis_type in request.analysis_types:
+            for scene_type in request.scene_types:
                 task_id = str(uuid.uuid4())
                 db.create_task(
                     task_id=task_id,
                     video_id=video_id,
-                    task_type=f"analysis_{analysis_type}",
+                    task_type=f"scene_{scene_type}",
                     input_data={
                         "chunk": chunk,
-                        "analysis_type": analysis_type,
+                        "scene_type": scene_type,
                     }
                 )
                 task_ids.append(task_id)
 
-        return AnalysisJobResponse(
+        return SceneAnalysisJobResponse(
             video_id=video_id,
             task_ids=task_ids,
             status="analyzing",
-            message=f"Created {len(task_ids)} analysis tasks"
+            message=f"Created {len(task_ids)} scene analysis tasks"
         )
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to start analysis: {e}")
+        logger.error(f"Failed to start scene analysis: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to start analysis: {str(e)}"
+            detail=f"Failed to start scene analysis: {str(e)}"
         )
 
 
@@ -306,63 +306,70 @@ async def get_results(video_id: str, result_type: str = None):
 
 
 @router.delete("/{video_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_video(video_id: str):
-    """Delete a video and all associated data."""
+async def delete_scene(video_id: str):
+    """
+    Delete scene analysis data (chunks, results, tasks) but preserve the original source video.
+
+    This allows the source video to remain available for other workflows (media processing, etc.)
+    """
     try:
         db = get_db()
         storage = get_storage()
 
-        # Get video to find GCS paths
+        # Get video to verify it exists
         video = db.get_video(video_id)
         if not video:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Video not found: {video_id}"
+                detail=f"Scene not found: {video_id}"
             )
 
-        # Delete from GCS (original)
-        if video.get("gcs_path"):
-            storage.delete_file(video["gcs_path"])
-
-        # Delete manifest and processed files
+        # Delete manifest and scene-processed files (NOT the original source video)
         manifest = db.get_manifest(video_id)
         if manifest:
-            # Delete compressed video
+            # Delete compressed video from scene workflow
             if manifest.get("compressed", {}).get("gcs_path"):
                 storage.delete_file(manifest["compressed"]["gcs_path"])
+                logger.info(f"Deleted compressed video: {manifest['compressed']['gcs_path']}")
 
-            # Delete chunks
+            # Delete chunks from scene workflow
             for chunk in manifest.get("chunks", {}).get("items", []):
                 if chunk.get("gcs_path"):
                     storage.delete_file(chunk["gcs_path"])
+                    logger.info(f"Deleted chunk: {chunk['gcs_path']}")
 
-            # Delete audio
+            # Delete audio from scene workflow
             if manifest.get("audio", {}).get("gcs_path"):
                 storage.delete_file(manifest["audio"]["gcs_path"])
+                logger.info(f"Deleted audio: {manifest['audio']['gcs_path']}")
 
-        # Delete from Firestore
-        db.videos.document(video_id).delete()
+        # Reset video status to uploaded (preserving the video record and original file)
+        db.update_video_status(video_id, VideoStatus.UPLOADED)
+
+        # Delete manifest
         db.manifests.document(video_id).delete()
 
-        # Delete all tasks for this video
+        # Delete all scene processing tasks for this video
         tasks = db.list_tasks_for_video(video_id)
         for task in tasks:
             db.tasks.document(task["task_id"]).delete()
+            logger.info(f"Deleted task: {task['task_id']}")
 
-        # Delete all results for this video
+        # Delete all scene analysis results for this video
         results = db.get_results_for_video(video_id)
         for result in results:
             if result.get("result_id"):
                 db.results.document(result["result_id"]).delete()
+                logger.info(f"Deleted result: {result['result_id']}")
 
-        logger.info(f"Deleted video {video_id} and all associated data")
+        logger.info(f"Deleted scene analysis data for {video_id}, preserved source video at {video.get('gcs_path')}")
         return None
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to delete video: {e}")
+        logger.error(f"Failed to delete scene: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete video: {str(e)}"
+            detail=f"Failed to delete scene: {str(e)}"
         )

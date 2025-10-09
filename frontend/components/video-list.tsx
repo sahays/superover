@@ -113,7 +113,7 @@ function VideoCard({ video, onDelete }: { video: Video; onDelete: () => void }) 
 
   return (
     <Card className="relative transition hover:shadow-lg group">
-      <Link href={`/video/${video.video_id}`}>
+      <Link href={`/scene/${video.video_id}`}>
         <CardHeader>
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
@@ -277,8 +277,8 @@ function StatusBadge({ status, video }: { status: VideoStatus; video?: Video }) 
 
   // Calculate progress for analyzing status
   let displayLabel = label
-  if (status === VideoStatus.ANALYZING && video?.metadata?.analysis_progress) {
-    const { completed_chunks, total_chunks } = video.metadata.analysis_progress
+  if (status === VideoStatus.ANALYZING && video?.metadata?.scene_analysis_progress) {
+    const { completed_chunks, total_chunks } = video.metadata.scene_analysis_progress
     if (total_chunks > 0) {
       const percentage = Math.round((completed_chunks / total_chunks) * 100)
       displayLabel = `Analyzing ${percentage}%`

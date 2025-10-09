@@ -1,6 +1,6 @@
 """
-Video Processing Worker
-Polls Firestore for pending processing tasks and executes them.
+Scene Processing Worker
+Polls Firestore for pending scene processing tasks and executes them.
 """
 import sys
 from pathlib import Path
@@ -32,8 +32,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class VideoWorker:
-    """Worker for processing video files."""
+class SceneWorker:
+    """Worker for processing scene files."""
 
     def __init__(self):
         """Initialize worker."""
@@ -47,7 +47,7 @@ class VideoWorker:
         """Start the worker loop."""
         self.running = True
         logger.info("=" * 60)
-        logger.info("Video Processing Worker Started")
+        logger.info("Scene Processing Worker Started")
         logger.info(f"Polling interval: {settings.worker_poll_interval_seconds}s")
         logger.info(f"Max concurrent tasks: {settings.max_concurrent_tasks}")
         logger.info("=" * 60)
@@ -63,7 +63,7 @@ class VideoWorker:
     def stop(self):
         """Stop the worker."""
         self.running = False
-        logger.info("Video Processing Worker Stopped")
+        logger.info("Scene Processing Worker Stopped")
 
     def _process_pending_tasks(self):
         """Poll for and process pending tasks."""
@@ -226,7 +226,7 @@ class VideoWorker:
 
                 # Update progress in metadata
                 self.db.update_video_metadata(video_id, {
-                    "analysis_progress": {
+                    "scene_analysis_progress": {
                         "completed_chunks": chunk_index,
                         "total_chunks": len(chunks)
                     }
@@ -261,9 +261,9 @@ class VideoWorker:
                     )
                     logger.info(f"Saved analysis result {result_id} for chunk {chunk_index}")
 
-                    # Update progress after successful analysis
+                    # Update progress after successful scene analysis
                     self.db.update_video_metadata(video_id, {
-                        "analysis_progress": {
+                        "scene_analysis_progress": {
                             "completed_chunks": chunk_index + 1,
                             "total_chunks": len(chunks)
                         }
@@ -298,7 +298,7 @@ class VideoWorker:
 
 def main():
     """Main entry point."""
-    worker = VideoWorker()
+    worker = SceneWorker()
     worker.start()
 
 

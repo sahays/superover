@@ -6,8 +6,8 @@ import { Providers } from "./providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Super Over Alchemy - Video Analysis",
-  description: "AI-powered video analysis using Gemini",
+  title: "Super Over Alchemy - Scene Analysis",
+  description: "AI-powered scene analysis using Gemini",
 };
 
 export default function RootLayout({

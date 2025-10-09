@@ -267,9 +267,9 @@ class TestMediaProcessingIntegration:
 class TestMediaProcessingNonRegression:
     """Tests to ensure media processing doesn't affect existing functionality."""
 
-    @patch('api.routes.videos.get_db')
-    def test_existing_video_endpoints_unaffected(self, mock_get_db):
-        """Test existing video endpoints still work."""
+    @patch('api.routes.scenes.get_db')
+    def test_existing_scene_endpoints_unaffected(self, mock_get_db):
+        """Test existing scene endpoints still work."""
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db
 
@@ -280,14 +280,14 @@ class TestMediaProcessingNonRegression:
             "status": "uploaded"
         }
 
-        # Test existing video GET endpoint
-        response = client.get("/api/videos/video-123")
+        # Test existing scene GET endpoint
+        response = client.get("/api/scenes/video-123")
         assert response.status_code == 200
         assert response.json()["video_id"] == "video-123"
 
-    @patch('api.routes.videos.get_db')
-    def test_existing_video_processing_unaffected(self, mock_get_db):
-        """Test existing video processing workflow still works."""
+    @patch('api.routes.scenes.get_db')
+    def test_existing_scene_processing_unaffected(self, mock_get_db):
+        """Test existing scene processing workflow still works."""
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db
 
@@ -305,7 +305,7 @@ class TestMediaProcessingNonRegression:
 
         # Test existing process endpoint
         response = client.post(
-            "/api/videos/video-123/process",
+            "/api/scenes/video-123/process",
             json={
                 "compress": True,
                 "chunk": True,

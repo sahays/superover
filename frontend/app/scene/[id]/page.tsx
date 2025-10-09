@@ -13,15 +13,15 @@ import { formatBytes, formatDuration } from '@/lib/utils'
 import { StartProcessing } from '@/components/media/start-processing'
 import { JobCard } from '@/components/media/job-card'
 
-export default function VideoDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function SceneDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const [showMediaDialog, setShowMediaDialog] = useState(false)
 
-  const { data: video, isLoading } = useQuery({
-    queryKey: ['video', id],
+  const { data: scene, isLoading } = useQuery({
+    queryKey: ['scene', id],
     queryFn: () => videoApi.getVideo(id),
     refetchInterval: (query) => {
-      // Auto-refresh if video is processing or analyzing
+      // Auto-refresh if scene is processing or analyzing
       if (query.state.data && (query.state.data.status === 'processing' || query.state.data.status === 'analyzing')) {
         return 3000 // 3 seconds
       }
@@ -32,13 +32,13 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
   const { data: manifest } = useQuery({
     queryKey: ['manifest', id],
     queryFn: () => videoApi.getManifest(id),
-    enabled: video?.status === 'processed' || video?.status === 'analyzing' || video?.status === 'completed',
+    enabled: scene?.status === 'processed' || scene?.status === 'analyzing' || scene?.status === 'completed',
   })
 
   const { data: results } = useQuery({
     queryKey: ['results', id],
     queryFn: () => videoApi.getResults(id),
-    enabled: video?.status === 'completed',
+    enabled: scene?.status === 'completed',
   })
 
   const { data: mediaJobs, refetch: refetchMediaJobs } = useQuery({
@@ -65,12 +65,12 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
     )
   }
 
-  if (!video) {
+  if (!scene) {
     return (
       <div className="container mx-auto px-4 py-8">
         <Card>
           <CardContent className="py-12 text-center">
-            <h2 className="text-xl font-semibold">Video not found</h2>
+            <h2 className="text-xl font-semibold">Scene not found</h2>
             <Link href="/">
               <Button className="mt-4" variant="outline">
                 <ArrowLeft className="mr-2 h-4 w-4" />
@@ -101,41 +101,41 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
           <div className="space-y-6 lg:col-span-3">
             <Card>
               <CardHeader>
-                <CardTitle className="text-2xl">{video.filename}</CardTitle>
+                <CardTitle className="text-2xl">{scene.filename}</CardTitle>
                 <CardDescription>
-                  Status: {video.status}
-                  {video.size_bytes && ` • ${formatBytes(video.size_bytes)}`}
+                  Status: {scene.status}
+                  {scene.size_bytes && ` • ${formatBytes(scene.size_bytes)}`}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <dl className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <dt className="text-sm font-medium text-muted-foreground">Video ID</dt>
-                    <dd className="mt-1 text-sm font-mono">{video.video_id}</dd>
+                    <dt className="text-sm font-medium text-muted-foreground">Scene ID</dt>
+                    <dd className="mt-1 text-sm font-mono">{scene.video_id}</dd>
                   </div>
                   <div>
                     <dt className="text-sm font-medium text-muted-foreground">Content Type</dt>
-                    <dd className="mt-1 text-sm">{video.content_type || 'N/A'}</dd>
+                    <dd className="mt-1 text-sm">{scene.content_type || 'N/A'}</dd>
                   </div>
-                  {video.metadata?.duration && (
+                  {scene.metadata?.duration && (
                     <div>
                       <dt className="text-sm font-medium text-muted-foreground">Duration</dt>
-                      <dd className="mt-1 text-sm">{formatDuration(video.metadata.duration)}</dd>
+                      <dd className="mt-1 text-sm">{formatDuration(scene.metadata.duration)}</dd>
                     </div>
                   )}
-                  {video.metadata?.video && (
+                  {scene.metadata?.video && (
                     <div>
                       <dt className="text-sm font-medium text-muted-foreground">Resolution</dt>
                       <dd className="mt-1 text-sm">
-                        {video.metadata.video.width} × {video.metadata.video.height}
+                        {scene.metadata.video.width} × {scene.metadata.video.height}
                       </dd>
                     </div>
                   )}
-                  {video.error_message && (
+                  {scene.error_message && (
                     <div className="col-span-full">
                       <dt className="text-sm font-medium text-destructive">Error</dt>
                       <dd className="mt-1 text-sm text-destructive bg-destructive/10 p-3 rounded-md">
-                        {video.error_message}
+                        {scene.error_message}
                       </dd>
                     </div>
                   )}

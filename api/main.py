@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config import settings
-from api.routes import videos, tasks, media
+from api.routes import scenes, tasks, media
 from api.models.schemas import HealthResponse
 
 # Configure logging
@@ -54,7 +54,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app
 app = FastAPI(
     title="Super Over Alchemy API",
-    description="Video analysis and scene recognition using Gemini AI",
+    description="Scene analysis and recognition using Gemini AI",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -73,7 +73,7 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(videos.router, prefix="/api")
+app.include_router(scenes.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(media.router, prefix="/api")
 

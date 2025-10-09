@@ -1,4 +1,4 @@
-"""Tests for video worker."""
+"""Tests for scene worker."""
 import pytest
 from unittest.mock import MagicMock, patch, Mock, call
 import sys
@@ -8,7 +8,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from workers.video_worker import VideoWorker
+from workers.scene_worker import SceneWorker
 from libs.database import VideoStatus, TaskStatus
 
 
@@ -36,9 +36,9 @@ def mock_analyzer():
 @pytest.fixture
 def worker(mock_db, mock_storage, mock_analyzer, temp_dir):
     """Create worker instance with mocks."""
-    with patch('workers.video_worker.get_db', return_value=mock_db), \
-         patch('workers.video_worker.get_storage', return_value=mock_storage), \
-         patch('workers.video_worker.get_scene_analyzer', return_value=mock_analyzer):
+    with patch('workers.scene_worker.get_db', return_value=mock_db), \
+         patch('workers.scene_worker.get_storage', return_value=mock_storage), \
+         patch('workers.scene_worker.get_scene_analyzer', return_value=mock_analyzer):
 
         # Mock settings object with all required attributes
         mock_settings = MagicMock()
@@ -48,13 +48,13 @@ def worker(mock_db, mock_storage, mock_analyzer, temp_dir):
         mock_settings.chunk_duration_seconds = 30
         mock_settings.processed_bucket = "test-bucket"
 
-        with patch('workers.video_worker.settings', mock_settings):
-            worker = VideoWorker()
+        with patch('workers.scene_worker.settings', mock_settings):
+            worker = SceneWorker()
             return worker
 
 
-class TestVideoWorkerInit:
-    """Tests for VideoWorker initialization."""
+class TestSceneWorkerInit:
+    """Tests for SceneWorker initialization."""
 
     def test_worker_initialization(self, worker, mock_db, mock_storage, mock_analyzer, temp_dir):
         """Test worker initializes correctly."""
@@ -128,11 +128,11 @@ class TestProcessTask:
 class TestProcessVideo:
     """Tests for _process_video method."""
 
-    @patch('workers.video_worker.extract_metadata')
-    @patch('workers.video_worker.extract_audio')
-    @patch('workers.video_worker.compress_video')
-    @patch('workers.video_worker.chunk_video')
-    @patch('workers.video_worker.create_manifest')
+    @patch('workers.scene_worker.extract_metadata')
+    @patch('workers.scene_worker.extract_audio')
+    @patch('workers.scene_worker.compress_video')
+    @patch('workers.scene_worker.chunk_video')
+    @patch('workers.scene_worker.create_manifest')
     def test_process_video_full_workflow(
         self,
         mock_create_manifest,
@@ -226,8 +226,8 @@ class TestProcessVideo:
         final_call = mock_db.update_task_status.call_args_list[-1]
         assert final_call[0][1] == TaskStatus.COMPLETED
 
-    @patch('workers.video_worker.extract_metadata')
-    @patch('workers.video_worker.extract_audio')
+    @patch('workers.scene_worker.extract_metadata')
+    @patch('workers.scene_worker.extract_audio')
     def test_process_video_no_audio(
         self,
         mock_extract_audio,
@@ -244,9 +244,9 @@ class TestProcessVideo:
         mock_extract_metadata.return_value = {"duration": 60.0}
         mock_extract_audio.return_value = None  # No audio
 
-        with patch('workers.video_worker.compress_video'), \
-             patch('workers.video_worker.chunk_video', return_value=[]), \
-             patch('workers.video_worker.create_manifest', return_value={}):
+        with patch('workers.scene_worker.compress_video'), \
+             patch('workers.scene_worker.chunk_video', return_value=[]), \
+             patch('workers.scene_worker.create_manifest', return_value={}):
             worker._process_video(sample_task)
 
             # Verify audio info saved with has_audio=False
@@ -260,7 +260,7 @@ class TestProcessVideo:
         with pytest.raises(ValueError, match="Video not found"):
             worker._process_video(sample_task)
 
-    @patch('workers.video_worker.extract_metadata')
+    @patch('workers.scene_worker.extract_metadata')
     def test_process_video_error_handling(
         self,
         mock_extract_metadata,
@@ -284,11 +284,11 @@ class TestProcessVideo:
 class TestAnalyzeChunks:
     """Tests for chunk analysis in workflow."""
 
-    @patch('workers.video_worker.extract_metadata')
-    @patch('workers.video_worker.extract_audio')
-    @patch('workers.video_worker.compress_video')
-    @patch('workers.video_worker.chunk_video')
-    @patch('workers.video_worker.create_manifest')
+    @patch('workers.scene_worker.extract_metadata')
+    @patch('workers.scene_worker.extract_audio')
+    @patch('workers.scene_worker.compress_video')
+    @patch('workers.scene_worker.chunk_video')
+    @patch('workers.scene_worker.create_manifest')
     def test_analyze_chunks_saves_prompts_and_results(
         self,
         mock_create_manifest,
