@@ -81,7 +81,7 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
 
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Main Info */}
-          <div className="space-y-6 lg:col-span-2">
+          <div className="space-y-6 lg:col-span-3">
             <Card>
               <CardHeader>
                 <CardTitle className="text-2xl">{video.filename}</CardTitle>

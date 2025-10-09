@@ -1,9 +1,18 @@
 'use client'
 
+import * as React from 'react'
 import { Video, VideoStatus } from '@/lib/types'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { RefreshCw, Video as VideoIcon, Clock, CheckCircle, AlertCircle, Loader2, MoreVertical, Trash2 } from 'lucide-react'
+import { RefreshCw, Video as VideoIcon, Clock, CheckCircle, AlertCircle, Loader2, MoreVertical, Trash2, Info } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import { formatBytes, formatDuration } from '@/lib/utils'
 import Link from 'next/link'
 import {
@@ -71,6 +80,21 @@ export function VideoList({ videos, isLoading, onRefresh }: VideoListProps) {
 }
 
 function VideoCard({ video, onDelete }: { video: Video; onDelete: () => void }) {
+  const [showMetadata, setShowMetadata] = React.useState(false)
+
+  // Debug logging
+  React.useEffect(() => {
+    console.log('Video Card Debug:', {
+      video_id: video.video_id,
+      filename: video.filename,
+      metadata: video.metadata,
+      duration: video.metadata?.duration,
+      durationType: typeof video.metadata?.duration,
+      video_width: video.metadata?.video?.width,
+      video_height: video.metadata?.video?.height,
+    })
+  }, [video])
+
   const deleteMutation = useMutation({
     mutationFn: () => videoApi.deleteVideo(video.video_id),
     onSuccess: () => {
@@ -114,6 +138,18 @@ function VideoCard({ video, onDelete }: { video: Video; onDelete: () => void }) 
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  {video.metadata && (
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setShowMetadata(true)
+                      }}
+                    >
+                      <Info className="mr-2 h-4 w-4" />
+                      View Details
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem
                     onClick={handleDelete}
                     className="text-destructive focus:text-destructive"
@@ -129,17 +165,34 @@ function VideoCard({ video, onDelete }: { video: Video; onDelete: () => void }) 
         </CardHeader>
         <CardContent>
           <div className="space-y-2 text-sm">
-            {video.metadata?.duration && !isNaN(video.metadata.duration) && (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Clock className="h-4 w-4" />
-                {formatDuration(video.metadata.duration)}
-              </div>
-            )}
-            {video.metadata?.width && video.metadata?.height && (
-              <div className="text-muted-foreground">
-                {video.metadata.width} × {video.metadata.height}
-              </div>
-            )}
+            {(() => {
+              const hasDuration = video.metadata?.duration &&
+                                 typeof video.metadata.duration === 'number' &&
+                                 video.metadata.duration > 0
+              console.log('Duration check:', { hasDuration, duration: video.metadata?.duration })
+              return hasDuration ? (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Clock className="h-4 w-4" />
+                  {formatDuration(video.metadata.duration)}
+                </div>
+              ) : null
+            })()}
+            {(() => {
+              const hasResolution = video.metadata?.video?.width &&
+                                   video.metadata?.video?.height &&
+                                   typeof video.metadata.video.width === 'number' &&
+                                   typeof video.metadata.video.height === 'number'
+              console.log('Resolution check:', {
+                hasResolution,
+                width: video.metadata?.video?.width,
+                height: video.metadata?.video?.height
+              })
+              return hasResolution ? (
+                <div className="text-muted-foreground">
+                  {video.metadata.video.width} × {video.metadata.video.height}
+                </div>
+              ) : null
+            })()}
             {video.error_message && (
               <div className="rounded-md bg-destructive/10 p-2 text-destructive">
                 <p className="text-xs">{video.error_message}</p>
@@ -148,6 +201,23 @@ function VideoCard({ video, onDelete }: { video: Video; onDelete: () => void }) 
           </div>
         </CardContent>
       </Link>
+
+      {/* Metadata Dialog */}
+      <Dialog open={showMetadata} onOpenChange={setShowMetadata}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Video Metadata</DialogTitle>
+            <DialogDescription>{video.filename}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {video.metadata && (
+              <pre className="rounded bg-slate-100 p-4 text-xs dark:bg-slate-800 overflow-x-auto">
+                {JSON.stringify(video.metadata, null, 2)}
+              </pre>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

@@ -41,7 +41,7 @@ export default function HomePage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
       {/* Header */}
       <header className="border-b bg-white/50 backdrop-blur-sm dark:bg-slate-900/50">
-        <div className="container mx-auto px-4 py-6">
+        <div className="container mx-auto max-w-6xl px-4 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
@@ -61,7 +61,7 @@ export default function HomePage() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
+      <main className="container mx-auto max-w-6xl px-4 py-8">
         {showUpload ? (
           <div className="mx-auto max-w-2xl">
             <Card>

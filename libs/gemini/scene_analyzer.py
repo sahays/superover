@@ -189,6 +189,40 @@ IMPORTANT INSTRUCTIONS:
                 )
             )
 
+            # Check if response was blocked
+            if not response.candidates or not response.candidates[0].content.parts:
+                # Response was blocked (safety, etc.)
+                finish_reason = response.candidates[0].finish_reason if response.candidates else None
+                safety_ratings = response.candidates[0].safety_ratings if response.candidates else None
+
+                logger.warning(f"Gemini response blocked for chunk {chunk_index}. Finish reason: {finish_reason}")
+                logger.warning(f"Safety ratings: {safety_ratings}")
+
+                # Return a fallback response indicating the block
+                result = {
+                    "summary": f"Analysis blocked by content filter (finish_reason: {finish_reason})",
+                    "blocked": True,
+                    "finish_reason": str(finish_reason),
+                    "safety_ratings": [
+                        {
+                            "category": str(rating.category),
+                            "probability": str(rating.probability)
+                        } for rating in (safety_ratings or [])
+                    ],
+                    "chunk_index": chunk_index,
+                    "chunk_duration": chunk_duration,
+                    "gemini_file_uri": video_file.uri
+                }
+
+                # Clean up uploaded file
+                try:
+                    genai.delete_file(video_file.name)
+                    logger.info(f"Deleted uploaded file for chunk {chunk_index}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete file for chunk {chunk_index}: {e}")
+
+                return result
+
             # Parse JSON response
             response_text = response.text.strip()
 

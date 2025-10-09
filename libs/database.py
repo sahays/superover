@@ -117,13 +117,35 @@ class FirestoreDB:
     def update_video_metadata(
         self,
         video_id: str,
-        metadata: Dict[str, Any]
+        metadata: Dict[str, Any],
+        merge: bool = True
     ) -> None:
-        """Update video metadata."""
-        update_data = {
-            "metadata": metadata,
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        }
+        """
+        Update video metadata.
+
+        Args:
+            video_id: Video ID
+            metadata: Metadata to update
+            merge: If True, merge with existing metadata. If False, replace entirely.
+        """
+        if merge:
+            # Get existing metadata and merge
+            video = self.get_video(video_id)
+            if video and video.get("metadata"):
+                merged_metadata = {**video["metadata"], **metadata}
+            else:
+                merged_metadata = metadata
+
+            update_data = {
+                "metadata": merged_metadata,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }
+        else:
+            update_data = {
+                "metadata": metadata,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }
+
         self.videos.document(video_id).update(update_data)
         logger.info(f"Updated metadata for video {video_id}")
 
