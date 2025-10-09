@@ -104,115 +104,84 @@ class SceneWorker:
         # Update status to processing
         self.db.update_task_status(task_id, TaskStatus.PROCESSING)
 
-        if task_type == "video_processing":
-            self._process_video(task)
+        if task_type == "scene_processing":
+            self._process_scene(task)
+        elif task_type == "video_processing":
+            # Legacy support - redirect to scene processing
+            self._process_scene(task)
         else:
             raise ValueError(f"Unknown task type: {task_type}")
 
-    def _process_video(self, task: dict):
+    def _process_scene(self, task: dict):
         """
-        Process a video following the 5-step workflow:
-        1. Extract metadata → save to DB
-        2. Extract audio tracks → save to DB
-        3. Compress to 480p
-        4. Chunk to 30 seconds → save chunks to GCS and paths to DB
-        5. Analyze each chunk with Gemini → save prompt and results to DB
+        Process a scene from already-compressed video (from media workflow):
+        1. Get compressed video path from task input
+        2. Chunk the video (if chunk_duration > 0)
+        3. Analyze each chunk with Gemini → save prompt and results to DB
         """
         task_id = task["task_id"]
         video_id = task["video_id"]
+        input_data = task.get("input_data", {})
+
+        compressed_video_path = input_data.get("compressed_video_path")
+        chunk_duration = input_data.get("chunk_duration", 30)
+        should_chunk = input_data.get("chunk", True)
+
+        logger.info(f"Processing scene for video {video_id} with chunk_duration={chunk_duration}s")
 
         # Get video info
         video = self.db.get_video(video_id)
         if not video:
             raise ValueError(f"Video not found: {video_id}")
 
-        # Download video from GCS
-        local_video_path = self.temp_dir / f"{video_id}_original.mp4"
-        self.storage.download_file(video["gcs_path"], local_video_path)
+        if not compressed_video_path:
+            raise ValueError(f"No compressed_video_path provided for video {video_id}")
+
+        # Download compressed video from GCS
+        local_video_path = self.temp_dir / f"{video_id}_compressed.mp4"
+        self.storage.download_file(compressed_video_path, local_video_path)
 
         processed_files = [local_video_path]
-        manifest_data = {}
+        manifest_data = {
+            "compressed_path": compressed_video_path
+        }
 
         try:
-            # ===== STEP 1: Extract Metadata =====
-            logger.info(f"[STEP 1/5] Extracting metadata for {video_id}")
-            self.db.update_video_status(video_id, VideoStatus.EXTRACTING_METADATA)
+            # ===== STEP 1: Chunk the video (if needed) =====
+            if should_chunk and chunk_duration > 0:
+                logger.info(f"[STEP 1/2] Chunking video into {chunk_duration}s segments for {video_id}")
+                self.db.update_video_status(video_id, VideoStatus.CHUNKING)
 
-            metadata = extract_metadata(local_video_path)
+                chunks_dir = self.temp_dir / f"{video_id}_chunks"
+                # TODO: Pass chunk_duration to chunk_video function
+                chunks = chunk_video(local_video_path, chunks_dir)
 
-            # Save metadata to DB
-            self.db.update_video_metadata(video_id, metadata)
-            logger.info(f"Metadata extracted: {metadata.get('duration')}s, {metadata.get('width')}x{metadata.get('height')}")
+                # Upload chunks to GCS
+                for chunk in chunks:
+                    chunk_path = Path(chunk["path"])
+                    chunk_gcs = f"gs://{settings.processed_bucket}/{video_id}/scene_chunks/{chunk['filename']}"
+                    self.storage.upload_file(chunk_path, chunk_gcs, "video/mp4")
+                    chunk["gcs_path"] = chunk_gcs
+                    processed_files.append(chunk_path)
 
-            # ===== STEP 2: Extract Audio =====
-            logger.info(f"[STEP 2/5] Extracting audio for {video_id}")
-            self.db.update_video_status(video_id, VideoStatus.EXTRACTING_AUDIO)
-
-            audio_path = self.temp_dir / f"{video_id}_audio.mp3"
-            extracted_audio = extract_audio(local_video_path, audio_path)
-
-            audio_info = {}
-            if extracted_audio:
-                # Upload audio to GCS
-                audio_gcs = f"gs://{settings.processed_bucket}/{video_id}/audio.mp3"
-                self.storage.upload_file(audio_path, audio_gcs, "audio/mpeg")
-                audio_info = {
-                    "has_audio": True,
-                    "gcs_path": audio_gcs,
-                    "format": "mp3"
-                }
-                manifest_data["audio_path"] = audio_gcs
-                processed_files.append(audio_path)
-                logger.info(f"Audio extracted and uploaded to {audio_gcs}")
+                manifest_data["chunks"] = chunks
+                logger.info(f"Created {len(chunks)} chunks and uploaded to GCS")
             else:
-                audio_info = {"has_audio": False}
-                logger.info(f"No audio stream found in video {video_id}")
-
-            # Save audio info to DB
-            self.db.update_video_audio_info(video_id, audio_info)
-
-            # ===== STEP 3: Compress to 480p =====
-            logger.info(f"[STEP 3/5] Compressing video to 480p for {video_id}")
-            self.db.update_video_status(video_id, VideoStatus.COMPRESSING)
-
-            compressed_path = self.temp_dir / f"{video_id}_compressed.mp4"
-            compress_video(local_video_path, compressed_path)
-
-            # Upload compressed video
-            compressed_gcs = f"gs://{settings.processed_bucket}/{video_id}/compressed.mp4"
-            self.storage.upload_file(compressed_path, compressed_gcs, "video/mp4")
-            manifest_data["compressed_path"] = compressed_gcs
-            processed_files.append(compressed_path)
-            logger.info(f"Video compressed and uploaded to {compressed_gcs}")
-
-            # ===== STEP 4: Chunk to 30 seconds =====
-            logger.info(f"[STEP 4/5] Chunking video into {settings.chunk_duration_seconds}s segments for {video_id}")
-            self.db.update_video_status(video_id, VideoStatus.CHUNKING)
-
-            chunks_dir = self.temp_dir / f"{video_id}_chunks"
-            chunks = chunk_video(compressed_path, chunks_dir)
-
-            # Upload chunks to GCS
-            for chunk in chunks:
-                chunk_path = Path(chunk["path"])
-                chunk_gcs = f"gs://{settings.processed_bucket}/{video_id}/chunks/{chunk['filename']}"
-                self.storage.upload_file(chunk_path, chunk_gcs, "video/mp4")
-                chunk["gcs_path"] = chunk_gcs
-                processed_files.append(chunk_path)
-
-            manifest_data["chunks"] = chunks
-            logger.info(f"Created {len(chunks)} chunks and uploaded to GCS")
+                # No chunking - treat entire video as one chunk
+                logger.info(f"[STEP 1/2] No chunking - analyzing entire video for {video_id}")
+                chunks = [{
+                    "index": 0,
+                    "filename": "full_video.mp4",
+                    "gcs_path": compressed_video_path,
+                    "duration": video.get("metadata", {}).get("duration", 0)
+                }]
+                manifest_data["chunks"] = chunks
 
             # Create and save manifest
-            manifest = create_manifest(
-                video_id=video_id,
-                original_metadata=metadata,
-                **manifest_data
-            )
-            self.db.create_manifest(video_id, manifest)
+            self.db.create_manifest(video_id, manifest_data)
 
-            # ===== STEP 5: Analyze each chunk with Gemini =====
-            logger.info(f"[STEP 5/5] Analyzing {len(chunks)} chunks with Gemini for {video_id}")
+            # ===== STEP 2: Analyze each chunk with Gemini =====
+            logger.info(f"[STEP 2/2] Analyzing {len(chunks)} chunk(s) with Gemini for {video_id}")
             self.db.update_video_status(video_id, VideoStatus.ANALYZING)
 
             # Get the prompt text once for all chunks
@@ -287,7 +256,7 @@ class SceneWorker:
                 }
             )
 
-            logger.info(f"Successfully processed video {video_id}")
+            logger.info(f"Successfully processed scene for video {video_id}")
 
         finally:
             # Clean up local files

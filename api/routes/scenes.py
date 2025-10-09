@@ -119,10 +119,38 @@ async def list_videos(
     limit: int = 50,
     status_filter: VideoStatus = None
 ):
-    """List all videos, optionally filtered by status."""
+    """
+    List videos that have scene jobs.
+
+    This endpoint only returns videos that have been through the scene workflow,
+    not just uploaded/media-processed videos.
+    """
     try:
         db = get_db()
-        videos = db.list_videos(limit=limit, status=status_filter)
+
+        # Get all scene jobs to find videos with scene data
+        job_docs = db.scene_jobs.limit(limit * 2).stream()  # Get more jobs since multiple per video
+        video_ids_with_jobs = set()
+        for doc in job_docs:
+            job = doc.to_dict()
+            if job.get("video_id"):
+                video_ids_with_jobs.add(job["video_id"])
+
+        # Get videos that have scene jobs
+        videos = []
+        for video_id in video_ids_with_jobs:
+            video = db.get_video(video_id)
+            if video:
+                # Apply status filter if provided
+                if status_filter is None or video.get("status") == status_filter:
+                    videos.append(video)
+
+        # Sort by created_at descending
+        videos.sort(key=lambda v: v.get("created_at", 0), reverse=True)
+
+        # Limit results
+        videos = videos[:limit]
+
         return [VideoResponse(**v) for v in videos]
 
     except Exception as e:
@@ -136,9 +164,9 @@ async def list_videos(
 @router.post("/{video_id}/process", response_model=ProcessingJobResponse)
 async def process_video(video_id: str, request: ProcessVideoRequest):
     """
-    Start video processing (compression, chunking, audio extraction).
+    Start scene processing (compression, chunking, audio extraction).
 
-    This creates a processing task that will be picked up by a worker.
+    This creates a scene job and task that will be picked up by a worker.
     """
     try:
         db = get_db()
@@ -154,23 +182,39 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
         # Update video status to first processing step
         db.update_video_status(video_id, VideoStatus.EXTRACTING_METADATA)
 
-        # Create processing task
+        # Create scene job
+        job_id = str(uuid.uuid4())
+        job_data = db.create_scene_job(
+            job_id=job_id,
+            video_id=video_id,
+            config={
+                "compressed_video_path": request.compressed_video_path,
+                "chunk_duration": request.chunk_duration,
+                "chunk": request.chunk,
+            }
+        )
+
+        # Create processing task linked to the job
         task_id = str(uuid.uuid4())
         task_data = db.create_task(
             task_id=task_id,
             video_id=video_id,
-            task_type="video_processing",
+            task_type="scene_processing",
             input_data={
-                "compress": request.compress,
+                "compressed_video_path": request.compressed_video_path,
+                "chunk_duration": request.chunk_duration,
                 "chunk": request.chunk,
-                "extract_audio": request.extract_audio,
-            }
+            },
+            scene_job_id=job_id
         )
+
+        # Add task to scene job
+        db.add_task_to_scene_job(job_id, task_id)
 
         return ProcessingJobResponse(
             video_id=video_id,
             status="processing",
-            message=f"Video processing started. Task ID: {task_id}"
+            message=f"Scene processing started. Job ID: {job_id}, Task ID: {task_id}"
         )
 
     except HTTPException:
@@ -347,20 +391,68 @@ async def delete_scene(video_id: str):
         db.update_video_status(video_id, VideoStatus.UPLOADED)
 
         # Delete manifest
-        db.manifests.document(video_id).delete()
+        db.scene_manifests.document(video_id).delete()
 
         # Delete all scene processing tasks for this video
         tasks = db.list_tasks_for_video(video_id)
+        tasks_deleted = 0
         for task in tasks:
-            db.tasks.document(task["task_id"]).delete()
-            logger.info(f"Deleted task: {task['task_id']}")
+            task_id = task.get("task_id")
+            if task_id:
+                try:
+                    db.scene_tasks.document(task_id).delete()
+                    tasks_deleted += 1
+                    logger.info(f"Deleted task: {task_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete task {task_id}: {e}")
+
+        if tasks_deleted > 0:
+            logger.info(f"Deleted {tasks_deleted} tasks for video {video_id}")
+
+        # Delete all scene jobs for this video
+        scene_jobs = db.list_scene_jobs_for_video(video_id)
+        jobs_deleted = 0
+        for job in scene_jobs:
+            job_id = job.get("job_id")
+            if job_id:
+                try:
+                    db.scene_jobs.document(job_id).delete()
+                    jobs_deleted += 1
+                    logger.info(f"Deleted scene job: {job_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete scene job {job_id}: {e}")
+
+        if jobs_deleted > 0:
+            logger.info(f"Deleted {jobs_deleted} scene jobs for video {video_id}")
 
         # Delete all scene analysis results for this video
-        results = db.get_results_for_video(video_id)
-        for result in results:
-            if result.get("result_id"):
-                db.results.document(result["result_id"]).delete()
-                logger.info(f"Deleted result: {result['result_id']}")
+        # Note: Results use auto-generated IDs, so we need to query and delete by document reference
+        query = db.scene_results.where("video_id", "==", video_id)
+        deleted_count = 0
+        for doc in query.stream():
+            try:
+                doc.reference.delete()
+                deleted_count += 1
+                logger.info(f"Deleted result: {doc.id}")
+            except Exception as e:
+                logger.warning(f"Failed to delete result {doc.id}: {e}")
+
+        if deleted_count > 0:
+            logger.info(f"Deleted {deleted_count} results for video {video_id}")
+
+        # Delete all prompts for this video (which are currently stored per chunk - will be refactored)
+        prompts_query = db.scene_prompts.where("video_id", "==", video_id)
+        prompts_deleted = 0
+        for doc in prompts_query.stream():
+            try:
+                doc.reference.delete()
+                prompts_deleted += 1
+                logger.info(f"Deleted prompt: {doc.id}")
+            except Exception as e:
+                logger.warning(f"Failed to delete prompt {doc.id}: {e}")
+
+        if prompts_deleted > 0:
+            logger.info(f"Deleted {prompts_deleted} prompts for video {video_id}")
 
         logger.info(f"Deleted scene analysis data for {video_id}, preserved source video at {video.get('gcs_path')}")
         return None

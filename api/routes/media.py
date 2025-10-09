@@ -176,6 +176,27 @@ async def delete_media_job(job_id: str):
         )
 
 
+@router.get("/videos")
+async def list_all_videos(limit: int = 50):
+    """
+    List all uploaded videos (for media workflow).
+
+    Returns ALL videos regardless of processing status - this is used by the media page
+    to show videos available for media processing.
+    """
+    try:
+        db = get_db()
+        videos = db.list_videos(limit=limit)
+        return videos
+
+    except Exception as e:
+        logger.error(f"Failed to list videos: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list videos: {str(e)}"
+        )
+
+
 @router.get("/presets", response_model=MediaPresetResponse)
 async def get_media_presets():
     """Get available media processing presets and options."""

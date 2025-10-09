@@ -24,10 +24,12 @@ def db():
 
             # Replace collections with mocks
             db_instance.videos = MagicMock()
-            db_instance.tasks = MagicMock()
-            db_instance.results = MagicMock()
-            db_instance.prompts = MagicMock()
-            db_instance.manifests = MagicMock()
+            db_instance.scene_tasks = MagicMock()
+            db_instance.scene_results = MagicMock()
+            db_instance.scene_prompts = MagicMock()
+            db_instance.scene_manifests = MagicMock()
+            db_instance.scene_jobs = MagicMock()
+            db_instance.media_jobs = MagicMock()
 
             yield db_instance
 
@@ -137,9 +139,9 @@ class TestTaskOperations:
     """Tests for task database operations."""
 
     def test_create_task(self, db):
-        """Test creating a task."""
+        """Test creating a scene task."""
         mock_doc = MagicMock()
-        db.tasks.document.return_value = mock_doc
+        db.scene_tasks.document.return_value = mock_doc
 
         result = db.create_task(
             task_id="task-123",
@@ -152,9 +154,9 @@ class TestTaskOperations:
         mock_doc.set.assert_called_once()
 
     def test_update_task_status(self, db):
-        """Test updating task status."""
+        """Test updating scene task status."""
         mock_doc = MagicMock()
-        db.tasks.document.return_value = mock_doc
+        db.scene_tasks.document.return_value = mock_doc
 
         db.update_task_status(
             "task-123",
@@ -168,9 +170,9 @@ class TestTaskOperations:
         assert update_data["result_data"] == {"success": True}
 
     def test_get_pending_tasks(self, db):
-        """Test getting pending tasks."""
+        """Test getting pending scene tasks."""
         mock_query = MagicMock()
-        db.tasks.where.return_value = mock_query
+        db.scene_tasks.where.return_value = mock_query
         mock_query.limit.return_value = mock_query
 
         mock_docs = [
@@ -188,10 +190,10 @@ class TestResultOperations:
     """Tests for result database operations."""
 
     def test_save_result(self, db):
-        """Test saving analysis result."""
+        """Test saving scene analysis result."""
         mock_doc_ref = MagicMock()
         mock_doc_ref.id = "result-123"
-        db.results.add.return_value = (None, mock_doc_ref)
+        db.scene_results.add.return_value = (None, mock_doc_ref)
 
         result_id = db.save_result(
             video_id="video-123",
@@ -200,12 +202,12 @@ class TestResultOperations:
         )
 
         assert result_id == "result-123"
-        db.results.add.assert_called_once()
+        db.scene_results.add.assert_called_once()
 
     def test_get_results_for_video(self, db):
-        """Test getting results for a video."""
+        """Test getting scene results for a video."""
         mock_query = MagicMock()
-        db.results.where.return_value = mock_query
+        db.scene_results.where.return_value = mock_query
 
         mock_docs = [
             MagicMock(to_dict=lambda: {"result_type": "scene_analysis"})
@@ -221,10 +223,10 @@ class TestPromptOperations:
     """Tests for prompt database operations."""
 
     def test_save_prompt(self, db):
-        """Test saving a prompt."""
+        """Test saving a scene prompt."""
         mock_doc_ref = MagicMock()
         mock_doc_ref.id = "prompt-123"
-        db.prompts.add.return_value = (None, mock_doc_ref)
+        db.scene_prompts.add.return_value = (None, mock_doc_ref)
 
         prompt_id = db.save_prompt(
             video_id="video-123",
@@ -234,4 +236,4 @@ class TestPromptOperations:
         )
 
         assert prompt_id == "prompt-123"
-        db.prompts.add.assert_called_once()
+        db.scene_prompts.add.assert_called_once()

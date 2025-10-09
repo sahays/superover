@@ -19,8 +19,8 @@ export default function MediaProcessingPage() {
   const [showProcessDialog, setShowProcessDialog] = useState(false)
 
   const { data: videos, isLoading: videosLoading, refetch: refetchVideos } = useQuery({
-    queryKey: ['videos'],
-    queryFn: () => videoApi.listVideos(),
+    queryKey: ['media-videos'],
+    queryFn: () => mediaApi.listVideos(),
   })
 
   const { data: allMediaJobs, refetch: refetchJobs } = useQuery({

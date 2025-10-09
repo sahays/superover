@@ -40,6 +40,14 @@ class MediaJobStatus(str, Enum):
     FAILED = "failed"
 
 
+class SceneJobStatus(str, Enum):
+    """Scene analysis job status."""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class FirestoreDB:
     """Firestore database operations."""
 
@@ -49,11 +57,17 @@ class FirestoreDB:
             project=settings.gcp_project_id,
             database=settings.firestore_database
         )
+        # Core collections
         self.videos = self.client.collection("videos")
-        self.manifests = self.client.collection("manifests")
-        self.tasks = self.client.collection("analysis_tasks")
-        self.results = self.client.collection("results")
-        self.prompts = self.client.collection("prompts")
+
+        # Scene workflow collections
+        self.scene_manifests = self.client.collection("scene_manifests")
+        self.scene_jobs = self.client.collection("scene_jobs")
+        self.scene_tasks = self.client.collection("scene_tasks")
+        self.scene_results = self.client.collection("scene_results")
+        self.scene_prompts = self.client.collection("scene_prompts")
+
+        # Media workflow collections
         self.media_jobs = self.client.collection("media_jobs")
 
     # === Video Operations ===
@@ -184,7 +198,7 @@ class FirestoreDB:
 
         return [doc.to_dict() for doc in query.stream()]
 
-    # === Manifest Operations ===
+    # === Scene Manifest Operations ===
 
     def create_manifest(
         self,
@@ -192,7 +206,7 @@ class FirestoreDB:
         manifest_data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Create processing manifest for a video.
+        Create scene processing manifest for a video.
 
         Args:
             video_id: Associated video ID
@@ -207,34 +221,36 @@ class FirestoreDB:
             **manifest_data
         }
 
-        self.manifests.document(video_id).set(manifest)
-        logger.info(f"Created manifest for video: {video_id}")
+        self.scene_manifests.document(video_id).set(manifest)
+        logger.info(f"Created scene manifest for video: {video_id}")
         return manifest
 
     def get_manifest(self, video_id: str) -> Optional[Dict[str, Any]]:
-        """Get manifest for a video."""
-        doc = self.manifests.document(video_id).get()
+        """Get scene manifest for a video."""
+        doc = self.scene_manifests.document(video_id).get()
         if doc.exists:
             return doc.to_dict()
         return None
 
-    # === Task Operations ===
+    # === Scene Task Operations ===
 
     def create_task(
         self,
         task_id: str,
         video_id: str,
         task_type: str,
-        input_data: Dict[str, Any]
+        input_data: Dict[str, Any],
+        scene_job_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Create an analysis task.
+        Create a scene analysis task.
 
         Args:
             task_id: Unique task ID
             video_id: Associated video ID
-            task_type: Type of task (scene_analysis, transcription, moderation, etc.)
+            task_type: Type of task (video_processing, scene_*, etc.)
             input_data: Task-specific input data
+            scene_job_id: Optional parent scene job ID
 
         Returns:
             Created task document
@@ -249,13 +265,16 @@ class FirestoreDB:
             "updated_at": firestore.SERVER_TIMESTAMP,
         }
 
-        self.tasks.document(task_id).set(task_data)
-        logger.info(f"Created task: {task_id} for video: {video_id}")
+        if scene_job_id:
+            task_data["scene_job_id"] = scene_job_id
+
+        self.scene_tasks.document(task_id).set(task_data)
+        logger.info(f"Created scene task: {task_id} for video: {video_id}")
         return task_data
 
     def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
-        """Get task by ID."""
-        doc = self.tasks.document(task_id).get()
+        """Get scene task by ID."""
+        doc = self.scene_tasks.document(task_id).get()
         if doc.exists:
             return doc.to_dict()
         return None
@@ -267,7 +286,7 @@ class FirestoreDB:
         result_data: Optional[Dict[str, Any]] = None,
         error_message: Optional[str] = None
     ) -> None:
-        """Update task status and optionally store result."""
+        """Update scene task status and optionally store result."""
         update_data = {
             "status": status,
             "updated_at": firestore.SERVER_TIMESTAMP,
@@ -279,16 +298,16 @@ class FirestoreDB:
         if error_message:
             update_data["error_message"] = error_message
 
-        self.tasks.document(task_id).update(update_data)
-        logger.info(f"Updated task {task_id} status to {status}")
+        self.scene_tasks.document(task_id).update(update_data)
+        logger.info(f"Updated scene task {task_id} status to {status}")
 
     def list_tasks_for_video(
         self,
         video_id: str,
         status: Optional[TaskStatus] = None
     ) -> List[Dict[str, Any]]:
-        """List all tasks for a video."""
-        query = self.tasks.where("video_id", "==", video_id)
+        """List all scene tasks for a video."""
+        query = self.scene_tasks.where("video_id", "==", video_id)
 
         if status:
             query = query.where("status", "==", status)
@@ -296,9 +315,9 @@ class FirestoreDB:
         return [doc.to_dict() for doc in query.stream()]
 
     def get_pending_tasks(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """Get pending tasks for worker processing."""
+        """Get pending scene tasks for worker processing."""
         query = (
-            self.tasks
+            self.scene_tasks
             .where("status", "==", TaskStatus.PENDING)
             .limit(limit)
         )
@@ -306,22 +325,24 @@ class FirestoreDB:
         # Sort by created_at in memory to avoid needing a composite index
         return sorted(tasks, key=lambda x: x.get("created_at", 0))
 
-    # === Result Operations ===
+    # === Scene Result Operations ===
 
     def save_result(
         self,
         video_id: str,
         result_type: str,
         result_data: Dict[str, Any],
+        scene_job_id: Optional[str] = None,
         gcs_path: Optional[str] = None
     ) -> str:
         """
-        Save analysis result.
+        Save scene analysis result.
 
         Args:
             video_id: Associated video ID
             result_type: Type of result (scene_analysis, transcription, etc.)
             result_data: The analysis result
+            scene_job_id: Optional parent scene job ID
             gcs_path: Optional GCS path to full result file
 
         Returns:
@@ -335,8 +356,11 @@ class FirestoreDB:
             "created_at": firestore.SERVER_TIMESTAMP,
         }
 
-        doc_ref = self.results.add(result_doc)
-        logger.info(f"Saved result for video: {video_id}, type: {result_type}")
+        if scene_job_id:
+            result_doc["scene_job_id"] = scene_job_id
+
+        doc_ref = self.scene_results.add(result_doc)
+        logger.info(f"Saved scene result for video: {video_id}, type: {result_type}")
         return doc_ref[1].id
 
     def get_results_for_video(
@@ -344,15 +368,15 @@ class FirestoreDB:
         video_id: str,
         result_type: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Get all results for a video, optionally filtered by type."""
-        query = self.results.where("video_id", "==", video_id)
+        """Get all scene results for a video, optionally filtered by type."""
+        query = self.scene_results.where("video_id", "==", video_id)
 
         if result_type:
             query = query.where("result_type", "==", result_type)
 
         return [doc.to_dict() for doc in query.stream()]
 
-    # === Prompt Operations ===
+    # === Scene Prompt Operations ===
 
     def save_prompt(
         self,
@@ -362,7 +386,7 @@ class FirestoreDB:
         prompt_type: str = "scene_analysis"
     ) -> str:
         """
-        Save a prompt used for analysis.
+        Save a prompt used for scene analysis.
 
         Args:
             video_id: Associated video ID
@@ -381,9 +405,116 @@ class FirestoreDB:
             "created_at": firestore.SERVER_TIMESTAMP,
         }
 
-        doc_ref = self.prompts.add(prompt_doc)
-        logger.info(f"Saved prompt for video: {video_id}, chunk: {chunk_index}")
+        doc_ref = self.scene_prompts.add(prompt_doc)
+        logger.info(f"Saved scene prompt for video: {video_id}, chunk: {chunk_index}")
         return doc_ref[1].id
+
+    # === Scene Job Operations ===
+
+    def create_scene_job(
+        self,
+        job_id: str,
+        video_id: str,
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Create a scene analysis job.
+
+        Args:
+            job_id: Unique job ID
+            video_id: Associated video ID
+            config: Processing configuration (chunk_duration, prompt_version, scene_types)
+
+        Returns:
+            Created job document
+        """
+        job_data = {
+            "job_id": job_id,
+            "video_id": video_id,
+            "status": SceneJobStatus.PENDING,
+            "config": config,
+            "task_ids": [],
+            "created_at": firestore.SERVER_TIMESTAMP,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }
+
+        self.scene_jobs.document(job_id).set(job_data)
+        logger.info(f"Created scene job: {job_id} for video: {video_id}")
+        return self.get_scene_job(job_id)
+
+    def get_scene_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """Get scene job by ID."""
+        doc = self.scene_jobs.document(job_id).get()
+        if doc.exists:
+            return doc.to_dict()
+        return None
+
+    def update_scene_job_status(
+        self,
+        job_id: str,
+        status: SceneJobStatus,
+        results: Optional[Dict[str, Any]] = None,
+        error_message: Optional[str] = None
+    ) -> None:
+        """Update scene job status and optionally store results."""
+        update_data = {
+            "status": status,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }
+
+        if results:
+            update_data["results"] = results
+
+        if error_message:
+            update_data["error_message"] = error_message
+
+        self.scene_jobs.document(job_id).update(update_data)
+        logger.info(f"Updated scene job {job_id} status to {status}")
+
+    def add_task_to_scene_job(
+        self,
+        job_id: str,
+        task_id: str
+    ) -> None:
+        """Add a task ID to a scene job's task list."""
+        job = self.get_scene_job(job_id)
+        if job:
+            task_ids = job.get("task_ids", [])
+            task_ids.append(task_id)
+            self.scene_jobs.document(job_id).update({
+                "task_ids": task_ids,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            })
+            logger.info(f"Added task {task_id} to scene job {job_id}")
+
+    def list_scene_jobs_for_video(
+        self,
+        video_id: str,
+        status: Optional[SceneJobStatus] = None
+    ) -> List[Dict[str, Any]]:
+        """List all scene jobs for a video."""
+        query = self.scene_jobs.where("video_id", "==", video_id)
+
+        if status:
+            query = query.where("status", "==", status)
+
+        return [doc.to_dict() for doc in query.stream()]
+
+    def get_pending_scene_jobs(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get pending scene jobs for worker processing."""
+        query = (
+            self.scene_jobs
+            .where("status", "==", SceneJobStatus.PENDING)
+            .limit(limit)
+        )
+        jobs = [doc.to_dict() for doc in query.stream()]
+        # Sort by created_at in memory to avoid needing a composite index
+        return sorted(jobs, key=lambda x: x.get("created_at", 0))
+
+    def delete_scene_job(self, job_id: str) -> None:
+        """Delete a scene job."""
+        self.scene_jobs.document(job_id).delete()
+        logger.info(f"Deleted scene job: {job_id}")
 
     # === Media Job Operations ===
 
@@ -483,7 +614,7 @@ class FirestoreDB:
 
     def watch_pending_tasks(self, callback):
         """
-        Watch for new pending tasks (for worker).
+        Watch for new pending scene tasks (for worker).
         Callback is called whenever a new pending task is created.
 
         Args:
@@ -496,9 +627,9 @@ class FirestoreDB:
                     if task_data.get("status") == TaskStatus.PENDING:
                         callback(task_data)
 
-        query = self.tasks.where("status", "==", TaskStatus.PENDING)
+        query = self.scene_tasks.where("status", "==", TaskStatus.PENDING)
         query.on_snapshot(on_snapshot)
-        logger.info("Started watching for pending tasks")
+        logger.info("Started watching for pending scene tasks")
 
 
 # Singleton instance

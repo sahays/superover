@@ -23,10 +23,12 @@ class CreateVideoRequest(BaseModel):
 
 
 class ProcessVideoRequest(BaseModel):
-    """Request to start video processing."""
-    compress: bool = Field(True, description="Whether to compress the video")
+    """Request to start scene processing."""
+    compressed_video_path: Optional[str] = Field(None, description="GCS path to compressed video from media workflow")
+    chunk_duration: int = Field(30, description="Chunk duration in seconds (0 = no chunking)")
+    compress: bool = Field(False, description="Whether to compress (deprecated - use media workflow)")
     chunk: bool = Field(True, description="Whether to chunk the video")
-    extract_audio: bool = Field(True, description="Whether to extract audio")
+    extract_audio: bool = Field(False, description="Whether to extract audio (deprecated - use media workflow)")
 
 
 class SceneAnalysisRequest(BaseModel):

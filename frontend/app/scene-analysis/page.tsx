@@ -37,12 +37,12 @@ export default function SceneAnalysisPage() {
     // Start scene analysis for the selected (already compressed) video
     // The video is already compressed from /media workflow, we just need to chunk and analyze
     try {
-      // Pass chunk duration to the processing endpoint
-      // TODO: Update API to accept compressed video path and chunk duration
       await videoApi.processVideo(videoId, {
-        compress: false, // Already compressed
-        chunk: chunkDuration > 0, // Only chunk if duration > 0
-        extract_audio: false, // Already extracted in media workflow
+        compressed_video_path: gcsPath, // GCS path from media job
+        chunk_duration: chunkDuration,  // User-selected chunk duration
+        chunk: chunkDuration > 0,       // Only chunk if duration > 0
+        compress: false,                 // Already compressed in media workflow
+        extract_audio: false,            // Already extracted in media workflow
       })
       setShowPicker(false)
       refetch()
