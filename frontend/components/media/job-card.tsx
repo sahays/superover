@@ -24,10 +24,14 @@ export function JobCard({ job, onDelete }: JobCardProps) {
           </Badge>
         )
       case MediaJobStatus.PROCESSING:
+        // Show the actual processing step if available
+        const stepLabel = job.progress?.step
+          ? job.progress.step.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())
+          : 'Processing'
         return (
           <Badge variant="default" className="bg-blue-600">
             <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-            Processing
+            {stepLabel}
           </Badge>
         )
       case MediaJobStatus.FAILED:
@@ -144,11 +148,13 @@ export function JobCard({ job, onDelete }: JobCardProps) {
 
         {/* Actions */}
         <div className="flex gap-2">
-          <Button asChild variant="outline" size="sm" className="flex-1">
-            <Link href={`/video/${job.video_id}`}>
-              View Video
-            </Link>
-          </Button>
+          {job.status === MediaJobStatus.COMPLETED && (
+            <Button asChild variant="outline" size="sm" className="flex-1">
+              <Link href={`/media/${job.job_id}`}>
+                View Details
+              </Link>
+            </Button>
+          )}
           {job.status !== MediaJobStatus.PROCESSING && onDelete && (
             <Button
               variant="ghost"
