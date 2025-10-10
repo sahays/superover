@@ -56,7 +56,7 @@ class VideoResponse(BaseModel):
     video_id: str
     filename: str
     gcs_path: str
-    status: str  # Allow any status string
+    status: Optional[str] = None  # Optional - status lives in jobs now
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     metadata: Optional[Dict[str, Any]] = None
