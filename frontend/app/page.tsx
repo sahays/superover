@@ -1,6 +1,6 @@
 'use client'
 
-import { Video as VideoIcon, Film, Sparkles, ArrowRight } from 'lucide-react'
+import { Video as VideoIcon, Film, Sparkles, ArrowRight, BotMessageSquare } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -111,6 +111,35 @@ export default function HomePage() {
               <Link href="/media" className="block">
                 <Button className="w-full mt-4" size="lg" variant="outline">
                   Start Media Processing
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Prompt Management Card */}
+        <div className="max-w-5xl mx-auto mt-8">
+          <Card className="relative overflow-hidden transition hover:shadow-lg">
+             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-500/20 to-transparent rounded-bl-full" />
+            <CardHeader>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300">
+                  <BotMessageSquare className="h-6 w-6" />
+                </div>
+                <CardTitle className="text-2xl">Prompt Management</CardTitle>
+              </div>
+              <CardDescription className="text-base">
+                Configure the prompts used by the Gemini AI models
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+               <p className="text-sm text-muted-foreground mb-4">
+                Centrally manage the prompts for different analysis types to ensure consistency and allow for easy experimentation and tuning.
+              </p>
+              <Link href="/prompts" className="block">
+                <Button className="w-full mt-4" size="lg" variant="outline">
+                  Manage Prompts
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </Link>

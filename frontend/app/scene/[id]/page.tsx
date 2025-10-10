@@ -4,7 +4,7 @@ import { use, useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { ArrowLeft, Play, Download, Settings } from 'lucide-react'
 import Link from 'next/link'
-import { videoApi, mediaApi } from '@/lib/api-client'
+import { videoApi, mediaApi, sceneJobApi } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
@@ -14,36 +14,50 @@ import { StartProcessing } from '@/components/media/start-processing'
 import { JobCard } from '@/components/media/job-card'
 
 export default function SceneDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params)
+  const { id: jobId } = use(params)
   const [showMediaDialog, setShowMediaDialog] = useState(false)
 
-  const { data: scene, isLoading } = useQuery({
-    queryKey: ['scene', id],
-    queryFn: () => videoApi.getVideo(id),
+  // First get the scene job
+  const { data: sceneJob, isLoading: isLoadingJob } = useQuery({
+    queryKey: ['scene-job', jobId],
+    queryFn: () => sceneJobApi.getJob(jobId),
     refetchInterval: (query) => {
-      // Auto-refresh if scene is processing or analyzing
-      if (query.state.data && (query.state.data.status === 'processing' || query.state.data.status === 'analyzing')) {
-        return 3000 // 3 seconds
-      }
-      return false
+      // Auto-refresh if scene job is processing
+      const status = query.state.data?.status
+      return status === 'pending' || status === 'processing' ? 3000 : false
     },
   })
 
+  const videoId = sceneJob?.video_id
+
+  // Get video metadata
+  const { data: scene, isLoading: isLoadingVideo } = useQuery({
+    queryKey: ['scene', videoId],
+    queryFn: () => videoApi.getVideo(videoId!),
+    enabled: !!videoId,
+  })
+
+  const isLoading = isLoadingJob || isLoadingVideo
+
+  // Check if job is completed
+  const isCompleted = sceneJob?.status === 'completed'
+
   const { data: manifest } = useQuery({
-    queryKey: ['manifest', id],
-    queryFn: () => videoApi.getManifest(id),
-    enabled: scene?.status === 'processed' || scene?.status === 'analyzing' || scene?.status === 'completed',
+    queryKey: ['manifest', videoId],
+    queryFn: () => videoApi.getManifest(videoId!),
+    enabled: !!videoId && isCompleted,
   })
 
   const { data: results } = useQuery({
-    queryKey: ['results', id],
-    queryFn: () => videoApi.getResults(id),
-    enabled: scene?.status === 'completed',
+    queryKey: ['results', jobId],
+    queryFn: () => sceneJobApi.getResults(jobId),
+    enabled: isCompleted,
   })
 
   const { data: mediaJobs, refetch: refetchMediaJobs } = useQuery({
-    queryKey: ['media-jobs', id],
-    queryFn: () => mediaApi.listJobsForVideo(id),
+    queryKey: ['media-jobs', videoId],
+    queryFn: () => mediaApi.listJobsForVideo(videoId!),
+    enabled: !!videoId,
     refetchInterval: 5000, // Poll every 5 seconds
   })
 
@@ -88,10 +102,10 @@ export default function SceneDetailPage({ params }: { params: Promise<{ id: stri
       <div className="container mx-auto max-w-6xl px-4 py-8">
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
-          <Link href="/">
+          <Link href="/scene-analysis">
             <Button variant="ghost">
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back
+              Back to Scene Analysis
             </Button>
           </Link>
         </div>
@@ -142,6 +156,59 @@ export default function SceneDetailPage({ params }: { params: Promise<{ id: stri
                 </dl>
               </CardContent>
             </Card>
+
+            {/* Scene Job Info */}
+            {sceneJob && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Scene Analysis Job</CardTitle>
+                  <CardDescription>Configuration and status for this analysis</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <dl className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <dt className="text-sm font-medium text-muted-foreground">Job ID</dt>
+                      <dd className="mt-1 text-sm font-mono">{sceneJob.job_id}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm font-medium text-muted-foreground">Status</dt>
+                      <dd className="mt-1 text-sm capitalize">{sceneJob.status}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm font-medium text-muted-foreground">Chunk Duration</dt>
+                      <dd className="mt-1 text-sm">
+                        {sceneJob.config.chunk_duration > 0
+                          ? `${sceneJob.config.chunk_duration}s`
+                          : 'No chunking (full video)'}
+                      </dd>
+                    </div>
+                    {sceneJob.config.compressed_video_path && (
+                      <div>
+                        <dt className="text-sm font-medium text-muted-foreground">Source</dt>
+                        <dd className="mt-1 text-sm">Compressed video from media workflow</dd>
+                      </div>
+                    )}
+                    {sceneJob.results && (
+                      <div className="col-span-full">
+                        <dt className="text-sm font-medium text-muted-foreground">Results</dt>
+                        <dd className="mt-1 text-sm">
+                          {sceneJob.results.chunks_analyzed} chunk(s) analyzed
+                          {sceneJob.results.manifest_created && ' • Manifest created'}
+                        </dd>
+                      </div>
+                    )}
+                    {sceneJob.error_message && (
+                      <div className="col-span-full">
+                        <dt className="text-sm font-medium text-destructive">Error</dt>
+                        <dd className="mt-1 text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+                          {sceneJob.error_message}
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Manifest */}
             {manifest && (

@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { Video, VideoStatus } from '@/lib/types'
+import { Video } from '@/lib/types'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { RefreshCw, Video as VideoIcon, Clock, CheckCircle, AlertCircle, Loader2, MoreVertical, Trash2, Info } from 'lucide-react'
@@ -125,7 +125,6 @@ function VideoCard({ video, onDelete }: { video: Video; onDelete: () => void }) 
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <StatusBadge status={video.status} video={video} />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
                   <Button
@@ -219,76 +218,5 @@ function VideoCard({ video, onDelete }: { video: Video; onDelete: () => void }) 
         </DialogContent>
       </Dialog>
     </Card>
-  )
-}
-
-function StatusBadge({ status, video }: { status: VideoStatus; video?: Video }) {
-  const config = {
-    [VideoStatus.UPLOADED]: {
-      icon: Clock,
-      label: 'Uploaded',
-      className: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
-    },
-    [VideoStatus.EXTRACTING_METADATA]: {
-      icon: Loader2,
-      label: 'Extracting Metadata',
-      className: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300',
-      animate: true,
-    },
-    [VideoStatus.EXTRACTING_AUDIO]: {
-      icon: Loader2,
-      label: 'Extracting Audio',
-      className: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300',
-      animate: true,
-    },
-    [VideoStatus.COMPRESSING]: {
-      icon: Loader2,
-      label: 'Compressing',
-      className: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300',
-      animate: true,
-    },
-    [VideoStatus.CHUNKING]: {
-      icon: Loader2,
-      label: 'Chunking',
-      className: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300',
-      animate: true,
-    },
-    [VideoStatus.ANALYZING]: {
-      icon: Loader2,
-      label: 'Analyzing',
-      className: 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300',
-      animate: true,
-    },
-    [VideoStatus.COMPLETED]: {
-      icon: CheckCircle,
-      label: 'Completed',
-      className: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
-    },
-    [VideoStatus.FAILED]: {
-      icon: AlertCircle,
-      label: 'Failed',
-      className: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
-    },
-  }
-
-  const statusConfig = config[status]
-  const { icon: Icon, label, className } = statusConfig
-  const animate = 'animate' in statusConfig ? statusConfig.animate : false
-
-  // Calculate progress for analyzing status
-  let displayLabel = label
-  if (status === VideoStatus.ANALYZING && video?.metadata?.scene_analysis_progress) {
-    const { completed_chunks, total_chunks } = video.metadata.scene_analysis_progress
-    if (total_chunks > 0) {
-      const percentage = Math.round((completed_chunks / total_chunks) * 100)
-      displayLabel = `Analyzing ${percentage}%`
-    }
-  }
-
-  return (
-    <div className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${className}`}>
-      <Icon className={`h-3.5 w-3.5 ${animate ? 'animate-spin' : ''}`} />
-      {displayLabel}
-    </div>
   )
 }

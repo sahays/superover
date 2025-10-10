@@ -1,40 +1,41 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { Video as VideoIcon, FileVideo, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
-import { videoApi, mediaApi } from '@/lib/api-client'
-import { Video, VideoStatus } from '@/lib/types'
+import { videoApi, sceneJobApi } from '@/lib/api-client'
+import { SceneJob, SceneJobStatus } from '@/lib/types'
 import { VideoPicker } from '@/components/video-picker'
-import { VideoList } from '@/components/video-list'
+import { SceneJobCard } from '@/components/scene/job-card'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 export default function SceneAnalysisPage() {
   const [showPicker, setShowPicker] = useState(false)
 
-  const { data: videosWithJobs, isLoading, refetch } = useQuery({
-    queryKey: ['videos-with-jobs-scenes'],
-    queryFn: () => mediaApi.getAllVideosWithJobs(),
+  const { data: sceneJobs, isLoading, refetch } = useQuery<SceneJob[]>({
+    queryKey: ['scene-jobs'],
+    queryFn: () => sceneJobApi.listJobs(),
     refetchInterval: (query) => {
-      const hasActiveJobs = query.state.data?.some((v: any) =>
-        v.jobs.some((j: any) => ['pending', 'processing'].includes(j.status))
+      // Auto-refresh if any scene job is being processed
+      const activeStatuses = [
+        SceneJobStatus.PENDING,
+        SceneJobStatus.PROCESSING,
+      ]
+      const hasActiveJobs = query.state.data?.some(
+        (job: SceneJob) => activeStatuses.includes(job.status)
       )
-      return hasActiveJobs ? 3000 : false
+      return hasActiveJobs ? 3000 : false // 3 seconds
     },
   })
 
-  // Adapt the new data structure to the existing VideoList component
-  const scenes: Video[] = videosWithJobs?.map((v: any) => ({
-    video_id: v.video_id,
-    filename: v.filename,
-    gcs_path: v.gcs_path,
-    status: v.status || VideoStatus.UPLOADED, // Use the video's actual status
-    created_at: v.created_at,
-    updated_at: v.updated_at,
-    metadata: v.metadata,
-  })) || []
+  const deleteJobMutation = useMutation({
+    mutationFn: (jobId: string) => sceneJobApi.deleteJob(jobId),
+    onSuccess: () => {
+      refetch()
+    },
+  })
 
   const handleVideoSelect = async (videoId: string, isCompressed: boolean, gcsPath: string, chunkDuration: number) => {
     // Start scene analysis for the selected (already compressed) video
@@ -111,45 +112,72 @@ export default function SceneAnalysisPage() {
             <div className="grid gap-4 md:grid-cols-4">
               <Card>
                 <CardHeader className="pb-2">
-                  <CardDescription>Total Scenes</CardDescription>
-                  <CardTitle className="text-3xl">{scenes?.length || 0}</CardTitle>
+                  <CardDescription>Total Jobs</CardDescription>
+                  <CardTitle className="text-3xl">{sceneJobs?.length || 0}</CardTitle>
                 </CardHeader>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardDescription>Processing</CardDescription>
-                  <CardTitle className="text-3xl">
-                    {scenes?.filter((v: Video) =>
-                      [
-                        VideoStatus.EXTRACTING_METADATA,
-                        VideoStatus.EXTRACTING_AUDIO,
-                        VideoStatus.COMPRESSING,
-                        VideoStatus.CHUNKING
-                      ].includes(v.status)
-                    ).length || 0}
+                  <CardDescription>Pending</CardDescription>
+                  <CardTitle className="text-3xl text-yellow-600">
+                    {sceneJobs?.filter((job) => job.status === SceneJobStatus.PENDING).length || 0}
                   </CardTitle>
                 </CardHeader>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardDescription>Analyzing</CardDescription>
-                  <CardTitle className="text-3xl">
-                    {scenes?.filter((v: Video) => v.status === VideoStatus.ANALYZING).length || 0}
+                  <CardDescription>Processing</CardDescription>
+                  <CardTitle className="text-3xl text-blue-600">
+                    {sceneJobs?.filter((job) => job.status === SceneJobStatus.PROCESSING).length || 0}
                   </CardTitle>
                 </CardHeader>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Completed</CardDescription>
-                  <CardTitle className="text-3xl">
-                    {scenes?.filter((v: Video) => v.status === VideoStatus.COMPLETED).length || 0}
+                  <CardTitle className="text-3xl text-green-600">
+                    {sceneJobs?.filter((job) => job.status === SceneJobStatus.COMPLETED).length || 0}
                   </CardTitle>
                 </CardHeader>
               </Card>
             </div>
 
-            {/* Scene List */}
-            <VideoList videos={scenes || []} isLoading={isLoading} onRefresh={refetch} />
+            {/* Scene Jobs List */}
+            {isLoading ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <p className="text-muted-foreground">Loading scene jobs...</p>
+                </CardContent>
+              </Card>
+            ) : sceneJobs && sceneJobs.length > 0 ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Scene Analysis Jobs</CardTitle>
+                  <CardDescription>{sceneJobs.length} job(s) total</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {sceneJobs.map((job) => (
+                      <SceneJobCard
+                        key={job.job_id}
+                        job={job}
+                        onDelete={(jobId) => deleteJobMutation.mutate(jobId)}
+                      />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <VideoIcon className="mx-auto h-12 w-12 text-gray-400" />
+                  <h3 className="mt-4 text-lg font-semibold">No scene jobs yet</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Pick a video to start scene analysis
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
       </main>

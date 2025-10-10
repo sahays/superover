@@ -2,7 +2,6 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, Field
-from libs.database import VideoStatus, TaskStatus
 
 
 # === Request Models ===
@@ -57,7 +56,7 @@ class VideoResponse(BaseModel):
     video_id: str
     filename: str
     gcs_path: str
-    status: VideoStatus
+    status: str  # Allow any status string
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     metadata: Optional[Dict[str, Any]] = None
@@ -73,18 +72,6 @@ class ManifestResponse(BaseModel):
     chunks: Optional[Dict[str, Any]] = None
     audio: Optional[Dict[str, Any]] = None
     processing: Optional[Dict[str, Any]] = None
-
-
-class TaskResponse(BaseModel):
-    """Analysis task response."""
-    task_id: str
-    video_id: str
-    task_type: str
-    status: TaskStatus
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    result_data: Optional[Dict[str, Any]] = None
-    error_message: Optional[str] = None
 
 
 class ProcessingJobResponse(BaseModel):
@@ -173,3 +160,53 @@ class MediaPresetResponse(BaseModel):
     audio_bitrates: List[str] = ["128k", "192k", "256k", "320k"]
     presets: List[str] = ["ultrafast", "fast", "medium", "slow", "veryslow"]
     crf_range: Dict[str, int] = {"min": 0, "max": 51, "default": 23}
+
+
+# === Scene Processing Models ===
+
+class SceneProcessingConfigRequest(BaseModel):
+    """Configuration for scene processing."""
+    compressed_video_path: Optional[str] = Field(None, description="GCS path to compressed video from media workflow")
+    chunk_duration: int = Field(30, description="Chunk duration in seconds (0 = no chunking)")
+    chunk: bool = Field(True, description="Whether to chunk the video")
+
+class SceneJobResultsResponse(BaseModel):
+    """Results of scene processing job."""
+    manifest_created: bool = False
+    chunks_analyzed: int = 0
+    step: Optional[str] = None
+    progress: Optional[Dict[str, Any]] = None
+
+class SceneJobResponse(BaseModel):
+    """Scene processing job response."""
+    job_id: str
+    video_id: str
+    status: str  # pending, processing, completed, failed
+    config: Dict[str, Any]
+    prompt_text: str
+    results: Optional[Dict[str, Any]] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+
+
+# === Prompt Management Models ===
+
+class PromptResponse(BaseModel):
+    """Response model for a prompt."""
+    prompt_id: str
+    prompt_name: str
+    prompt_type: str
+    prompt_text: str
+    updated_at: Optional[datetime] = None
+
+class CreatePromptRequest(BaseModel):
+    """Request model for creating a new prompt."""
+    prompt_id: str = Field(..., description="Unique identifier for the prompt, e.g., 'default_scene_analysis'")
+    prompt_name: str = Field(..., description="User-friendly name for the prompt")
+    prompt_type: str = Field("scene_analysis", description="Type of the prompt")
+    prompt_text: str = Field(..., description="The full text of the prompt")
+
+class UpdatePromptRequest(BaseModel):
+    """Request model for updating a prompt."""
+    prompt_text: str = Field(..., description="The full text of the prompt")

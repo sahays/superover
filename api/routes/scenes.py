@@ -12,11 +12,12 @@ from api.models.schemas import (
     ProcessingJobResponse,
     SceneAnalysisRequest,
     SceneAnalysisJobResponse,
+    SceneJobResponse,
     ManifestResponse,
     ResultResponse,
 )
 from libs.storage import get_storage
-from libs.database import get_db, VideoStatus, TaskStatus, SceneJobStatus
+from libs.database import get_db, SceneJobStatus
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/scenes", tags=["scenes"])
@@ -86,6 +87,135 @@ async def create_video(request: CreateVideoRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create video: {str(e)}"
+        )
+
+
+@router.get("/jobs", response_model=List[SceneJobResponse])
+async def list_scene_jobs(limit: int = 50, status_filter: SceneJobStatus = None):
+    """List all scene jobs."""
+    try:
+        db = get_db()
+
+        if status_filter:
+            query = db.scene_jobs.where("status", "==", status_filter.value)
+        else:
+            query = db.scene_jobs
+
+        query = query.order_by("created_at", direction="DESCENDING").limit(limit)
+        jobs = [doc.to_dict() for doc in query.stream()]
+
+        return [SceneJobResponse(**job) for job in jobs]
+
+    except Exception as e:
+        logger.error(f"Failed to list scene jobs: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list scene jobs: {str(e)}"
+        )
+
+
+@router.get("/jobs/{job_id}", response_model=SceneJobResponse)
+async def get_scene_job(job_id: str):
+    """Get scene job by ID."""
+    try:
+        db = get_db()
+        job = db.get_scene_job(job_id)
+
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Scene job not found: {job_id}"
+            )
+
+        return SceneJobResponse(**job)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get scene job: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get scene job: {str(e)}"
+        )
+
+
+@router.get("/jobs/{job_id}/results", response_model=List[ResultResponse])
+async def get_results_for_job(job_id: str, result_type: str = None):
+    """Get analysis results for a specific scene job."""
+    try:
+        db = get_db()
+
+        # Verify job exists
+        job = db.get_scene_job(job_id)
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Scene job not found: {job_id}"
+            )
+
+        results = db.get_results_for_job(job_id, result_type=result_type)
+
+        return [
+            ResultResponse(
+                result_id=str(i),
+                video_id=r["video_id"],
+                result_type=r["result_type"],
+                result_data=r["result_data"],
+                gcs_path=r.get("gcs_path"),
+                created_at=r.get("created_at")
+            )
+            for i, r in enumerate(results)
+        ]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get results for job: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get results for job: {str(e)}"
+        )
+
+
+@router.delete("/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_scene_job_endpoint(job_id: str):
+    """Delete a scene job and its results."""
+    try:
+        db = get_db()
+
+        job = db.get_scene_job(job_id)
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Scene job not found: {job_id}"
+            )
+
+        if job["status"] == SceneJobStatus.PROCESSING:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete job that is currently processing"
+            )
+
+        video_id = job["video_id"]
+
+        # Delete associated results
+        query = db.scene_results.where("scene_job_id", "==", job_id)
+        for doc in query.stream():
+            doc.reference.delete()
+
+        # Delete the job
+        db.delete_scene_job(job_id)
+
+        logger.info(f"Deleted scene job {job_id} for video {video_id}")
+        return None
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete scene job: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete scene job: {str(e)}"
         )
 
 
@@ -182,8 +312,13 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
                 detail=f"Video not found: {video_id}"
             )
 
-        # Update video status to first processing step
-        db.update_video_status(video_id, VideoStatus.EXTRACTING_METADATA)
+        # Get the default prompt for scene analysis
+        prompt = db.get_prompt("default_scene_analysis")
+        if not prompt:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Default scene analysis prompt not found. Please create it.",
+            )
 
         # Create scene job
         job_id = str(uuid.uuid4())
@@ -194,30 +329,14 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
                 "compressed_video_path": request.compressed_video_path,
                 "chunk_duration": request.chunk_duration,
                 "chunk": request.chunk,
-            }
-        )
-
-        # Create processing task linked to the job
-        task_id = str(uuid.uuid4())
-        task_data = db.create_task(
-            task_id=task_id,
-            video_id=video_id,
-            task_type="scene_processing",
-            input_data={
-                "compressed_video_path": request.compressed_video_path,
-                "chunk_duration": request.chunk_duration,
-                "chunk": request.chunk,
             },
-            scene_job_id=job_id
+            prompt_text=prompt["prompt_text"],  # Embed the prompt text
         )
-
-        # Add task to scene job
-        db.add_task_to_scene_job(job_id, task_id)
 
         return ProcessingJobResponse(
             video_id=video_id,
-            status="processing",
-            message=f"Scene processing started. Job ID: {job_id}, Task ID: {task_id}"
+            status="pending",
+            message=f"Scene processing job created. Job ID: {job_id}"
         )
 
     except HTTPException:
@@ -230,73 +349,96 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
         )
 
 
-@router.post("/{video_id}/scene-analysis", response_model=SceneAnalysisJobResponse)
-async def analyze_scenes(video_id: str, request: SceneAnalysisRequest):
-    """
-    Start Gemini scene analysis on processed video.
-
-    Creates scene analysis tasks for each chunk/scene type.
-    """
+@router.get("/jobs", response_model=List[SceneJobResponse])
+async def list_scene_jobs(limit: int = 50, status_filter: SceneJobStatus = None):
+    """List all scene jobs."""
     try:
         db = get_db()
 
-        # Verify video exists and is processed
-        video = db.get_video(video_id)
-        if not video:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Scene not found: {video_id}"
-            )
+        if status_filter:
+            jobs = [j for j in db.list_scene_jobs_for_video("", status=status_filter) if True]
+            # Need to query all jobs - let's use a different approach
+            query = db.scene_jobs.where("status", "==", status_filter.value)
+        else:
+            query = db.scene_jobs
 
-        if video["status"] != VideoStatus.COMPLETED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Scene must be completed before analysis. Current status: {video['status']}"
-            )
+        query = query.order_by("created_at", direction="DESCENDING").limit(limit)
+        jobs = [doc.to_dict() for doc in query.stream()]
 
-        # Get manifest
-        manifest = db.get_manifest(video_id)
-        if not manifest:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Manifest not found for scene: {video_id}"
-            )
+        return [SceneJobResponse(**job) for job in jobs]
 
-        # Update video status
-        db.update_video_status(video_id, VideoStatus.ANALYZING)
-
-        # Create scene analysis tasks for each chunk
-        task_ids = []
-        chunks = manifest.get("chunks", {}).get("items", [])
-
-        for chunk in chunks:
-            for scene_type in request.scene_types:
-                task_id = str(uuid.uuid4())
-                db.create_task(
-                    task_id=task_id,
-                    video_id=video_id,
-                    task_type=f"scene_{scene_type}",
-                    input_data={
-                        "chunk": chunk,
-                        "scene_type": scene_type,
-                    }
-                )
-                task_ids.append(task_id)
-
-        return SceneAnalysisJobResponse(
-            video_id=video_id,
-            task_ids=task_ids,
-            status="analyzing",
-            message=f"Created {len(task_ids)} scene analysis tasks"
+    except Exception as e:
+        logger.error(f"Failed to list scene jobs: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list scene jobs: {str(e)}"
         )
+
+
+@router.get("/jobs/{job_id}", response_model=SceneJobResponse)
+async def get_scene_job(job_id: str):
+    """Get scene job by ID."""
+    try:
+        db = get_db()
+        job = db.get_scene_job(job_id)
+
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Scene job not found: {job_id}"
+            )
+
+        return SceneJobResponse(**job)
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to start scene analysis: {e}")
+        logger.error(f"Failed to get scene job: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to start scene analysis: {str(e)}"
+            detail=f"Failed to get scene job: {str(e)}"
+        )
+
+
+@router.delete("/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_scene_job(job_id: str):
+    """Delete a scene job and its results."""
+    try:
+        db = get_db()
+
+        job = db.get_scene_job(job_id)
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Scene job not found: {job_id}"
+            )
+
+        if job["status"] == SceneJobStatus.PROCESSING:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete job that is currently processing"
+            )
+
+        video_id = job["video_id"]
+
+        # Delete associated results
+        query = db.scene_results.where("scene_job_id", "==", job_id)
+        for doc in query.stream():
+            doc.reference.delete()
+
+        # Delete the job
+        db.delete_scene_job(job_id)
+
+        logger.info(f"Deleted scene job {job_id} for video {video_id}")
+        return None
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete scene job: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete scene job: {str(e)}"
         )
 
 
@@ -390,27 +532,8 @@ async def delete_scene(video_id: str):
                 storage.delete_file(manifest["audio_path"])
                 logger.info(f"Deleted audio: {manifest['audio_path']}")
 
-        # Reset video status to uploaded (preserving the video record and original file)
-        db.update_video_status(video_id, VideoStatus.UPLOADED)
-
         # Delete manifest
         db.scene_manifests.document(video_id).delete()
-
-        # Delete all scene processing tasks for this video
-        tasks = db.list_tasks_for_video(video_id)
-        tasks_deleted = 0
-        for task in tasks:
-            task_id = task.get("task_id")
-            if task_id:
-                try:
-                    db.scene_tasks.document(task_id).delete()
-                    tasks_deleted += 1
-                    logger.info(f"Deleted task: {task_id}")
-                except Exception as e:
-                    logger.warning(f"Failed to delete task {task_id}: {e}")
-
-        if tasks_deleted > 0:
-            logger.info(f"Deleted {tasks_deleted} tasks for video {video_id}")
 
         # Delete all scene jobs for this video
         scene_jobs = db.list_scene_jobs_for_video(video_id)
@@ -443,19 +566,9 @@ async def delete_scene(video_id: str):
         if deleted_count > 0:
             logger.info(f"Deleted {deleted_count} results for video {video_id}")
 
-        # Delete all prompts for this video (which are currently stored per chunk - will be refactored)
-        prompts_query = db.scene_prompts.where("video_id", "==", video_id)
-        prompts_deleted = 0
-        for doc in prompts_query.stream():
-            try:
-                doc.reference.delete()
-                prompts_deleted += 1
-                logger.info(f"Deleted prompt: {doc.id}")
-            except Exception as e:
-                logger.warning(f"Failed to delete prompt {doc.id}: {e}")
-
-        if prompts_deleted > 0:
-            logger.info(f"Deleted {prompts_deleted} prompts for video {video_id}")
+        # Delete the scene job itself
+        db.delete_scene_job(video_id)
+        logger.info(f"Deleted scene job for video {video_id}")
 
         logger.info(f"Deleted scene analysis data for {video_id}, preserved source video at {video.get('gcs_path')}")
         return None
