@@ -4,9 +4,11 @@ Provides detailed video analysis including objects, emotions, dialogues, moderat
 """
 import logging
 import json
+import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 import google.generativeai as genai
+from google.api_core import exceptions as google_exceptions
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -15,10 +17,56 @@ logger = logging.getLogger(__name__)
 class SceneAnalyzer:
     """Analyzes video scenes using Gemini with detailed prompts."""
 
-    def __init__(self):
-        """Initialize Gemini API."""
+    def __init__(self, max_retries: int = 3, base_delay: float = 2.0):
+        """Initialize Gemini API.
+
+        Args:
+            max_retries: Maximum number of retry attempts for API calls
+            base_delay: Base delay in seconds for exponential backoff
+        """
         genai.configure(api_key=settings.gemini_api_key)
         self.model = genai.GenerativeModel(settings.gemini_model)
+        self.max_retries = max_retries
+        self.base_delay = base_delay
+
+    def _retry_with_backoff(self, func, *args, **kwargs):
+        """Execute a function with exponential backoff retry logic.
+
+        Args:
+            func: Function to execute
+            *args: Positional arguments for the function
+            **kwargs: Keyword arguments for the function
+
+        Returns:
+            Result from the function
+
+        Raises:
+            Exception: The last exception if all retries fail
+        """
+        last_exception = None
+
+        for attempt in range(self.max_retries):
+            try:
+                return func(*args, **kwargs)
+            except (google_exceptions.DeadlineExceeded, google_exceptions.ServiceUnavailable) as e:
+                last_exception = e
+                if attempt < self.max_retries - 1:
+                    # Calculate delay with exponential backoff
+                    delay = self.base_delay * (2 ** attempt)
+                    logger.warning(
+                        f"Attempt {attempt + 1}/{self.max_retries} failed with {type(e).__name__}: {e}. "
+                        f"Retrying in {delay:.1f}s..."
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.error(f"All {self.max_retries} retry attempts failed")
+            except Exception as e:
+                # For non-retryable errors, fail immediately
+                logger.error(f"Non-retryable error: {type(e).__name__}: {e}")
+                raise
+
+        # If we get here, all retries failed
+        raise last_exception
 
     def analyze_chunk(
         self,
@@ -57,13 +105,16 @@ class SceneAnalyzer:
 
             logger.info(f"Analyzing chunk {chunk_index} with Gemini")
 
-            # Generate analysis
-            response = self.model.generate_content(
+            # Generate analysis with extended timeout for video processing
+            # Use retry logic to handle transient failures
+            response = self._retry_with_backoff(
+                self.model.generate_content,
                 [prompt_text, video_file],
                 generation_config=genai.GenerationConfig(
                     temperature=0.1,  # Low temperature for more consistent/factual output
                     max_output_tokens=8192,  # Allow long detailed responses
-                )
+                ),
+                request_options={"timeout": 600}  # 10 minute timeout for video analysis
             )
 
             # Check if response was blocked

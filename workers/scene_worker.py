@@ -18,6 +18,7 @@ from libs.database import get_db, SceneJobStatus
 from libs.storage import get_storage
 from libs.video_processing import chunk_video
 from libs.gemini import get_scene_analyzer
+from google.api_core import exceptions as google_exceptions
 
 logging.basicConfig(
     level=logging.INFO,
@@ -249,6 +250,25 @@ class SceneWorker:
                             }
                         }
                     )
+
+                except google_exceptions.DeadlineExceeded as e:
+                    error_msg = (
+                        f"Gemini API timeout for chunk {chunk_index + 1}/{len(chunks)}. "
+                        f"The video chunk may be too large or complex. "
+                        f"Consider using shorter chunk durations (e.g., 15-30 seconds). "
+                        f"Error: {e}"
+                    )
+                    logger.error(error_msg)
+                    raise ValueError(error_msg) from e
+
+                except google_exceptions.ServiceUnavailable as e:
+                    error_msg = (
+                        f"Gemini API service unavailable for chunk {chunk_index + 1}/{len(chunks)}. "
+                        f"This is usually a temporary issue. Please try again later. "
+                        f"Error: {e}"
+                    )
+                    logger.error(error_msg)
+                    raise ValueError(error_msg) from e
 
                 finally:
                     # Clean up chunk file (but not if it's the original downloaded file)

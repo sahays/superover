@@ -36,6 +36,7 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
     videoId: string
     isCompressed: boolean
     gcsPath: string
+    jobId: string
     compressedResolution?: string
     duration?: number
   } | null>(null)
@@ -136,8 +137,7 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
                   <Button
                     key={job.job_id}
                     variant={
-                      selectedVideo?.videoId === video.video_id &&
-                      selectedVideo?.gcsPath === job.results?.compressed_video_path
+                      selectedVideo?.jobId === job.job_id
                         ? 'default'
                         : 'outline'
                     }
@@ -148,6 +148,7 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
                           videoId: video.video_id,
                           isCompressed: true,
                           gcsPath: job.results.compressed_video_path,
+                          jobId: job.job_id,
                           compressedResolution: job.config.compress_resolution,
                           duration: job.results.metadata?.duration,
                         })
@@ -163,10 +164,9 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
                         </span>
                       )}
                     </span>
-                    {selectedVideo?.videoId === video.video_id &&
-                      selectedVideo?.gcsPath === job.results?.compressed_video_path && (
-                        <CheckCircle className="h-4 w-4" />
-                      )}
+                    {selectedVideo?.jobId === job.job_id && (
+                      <CheckCircle className="h-4 w-4" />
+                    )}
                   </Button>
                 ))}
             </CardContent>
