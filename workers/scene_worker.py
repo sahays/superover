@@ -18,6 +18,7 @@ from libs.database import get_db, SceneJobStatus
 from libs.storage import get_storage
 from libs.video_processing import chunk_video
 from libs.gemini import get_scene_analyzer
+from libs.scene_processing import get_scene_processor
 from google.api_core import exceptions as google_exceptions
 
 logging.basicConfig(
@@ -38,13 +39,33 @@ class SceneWorker:
         self.temp_dir = settings.get_temp_dir()
         self.running = False
 
+        # Initialize scene processor (sequential or parallel based on config)
+        self.scene_processor = get_scene_processor(
+            db=self.db,
+            storage=self.storage,
+            analyzer=self.analyzer,
+            temp_dir=self.temp_dir
+        )
+
     def start(self):
         """Start the worker loop."""
         self.running = True
+
+        # Get processor info for logging
+        processor_info = self.scene_processor.get_info()
+
         logger.info("=" * 60)
         logger.info("Scene Processing Worker Started")
         logger.info(f"Polling interval: {settings.worker_poll_interval_seconds}s")
         logger.info(f"Max concurrent tasks: {settings.max_concurrent_tasks}")
+        logger.info("-" * 60)
+        logger.info("Scene Processor Configuration:")
+        logger.info(f"  Mode: {processor_info['mode'].upper()}")
+        logger.info(f"  CPU Count: {processor_info.get('cpu_count', 'N/A')}")
+        if processor_info['mode'] == 'parallel':
+            logger.info(f"  Max Workers: {processor_info.get('max_workers', 'N/A')}")
+            logger.info(f"  Process-Based: {processor_info.get('process_based', 'N/A')}")
+        logger.info(f"  Description: {processor_info.get('description', 'N/A')}")
         logger.info("=" * 60)
 
         try:
@@ -86,18 +107,40 @@ class SceneWorker:
             logger.error(traceback.format_exc())
 
     def _process_job(self, job: dict):
-        """Process a single scene job."""
+        """Process a single scene job with top-level exception handler."""
         job_id = job["job_id"]
         video_id = job["video_id"]
         config = job.get("config", {})
 
         logger.info(f"Processing scene job {job_id} for video {video_id}")
 
-        # Update status to processing
-        self.db.update_scene_job_status(job_id, SceneJobStatus.PROCESSING)
+        try:
+            # Update status to processing
+            self.db.update_scene_job_status(job_id, SceneJobStatus.PROCESSING)
 
-        # Process the scene
-        self._process_scene(job)
+            # Process the scene
+            self._process_scene(job)
+        except KeyboardInterrupt:
+            # Re-raise keyboard interrupt to allow graceful shutdown
+            raise
+        except Exception as e:
+            # Catch ALL exceptions including system-level crashes
+            error_msg = f"Critical error in job {job_id}: {type(e).__name__}: {e}"
+            logger.error(error_msg)
+            logger.error(traceback.format_exc())
+
+            # Update job status to failed
+            try:
+                self.db.update_scene_job_status(
+                    job_id,
+                    SceneJobStatus.FAILED,
+                    error_message=error_msg
+                )
+            except Exception as db_error:
+                logger.error(f"Failed to update job status to FAILED: {db_error}")
+
+            # Don't re-raise - continue processing other jobs
+            logger.info(f"Continuing to next job after failure in {job_id}")
 
     def _process_scene(self, job: dict):
         """
@@ -191,89 +234,13 @@ class SceneWorker:
             logger.info(f"[STEP 2/2] Analyzing {len(chunks)} chunk(s) with Gemini for {video_id}")
             self.db.update_scene_job_status(job_id, SceneJobStatus.PROCESSING, results={"step": "analyzing"})
 
-
-            for chunk in chunks:
-                chunk_index = chunk["index"]
-                chunk_gcs = chunk["gcs_path"]
-
-                logger.info(f"Analyzing chunk {chunk_index + 1}/{len(chunks)}")
-
-                # Update progress
-                self.db.update_scene_job_status(
-                    job_id,
-                    SceneJobStatus.PROCESSING,
-                    results={
-                        "step": "analyzing",
-                        "progress": {
-                            "completed_chunks": chunk_index,
-                            "total_chunks": len(chunks)
-                        }
-                    }
-                )
-
-                # Use local_path if available (no-chunking case), otherwise download from GCS
-                if "local_path" in chunk:
-                    local_chunk_path = Path(chunk["local_path"])
-                    logger.info(f"Using already-downloaded video file: {local_chunk_path}")
-                else:
-                    # Download chunk from GCS
-                    local_chunk_path = self.temp_dir / f"{video_id}_{chunk['filename']}"
-                    self.storage.download_file(chunk_gcs, local_chunk_path)
-
-                try:
-                    # Analyze with Gemini
-                    result = self.analyzer.analyze_chunk(
-                        video_path=local_chunk_path,
-                        chunk_index=chunk_index,
-                        chunk_duration=chunk["duration"],
-                        prompt_text=prompt_text,  # Pass the prompt text
-                    )
-
-                    # Save result to database
-                    result_id = self.db.save_result(
-                        video_id=video_id,
-                        result_type="scene_analysis",
-                        result_data=result,
-                        scene_job_id=job_id
-                    )
-                    logger.info(f"Saved analysis result {result_id} for chunk {chunk_index}")
-
-                    # Update progress after successful scene analysis
-                    self.db.update_scene_job_status(
-                        job_id,
-                        SceneJobStatus.PROCESSING,
-                        results={
-                            "step": "analyzing",
-                            "progress": {
-                                "completed_chunks": chunk_index + 1,
-                                "total_chunks": len(chunks)
-                            }
-                        }
-                    )
-
-                except google_exceptions.DeadlineExceeded as e:
-                    error_msg = (
-                        f"Gemini API timeout for chunk {chunk_index + 1}/{len(chunks)}. "
-                        f"The video chunk may be too large or complex. "
-                        f"Consider using shorter chunk durations (e.g., 15-30 seconds). "
-                        f"Error: {e}"
-                    )
-                    logger.error(error_msg)
-                    raise ValueError(error_msg) from e
-
-                except google_exceptions.ServiceUnavailable as e:
-                    error_msg = (
-                        f"Gemini API service unavailable for chunk {chunk_index + 1}/{len(chunks)}. "
-                        f"This is usually a temporary issue. Please try again later. "
-                        f"Error: {e}"
-                    )
-                    logger.error(error_msg)
-                    raise ValueError(error_msg) from e
-
-                finally:
-                    # Clean up chunk file (but not if it's the original downloaded file)
-                    if "local_path" not in chunk and local_chunk_path.exists():
-                        local_chunk_path.unlink()
+            # Use scene processor (sequential or parallel based on config)
+            self.scene_processor.process_chunks(
+                chunks=chunks,
+                job_id=job_id,
+                video_id=video_id,
+                prompt_text=prompt_text
+            )
 
             # Update scene job status to completed
             self.db.update_scene_job_status(

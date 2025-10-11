@@ -145,15 +145,19 @@ export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps
               </Link>
             </Button>
           )}
-          {job.status !== SceneJobStatus.PROCESSING && onDelete && (
+          {job.status !== SceneJobStatus.COMPLETED && onDelete && (
             <Button
               variant="ghost"
               size="sm"
               onClick={() => {
-                if (confirm('Delete this scene job and all analysis results? The original video will not be deleted.')) {
+                const message = job.status === SceneJobStatus.PROCESSING
+                  ? 'This job appears to be stuck. Delete it? The original video will not be deleted.'
+                  : 'Delete this scene job and all analysis results? The original video will not be deleted.'
+                if (confirm(message)) {
                   onDelete(job.job_id)
                 }
               }}
+              className="text-red-600 hover:text-red-700 hover:bg-red-50"
             >
               <Trash2 className="h-4 w-4" />
             </Button>

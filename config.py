@@ -2,6 +2,7 @@
 Centralized configuration module.
 Designed to work both locally and on Cloud Run.
 """
+
 import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
@@ -43,6 +44,10 @@ class Settings(BaseSettings):
     # Worker Settings
     worker_poll_interval_seconds: int = 5
     max_concurrent_tasks: int = 3
+
+    # Scene Processing Settings
+    scene_processing_mode: str = "sequential"  # "sequential" or "parallel"
+    max_gemini_workers: int = 10  # Max concurrent Gemini API calls in parallel mode
 
     # Runtime
     port: int = 8080  # Cloud Run uses 8080 by default
