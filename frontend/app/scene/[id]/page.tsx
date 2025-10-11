@@ -2,20 +2,46 @@
 
 import { use, useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { ArrowLeft, Play, Download, Settings } from 'lucide-react'
+import { ArrowLeft, Play, Download, Settings, FileJson, FileSpreadsheet } from 'lucide-react'
 import Link from 'next/link'
 import { videoApi, mediaApi, sceneJobApi } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { formatBytes, formatDuration } from '@/lib/utils'
+import { generateSceneCSV, generateSceneJSON, downloadFile } from '@/lib/scene-export'
 import { StartProcessing } from '@/components/media/start-processing'
 import { JobCard } from '@/components/media/job-card'
 
 export default function SceneDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: jobId } = use(params)
   const [showMediaDialog, setShowMediaDialog] = useState(false)
+
+  const downloadAsJSON = () => {
+    if (!results || !sceneJob) return
+
+    const chunkDuration = sceneJob.config.chunk_duration || 0
+    const jsonData = generateSceneJSON(
+      results,
+      chunkDuration,
+      jobId,
+      sceneJob.video_id,
+      scene?.filename
+    )
+
+    downloadFile(jsonData, `scene-analysis-${scene?.filename || jobId}.json`, 'json')
+  }
+
+  const downloadAsCSV = () => {
+    if (!results || !sceneJob) return
+
+    const chunkDuration = sceneJob.config.chunk_duration || 0
+    const csvContent = generateSceneCSV(results, chunkDuration)
+
+    downloadFile(csvContent, `scene-analysis-${scene?.filename || jobId}.csv`, 'csv')
+  }
 
   // First get the scene job
   const { data: sceneJob, isLoading: isLoadingJob } = useQuery({
@@ -52,20 +78,6 @@ export default function SceneDetailPage({ params }: { params: Promise<{ id: stri
     queryKey: ['results', jobId],
     queryFn: () => sceneJobApi.getResults(jobId),
     enabled: isCompleted,
-  })
-
-  const { data: mediaJobs, refetch: refetchMediaJobs } = useQuery({
-    queryKey: ['media-jobs', videoId],
-    queryFn: () => mediaApi.listJobsForVideo(videoId!),
-    enabled: !!videoId,
-    refetchInterval: 5000, // Poll every 5 seconds
-  })
-
-  const deleteJobMutation = useMutation({
-    mutationFn: (jobId: string) => mediaApi.deleteJob(jobId),
-    onSuccess: () => {
-      refetchMediaJobs()
-    },
   })
 
   if (isLoading) {
@@ -270,8 +282,30 @@ export default function SceneDetailPage({ params }: { params: Promise<{ id: stri
             {results && results.length > 0 && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Scene Analysis</CardTitle>
-                  <CardDescription>{results.length} chunks analyzed</CardDescription>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle>Scene Analysis</CardTitle>
+                      <CardDescription>{results.length} chunks analyzed</CardDescription>
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <Download className="mr-2 h-4 w-4" />
+                          Download All
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={downloadAsJSON}>
+                          <FileJson className="mr-2 h-4 w-4" />
+                          Download as JSON
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={downloadAsCSV}>
+                          <FileSpreadsheet className="mr-2 h-4 w-4" />
+                          Download as CSV
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <Accordion type="single" collapsible className="w-full">
@@ -292,158 +326,6 @@ export default function SceneDetailPage({ params }: { params: Promise<{ id: stri
               </Card>
             )}
           </div>
-
-          {/* Media Processing Jobs */}
-          {mediaJobs && mediaJobs.length > 0 && (
-            <div className="lg:col-span-3">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Media Processing Jobs</CardTitle>
-                  <CardDescription>{mediaJobs.length} job(s) total</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {mediaJobs.map((job: any, idx: number) => (
-                      <div key={job.job_id} className="border rounded-lg">
-                        <div className="flex items-center justify-between w-full p-4">
-                          <span className="font-semibold">Job {idx + 1} - {job.status}</span>
-                          <span className="text-sm text-muted-foreground">
-                            {new Date(job.created_at).toLocaleDateString()}
-                          </span>
-                        </div>
-                        <div className="space-y-4 p-4 border-t">
-                          {/* Job ID and Timestamps */}
-                          <div className="grid gap-3 text-sm">
-                            <div className="flex justify-between">
-                              <span className="font-medium text-muted-foreground">Job ID:</span>
-                              <span className="font-mono text-xs">{job.job_id}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="font-medium text-muted-foreground">Created:</span>
-                              <span>{new Date(job.created_at).toLocaleString()}</span>
-                            </div>
-                            {job.updated_at && (
-                              <div className="flex justify-between">
-                                <span className="font-medium text-muted-foreground">Updated:</span>
-                                <span>{new Date(job.updated_at).toLocaleString()}</span>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Configuration */}
-                          <div className="rounded-lg bg-slate-100 p-3 dark:bg-slate-800">
-                            <h4 className="font-semibold mb-2">Configuration</h4>
-                            <div className="grid gap-2 text-sm">
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Compression:</span>
-                                <span>{job.config.compress ? job.config.compress_resolution : 'Disabled'}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">CRF:</span>
-                                <span>{job.config.crf}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Preset:</span>
-                                <span>{job.config.preset}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Audio:</span>
-                                <span>
-                                  {job.config.extract_audio
-                                    ? `${job.config.audio_format?.toUpperCase()} @ ${job.config.audio_bitrate}`
-                                    : 'Disabled'}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Results */}
-                          {job.results && (
-                            <div className="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
-                              <h4 className="font-semibold mb-2 text-green-900 dark:text-green-100">Results</h4>
-                              <div className="grid gap-2 text-sm">
-                                <div className="flex justify-between">
-                                  <span className="text-muted-foreground">Original Size:</span>
-                                  <span className="font-medium">{formatBytes(job.results.original_size_bytes)}</span>
-                                </div>
-                                {job.results.compressed_video_path && (
-                                  <>
-                                    <div className="flex justify-between">
-                                      <span className="text-muted-foreground">Compressed Size:</span>
-                                      <span className="font-medium">{formatBytes(job.results.compressed_size_bytes)}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="text-muted-foreground">Reduction:</span>
-                                      <span className="font-medium text-green-600 dark:text-green-400">
-                                        {job.results.compression_ratio.toFixed(1)}%
-                                      </span>
-                                    </div>
-                                    <div className="col-span-full">
-                                      <span className="text-muted-foreground">Compressed File:</span>
-                                      <p className="mt-1 font-mono text-xs break-all text-blue-600 dark:text-blue-400">
-                                        {job.results.compressed_video_path}
-                                      </p>
-                                    </div>
-                                  </>
-                                )}
-                                {job.results.audio_path && (
-                                  <>
-                                    <div className="flex justify-between">
-                                      <span className="text-muted-foreground">Audio Size:</span>
-                                      <span className="font-medium">{formatBytes(job.results.audio_size_bytes)}</span>
-                                    </div>
-                                    <div className="col-span-full">
-                                      <span className="text-muted-foreground">Audio File:</span>
-                                      <p className="mt-1 font-mono text-xs break-all text-blue-600 dark:text-blue-400">
-                                        {job.results.audio_path}
-                                      </p>
-                                    </div>
-                                  </>
-                                )}
-                                {job.results.metadata && (
-                                  <details className="col-span-full mt-2">
-                                    <summary className="cursor-pointer text-muted-foreground">
-                                      View Full Metadata
-                                    </summary>
-                                    <pre className="mt-2 overflow-x-auto rounded bg-slate-200 p-2 text-xs dark:bg-slate-900">
-                                      {JSON.stringify(job.results.metadata, null, 2)}
-                                    </pre>
-                                  </details>
-                                )}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Error */}
-                          {job.error_message && (
-                            <div className="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
-                              <h4 className="font-semibold mb-2 text-red-900 dark:text-red-100">Error</h4>
-                              <p className="text-sm text-red-800 dark:text-red-200">{job.error_message}</p>
-                            </div>
-                          )}
-
-                          {/* Actions */}
-                          {job.status !== 'processing' && (
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => {
-                                if (confirm('Delete this job and all generated files? The original video will not be deleted.')) {
-                                  deleteJobMutation.mutate(job.job_id)
-                                }
-                              }}
-                            >
-                              Delete Job & Files
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
         </div>
       </div>
     </div>
