@@ -36,6 +36,7 @@ export const sceneJobSchema = z.object({
   config: z.record(z.any()),
   prompt_text: z.string(),
   prompt_type: z.string().optional(),
+  prompt_name: z.string().optional(),
   results: z.record(z.any()).optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),

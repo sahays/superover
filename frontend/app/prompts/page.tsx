@@ -178,38 +178,18 @@ export default function PromptsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      {/* Header */}
-      <header className="border-b bg-white/50 backdrop-blur-sm dark:bg-slate-900/50">
-        <div className="container mx-auto max-w-6xl px-4 py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-600 text-white">
-                <FileText className="h-6 w-6" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold">Prompt Management</h1>
-                <p className="text-sm text-muted-foreground">Create and manage analysis prompts</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Link href="/">
-                <Button variant="ghost" size="sm">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back to Home
-                </Button>
-              </Link>
-              <Button onClick={handleOpenCreateDialog} size="lg">
-                <Plus className="mr-2 h-4 w-4" />
-                Create Prompt
-              </Button>
-            </div>
-          </div>
+    <div className="container mx-auto max-w-6xl px-4 py-8">
+      {/* Page Header */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-3xl font-bold">Prompt Management</h1>
+          <p className="text-muted-foreground mt-1">Create and manage analysis prompts</p>
         </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="container mx-auto max-w-6xl px-4 py-8">
+        <Button onClick={handleOpenCreateDialog} size="lg">
+          <Plus className="mr-2 h-4 w-4" />
+          Create Prompt
+        </Button>
+      </div>
         {isLoading ? (
           <Card>
             <CardContent className="flex items-center justify-center py-12">
@@ -277,7 +257,6 @@ export default function PromptsPage() {
             </CardContent>
           </Card>
         )}
-      </main>
 
       {/* Create/Edit Dialog */}
       <Dialog open={showCreateDialog || editingPrompt !== null} onOpenChange={(open) => {

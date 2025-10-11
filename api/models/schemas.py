@@ -185,6 +185,8 @@ class SceneJobResponse(BaseModel):
     status: str  # pending, processing, completed, failed
     config: Dict[str, Any]
     prompt_text: str
+    prompt_type: Optional[str] = "custom"
+    prompt_name: Optional[str] = None
     results: Optional[Dict[str, Any]] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

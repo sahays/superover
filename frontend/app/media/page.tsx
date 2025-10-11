@@ -69,38 +69,18 @@ export default function MediaProcessingPage() {
   const failedJobs = allMediaJobs?.filter(j => j.status === 'failed') || []
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      {/* Header */}
-      <header className="border-b bg-white/50 backdrop-blur-sm dark:bg-slate-900/50">
-        <div className="container mx-auto max-w-6xl px-4 py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-600 text-white">
-                <Film className="h-6 w-6" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold">Media Processing</h1>
-                <p className="text-sm text-muted-foreground">Video Compression & Audio Extraction</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Link href="/">
-                <Button variant="ghost" size="sm">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back to Home
-                </Button>
-              </Link>
-              <Button onClick={() => setShowUpload(true)} size="lg">
-                <Upload className="mr-2 h-4 w-4" />
-                Upload Video
-              </Button>
-            </div>
-          </div>
+    <div className="container mx-auto max-w-6xl px-4 py-8">
+      {/* Page Header */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-3xl font-bold">Media Processing</h1>
+          <p className="text-muted-foreground mt-1">Video Compression & Audio Extraction</p>
         </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="container mx-auto max-w-6xl px-4 py-8">
+        <Button onClick={() => setShowUpload(true)} size="lg">
+          <Upload className="mr-2 h-4 w-4" />
+          Upload Video
+        </Button>
+      </div>
         {showUpload ? (
           <div className="mx-auto max-w-2xl">
             <Card>
@@ -225,7 +205,6 @@ export default function MediaProcessingPage() {
             )}
           </div>
         )}
-      </main>
 
       {/* Processing Dialog */}
       <Dialog open={showProcessDialog} onOpenChange={setShowProcessDialog}>

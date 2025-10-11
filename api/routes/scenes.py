@@ -315,7 +315,7 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
                 detail=f"Prompt not found: {request.prompt_id}. Please select a valid prompt.",
             )
 
-        # Create scene job with prompt_id and embedded prompt_text
+        # Create scene job with prompt_id, embedded prompt_text, prompt_type, and prompt_name
         job_id = str(uuid.uuid4())
         job_data = db.create_scene_job(
             job_id=job_id,
@@ -327,6 +327,8 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
             },
             prompt_id=request.prompt_id,  # Store prompt reference
             prompt_text=prompt["prompt_text"],  # Embed for reliability
+            prompt_type=prompt.get("type", "custom"),  # Embed prompt type for display
+            prompt_name=prompt.get("name"),  # Embed prompt name for display
         )
 
         return ProcessingJobResponse(

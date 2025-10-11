@@ -7,24 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      {/* Header */}
-      <header className="border-b bg-white/50 backdrop-blur-sm dark:bg-slate-900/50">
-        <div className="container mx-auto max-w-6xl px-4 py-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <VideoIcon className="h-6 w-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">Super Over Alchemy</h1>
-              <p className="text-sm text-muted-foreground">AI-Powered Video Processing Platform</p>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="container mx-auto max-w-6xl px-4 py-12">
+    <div className="container mx-auto max-w-6xl px-4 py-8">
         <div className="text-center mb-12">
           <h2 className="text-4xl font-bold mb-4">Choose Your Workflow</h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
@@ -183,7 +166,6 @@ export default function HomePage() {
             </Card>
           </div>
         </div>
-      </main>
     </div>
   )
 }

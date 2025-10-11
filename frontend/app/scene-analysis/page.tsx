@@ -58,38 +58,18 @@ export default function SceneAnalysisPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      {/* Header */}
-      <header className="border-b bg-white/50 backdrop-blur-sm dark:bg-slate-900/50">
-        <div className="container mx-auto max-w-6xl px-4 py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-purple-600 text-white">
-                <VideoIcon className="h-6 w-6" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold">Scene Analysis</h1>
-                <p className="text-sm text-muted-foreground">AI-Powered Scene Analysis with Gemini</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Link href="/">
-                <Button variant="ghost" size="sm">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back to Home
-                </Button>
-              </Link>
-              <Button onClick={() => setShowPicker(true)} size="lg">
-                <FileVideo className="mr-2 h-4 w-4" />
-                Pick Video
-              </Button>
-            </div>
-          </div>
+    <div className="container mx-auto max-w-6xl px-4 py-8">
+      {/* Page Header */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-3xl font-bold">Scene Analysis</h1>
+          <p className="text-muted-foreground mt-1">AI-Powered Scene Analysis with Gemini</p>
         </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="container mx-auto max-w-6xl px-4 py-8">
+        <Button onClick={() => setShowPicker(true)} size="lg">
+          <FileVideo className="mr-2 h-4 w-4" />
+          Pick Video
+        </Button>
+      </div>
         {showPicker ? (
           <div className="mx-auto max-w-4xl">
             <Card>
@@ -181,7 +161,6 @@ export default function SceneAnalysisPage() {
             )}
           </div>
         )}
-      </main>
     </div>
   )
 }

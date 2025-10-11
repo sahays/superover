@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { CheckCircle, XCircle, Loader2, Eye, Trash2, FileText } from 'lucide-react'
+import { CheckCircle, XCircle, Loader2, Eye, Trash2, FileText, Clock } from 'lucide-react'
 import Link from 'next/link'
 
 interface SceneJobCardProps {
@@ -25,6 +25,27 @@ export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps
       .split('_')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ')
+  }
+
+  // Calculate time taken for completed jobs
+  const getTimeTaken = () => {
+    if (job.status === SceneJobStatus.COMPLETED && job.created_at && job.updated_at) {
+      const start = new Date(job.created_at).getTime()
+      const end = new Date(job.updated_at).getTime()
+      const diffMs = end - start
+      const diffSec = Math.floor(diffMs / 1000)
+      const diffMin = Math.floor(diffSec / 60)
+      const diffHour = Math.floor(diffMin / 60)
+
+      if (diffHour > 0) {
+        return `${diffHour}h ${diffMin % 60}m`
+      } else if (diffMin > 0) {
+        return `${diffMin}m ${diffSec % 60}s`
+      } else {
+        return `${diffSec}s`
+      }
+    }
+    return null
   }
 
   const getStatusBadge = (status: SceneJobStatus) => {
@@ -89,11 +110,16 @@ export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
-          <div>
-            <CardTitle className="text-base">Scene Analysis Job</CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {videoFilename || 'Unknown video'}
-            </p>
+          <div className="flex-1">
+            <CardTitle className="text-base">
+              {job.prompt_name || 'Scene Analysis Job'}
+            </CardTitle>
+            {job.status === SceneJobStatus.COMPLETED && getTimeTaken() && (
+              <div className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Clock className="h-3.5 w-3.5" />
+                <span>{getTimeTaken()}</span>
+              </div>
+            )}
             <p className="mt-0.5 text-xs text-muted-foreground">
               {new Date(job.created_at || '').toLocaleString()}
             </p>
@@ -104,11 +130,22 @@ export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps
       <CardContent className="space-y-4">
         {/* Configuration */}
         <div className="grid gap-2 text-sm">
-          <div className="flex justify-between">
+          <div className="flex justify-between items-center">
             <span className="text-muted-foreground">Prompt Type:</span>
-            <Badge variant="outline" className="text-xs">
-              {getPromptTypeLabel(job.prompt_type)}
-            </Badge>
+            {job.prompt_text ? (
+              <Badge
+                variant="outline"
+                className="text-xs cursor-pointer hover:bg-muted transition-colors flex items-center gap-1"
+                onClick={() => setShowPromptDialog(true)}
+              >
+                {getPromptTypeLabel(job.prompt_type)}
+                <Eye className="h-3 w-3" />
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-xs">
+                {getPromptTypeLabel(job.prompt_type)}
+              </Badge>
+            )}
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Chunk Duration:</span>
@@ -123,17 +160,6 @@ export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps
               <span className="text-muted-foreground">Source:</span>
               <span className="font-medium text-xs">Compressed video</span>
             </div>
-          )}
-          {job.prompt_text && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowPromptDialog(true)}
-              className="w-full justify-start text-xs text-muted-foreground hover:text-primary"
-            >
-              <FileText className="mr-2 h-3 w-3" />
-              View Prompt
-            </Button>
           )}
         </div>
 
@@ -197,14 +223,14 @@ export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps
 
       {/* Prompt Dialog */}
       <Dialog open={showPromptDialog} onOpenChange={setShowPromptDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Analysis Prompt</DialogTitle>
             <DialogDescription>
               The prompt used for this scene analysis job
             </DialogDescription>
           </DialogHeader>
-          <div className="mt-4">
+          <div className="flex-1 overflow-y-auto">
             <div className="rounded-lg bg-gray-50 p-4">
               <pre className="whitespace-pre-wrap text-sm font-mono">
                 {job.prompt_text}

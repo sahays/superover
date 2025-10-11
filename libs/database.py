@@ -297,6 +297,8 @@ class FirestoreDB:
         config: Dict[str, Any],
         prompt_id: str,
         prompt_text: str,
+        prompt_type: str = "custom",
+        prompt_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Create a scene analysis job.
@@ -307,6 +309,8 @@ class FirestoreDB:
             config: Processing configuration (chunk_duration, etc.)
             prompt_id: ID of the prompt being used
             prompt_text: The exact prompt text to be used for this job (embedded for reliability)
+            prompt_type: Type of the prompt (embedded for display)
+            prompt_name: Name of the prompt (embedded for display)
 
         Returns:
             Created job document
@@ -318,9 +322,13 @@ class FirestoreDB:
             "config": config,
             "prompt_id": prompt_id,
             "prompt_text": prompt_text,
+            "prompt_type": prompt_type,
             "created_at": firestore.SERVER_TIMESTAMP,
             "updated_at": firestore.SERVER_TIMESTAMP,
         }
+
+        if prompt_name:
+            job_data["prompt_name"] = prompt_name
 
         self.scene_jobs.document(job_id).set(job_data)
         logger.info(f"Created scene job: {job_id} for video: {video_id} with prompt: {prompt_id}")
