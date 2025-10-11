@@ -9,9 +9,10 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatBytes, formatDuration } from '@/lib/utils'
 import { MediaJobStatus, type MediaJob } from '@/lib/types'
+import { PromptSelector } from '@/components/prompts/prompt-selector'
 
 interface VideoPickerProps {
-  onSelect: (videoId: string, isCompressed: boolean, gcsPath: string, chunkDuration: number) => void
+  onSelect: (videoId: string, isCompressed: boolean, gcsPath: string, chunkDuration: number, promptId: string) => void
   onCancel: () => void
 }
 
@@ -41,6 +42,7 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
     duration?: number
   } | null>(null)
   const [chunkDuration, setChunkDuration] = useState<number>(30) // Default 30 seconds
+  const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null)
 
   // Fetch all videos with their jobs
   const { data: allVideosWithJobs, isLoading: isLoadingVideos } = useQuery<VideoWithJobs[]>({
@@ -178,9 +180,18 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Configure Scene Analysis</CardTitle>
-            <CardDescription>Set chunk duration for video processing</CardDescription>
+            <CardDescription>Select prompt and set chunk duration</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Prompt Selector */}
+            <PromptSelector
+              value={selectedPromptId}
+              onChange={setSelectedPromptId}
+              required={true}
+              error={!selectedPromptId ? 'Please select a prompt' : undefined}
+            />
+
+            {/* Chunk Duration */}
             <div className="space-y-2">
               <label className="text-sm font-medium">
                 Chunk Duration (seconds)
@@ -257,9 +268,18 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
                 Cancel
               </Button>
               <Button
-                onClick={() =>
-                  onSelect(selectedVideo.videoId, selectedVideo.isCompressed, selectedVideo.gcsPath, chunkDuration)
-                }
+                disabled={!selectedPromptId}
+                onClick={() => {
+                  if (selectedPromptId) {
+                    onSelect(
+                      selectedVideo.videoId,
+                      selectedVideo.isCompressed,
+                      selectedVideo.gcsPath,
+                      chunkDuration,
+                      selectedPromptId
+                    )
+                  }
+                }}
               >
                 Start Scene Analysis
               </Button>

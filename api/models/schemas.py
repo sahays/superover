@@ -1,7 +1,7 @@
 """Pydantic models for API requests and responses."""
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 
 # === Request Models ===
@@ -23,6 +23,7 @@ class CreateVideoRequest(BaseModel):
 
 class ProcessVideoRequest(BaseModel):
     """Request to start scene processing."""
+    prompt_id: str = Field(..., description="ID of the prompt to use for scene analysis (required)")
     compressed_video_path: Optional[str] = Field(None, description="GCS path to compressed video from media workflow")
     chunk_duration: int = Field(30, description="Chunk duration in seconds (0 = no chunking)")
     compress: bool = Field(False, description="Whether to compress (deprecated - use media workflow)")
@@ -192,21 +193,48 @@ class SceneJobResponse(BaseModel):
 
 # === Prompt Management Models ===
 
+PROMPT_TYPES = [
+    'scene_analysis',
+    'object_identification',
+    'subtitling',
+    'character_identification',
+    'key_moments',
+    'action_recognition',
+    'sentiment_analysis',
+    'brand_detection',
+    'custom'
+]
+
 class PromptResponse(BaseModel):
     """Response model for a prompt."""
     prompt_id: str
-    prompt_name: str
-    prompt_type: str
+    name: str
+    type: str
     prompt_text: str
+    created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    jobs_count: Optional[int] = 0  # Number of jobs using this prompt
 
 class CreatePromptRequest(BaseModel):
     """Request model for creating a new prompt."""
-    prompt_id: str = Field(..., description="Unique identifier for the prompt, e.g., 'default_scene_analysis'")
-    prompt_name: str = Field(..., description="User-friendly name for the prompt")
-    prompt_type: str = Field("scene_analysis", description="Type of the prompt")
-    prompt_text: str = Field(..., description="The full text of the prompt")
+    name: str = Field(..., min_length=3, max_length=100, description="User-friendly name for the prompt")
+    type: str = Field(..., description="Type of the prompt")
+    prompt_text: str = Field(..., min_length=10, max_length=50000, description="The full text of the prompt")
+
+    @validator('type')
+    def validate_type(cls, v):
+        if v not in PROMPT_TYPES:
+            raise ValueError(f'Type must be one of: {", ".join(PROMPT_TYPES)}')
+        return v
 
 class UpdatePromptRequest(BaseModel):
     """Request model for updating a prompt."""
-    prompt_text: str = Field(..., description="The full text of the prompt")
+    name: Optional[str] = Field(None, min_length=3, max_length=100, description="User-friendly name for the prompt")
+    type: Optional[str] = Field(None, description="Type of the prompt")
+    prompt_text: Optional[str] = Field(None, min_length=10, max_length=50000, description="The full text of the prompt")
+
+    @validator('type')
+    def validate_type(cls, v):
+        if v is not None and v not in PROMPT_TYPES:
+            raise ValueError(f'Type must be one of: {", ".join(PROMPT_TYPES)}')
+        return v

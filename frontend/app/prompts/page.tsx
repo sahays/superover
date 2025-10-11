@@ -1,25 +1,181 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
-import { BotMessageSquare, ArrowLeft, FileText } from 'lucide-react'
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { FileText, Plus, Edit2, Trash2, ArrowLeft, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { promptApi } from '@/lib/api-client'
+import { Prompt } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { formatDistanceToNow } from 'date-fns'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
-interface Prompt {
-  prompt_id: string
-  prompt_name: string
-  prompt_type: string
-  updated_at: string
+interface PromptFormData {
+  name: string
+  type: string
+  prompt_text: string
 }
 
+const PROMPT_TYPE_OPTIONS = [
+  { value: 'scene_analysis', label: 'Scene Analysis' },
+  { value: 'object_identification', label: 'Object Identification' },
+  { value: 'subtitling', label: 'Subtitling' },
+  { value: 'character_identification', label: 'Character Identification' },
+  { value: 'key_moments', label: 'Key Moments' },
+  { value: 'action_recognition', label: 'Action Recognition' },
+  { value: 'sentiment_analysis', label: 'Sentiment Analysis' },
+  { value: 'brand_detection', label: 'Brand Detection' },
+  { value: 'custom', label: 'Custom' },
+]
+
 export default function PromptsPage() {
+  const queryClient = useQueryClient()
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null)
+  const [deletingPrompt, setDeletingPrompt] = useState<Prompt | null>(null)
+  const [formData, setFormData] = useState<PromptFormData>({
+    name: '',
+    type: 'scene_analysis',
+    prompt_text: '',
+  })
+  const [formErrors, setFormErrors] = useState<Partial<PromptFormData>>({})
+
   const { data: prompts, isLoading } = useQuery<Prompt[]>({
     queryKey: ['prompts'],
     queryFn: () => promptApi.listPrompts(),
   })
+
+  const createMutation = useMutation({
+    mutationFn: (data: PromptFormData) => promptApi.createPrompt(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['prompts'] })
+      setShowCreateDialog(false)
+      resetForm()
+    },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ promptId, data }: { promptId: string; data: Partial<PromptFormData> }) =>
+      promptApi.updatePrompt(promptId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['prompts'] })
+      setEditingPrompt(null)
+      resetForm()
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (promptId: string) => promptApi.deletePrompt(promptId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['prompts'] })
+      setDeletingPrompt(null)
+    },
+    onError: (error: any) => {
+      // Show error message if prompt is in use
+      alert(error.response?.data?.detail || 'Failed to delete prompt')
+      setDeletingPrompt(null)
+    },
+  })
+
+  const resetForm = () => {
+    setFormData({ name: '', type: 'scene_analysis', prompt_text: '' })
+    setFormErrors({})
+  }
+
+  const validateForm = (): boolean => {
+    const errors: Partial<PromptFormData> = {}
+
+    if (!formData.name.trim()) {
+      errors.name = 'Name is required'
+    } else if (formData.name.length < 3) {
+      errors.name = 'Name must be at least 3 characters'
+    } else if (formData.name.length > 100) {
+      errors.name = 'Name must be less than 100 characters'
+    }
+
+    if (!formData.type) {
+      errors.type = 'Type is required'
+    }
+
+    if (!formData.prompt_text.trim()) {
+      errors.prompt_text = 'Prompt text is required'
+    } else if (formData.prompt_text.length < 10) {
+      errors.prompt_text = 'Prompt text must be at least 10 characters'
+    } else if (formData.prompt_text.length > 50000) {
+      errors.prompt_text = 'Prompt text must be less than 50,000 characters'
+    }
+
+    setFormErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
+  const handleCreate = () => {
+    if (!validateForm()) return
+    createMutation.mutate(formData)
+  }
+
+  const handleUpdate = () => {
+    if (!editingPrompt || !validateForm()) return
+    updateMutation.mutate({
+      promptId: editingPrompt.prompt_id,
+      data: formData,
+    })
+  }
+
+  const handleEdit = (prompt: Prompt) => {
+    setEditingPrompt(prompt)
+    setFormData({
+      name: prompt.name,
+      type: prompt.type,
+      prompt_text: prompt.prompt_text,
+    })
+  }
+
+  const handleDelete = (prompt: Prompt) => {
+    setDeletingPrompt(prompt)
+  }
+
+  const confirmDelete = () => {
+    if (deletingPrompt) {
+      deleteMutation.mutate(deletingPrompt.prompt_id)
+    }
+  }
+
+  const handleOpenCreateDialog = () => {
+    resetForm()
+    setShowCreateDialog(true)
+  }
+
+  const handleCloseCreateDialog = () => {
+    setShowCreateDialog(false)
+    resetForm()
+  }
+
+  const handleCloseEditDialog = () => {
+    setEditingPrompt(null)
+    resetForm()
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -28,66 +184,231 @@ export default function PromptsPage() {
         <div className="container mx-auto max-w-6xl px-4 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-green-600 text-white">
-                <BotMessageSquare className="h-6 w-6" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-600 text-white">
+                <FileText className="h-6 w-6" />
               </div>
               <div>
                 <h1 className="text-2xl font-bold">Prompt Management</h1>
-                <p className="text-sm text-muted-foreground">
-                  Manage the Gemini prompts used for analysis
-                </p>
+                <p className="text-sm text-muted-foreground">Create and manage analysis prompts</p>
               </div>
             </div>
-            <Link href="/">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back to Home
+            <div className="flex items-center gap-2">
+              <Link href="/">
+                <Button variant="ghost" size="sm">
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Back to Home
+                </Button>
+              </Link>
+              <Button onClick={handleOpenCreateDialog} size="lg">
+                <Plus className="mr-2 h-4 w-4" />
+                Create Prompt
               </Button>
-            </Link>
+            </div>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="container mx-auto max-w-6xl px-4 py-8">
-        <Card>
-          <CardHeader>
-            <CardTitle>Available Prompts</CardTitle>
-            <CardDescription>
-              Select a prompt to view and edit its content.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="text-center text-muted-foreground">Loading prompts...</div>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                {prompts?.map((prompt) => (
-                  <Link href={`/prompts/${prompt.prompt_id}`} key={prompt.prompt_id}>
-                    <Card className="hover:shadow-md transition-shadow">
-                      <CardHeader>
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <CardTitle>{prompt.prompt_name}</CardTitle>
-                            <CardDescription>Type: {prompt.prompt_type}</CardDescription>
-                          </div>
-                          <FileText className="h-6 w-6 text-muted-foreground" />
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-xs text-muted-foreground">
-                          Last updated:{' '}
-                          {formatDistanceToNow(new Date(prompt.updated_at), { addSuffix: true })}
-                        </p>
-                      </CardContent>
-                    </Card>
-                  </Link>
-                ))}
+        {isLoading ? (
+          <Card>
+            <CardContent className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
+                <p className="mt-4 text-sm text-muted-foreground">Loading prompts...</p>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ) : prompts && prompts.length > 0 ? (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {prompts.map((prompt) => (
+              <Card key={prompt.prompt_id} className="flex flex-col">
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <CardTitle className="line-clamp-1">{prompt.name}</CardTitle>
+                      <CardDescription className="mt-1">
+                        {prompt.jobs_count || 0} job(s) using this prompt
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="flex-1">
+                  <p className="text-sm text-muted-foreground line-clamp-3">
+                    {prompt.prompt_text}
+                  </p>
+                </CardContent>
+                <CardContent className="flex justify-end gap-2 border-t pt-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleEdit(prompt)}
+                  >
+                    <Edit2 className="mr-2 h-4 w-4" />
+                    Edit
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDelete(prompt)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card>
+            <CardContent className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <FileText className="mx-auto h-12 w-12 text-gray-400" />
+                <h3 className="mt-4 text-lg font-semibold">No prompts yet</h3>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Create your first prompt to start analyzing videos
+                </p>
+                <Button onClick={handleOpenCreateDialog} className="mt-4">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Prompt
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </main>
+
+      {/* Create/Edit Dialog */}
+      <Dialog open={showCreateDialog || editingPrompt !== null} onOpenChange={(open) => {
+        if (!open) {
+          if (showCreateDialog) handleCloseCreateDialog()
+          if (editingPrompt) handleCloseEditDialog()
+        }
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingPrompt ? 'Edit Prompt' : 'Create New Prompt'}</DialogTitle>
+            <DialogDescription>
+              {editingPrompt
+                ? 'Update the prompt name and text. Changes will apply to new jobs only.'
+                : 'Create a new prompt for scene analysis. You can use this prompt when starting new analysis jobs.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">
+                Name <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="name"
+                placeholder="e.g., Sports Highlights Analysis"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className={formErrors.name ? 'border-red-500' : ''}
+              />
+              {formErrors.name && (
+                <p className="text-sm text-red-500">{formErrors.name}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="type">
+                Type <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={formData.type}
+                onValueChange={(value) => setFormData({ ...formData, type: value })}
+              >
+                <SelectTrigger id="type" className={formErrors.type ? 'border-red-500' : ''}>
+                  <SelectValue placeholder="Select type..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROMPT_TYPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {formErrors.type && (
+                <p className="text-sm text-red-500">{formErrors.type}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="prompt_text">
+                Prompt Text <span className="text-red-500">*</span>
+              </Label>
+              <Textarea
+                id="prompt_text"
+                placeholder="Enter the prompt for scene analysis..."
+                value={formData.prompt_text}
+                onChange={(e) => setFormData({ ...formData, prompt_text: e.target.value })}
+                rows={10}
+                className={formErrors.prompt_text ? 'border-red-500' : ''}
+              />
+              {formErrors.prompt_text && (
+                <p className="text-sm text-red-500">{formErrors.prompt_text}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                {formData.prompt_text.length.toLocaleString()} / 50,000 characters
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={editingPrompt ? handleCloseEditDialog : handleCloseCreateDialog}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={editingPrompt ? handleUpdate : handleCreate}
+              disabled={createMutation.isPending || updateMutation.isPending}
+            >
+              {(createMutation.isPending || updateMutation.isPending) && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {editingPrompt ? 'Update' : 'Create'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deletingPrompt !== null} onOpenChange={(open) => {
+        if (!open) setDeletingPrompt(null)
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Prompt?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deletingPrompt?.name}"?
+              {deletingPrompt && deletingPrompt.jobs_count && deletingPrompt.jobs_count > 0 ? (
+                <span className="mt-2 block font-semibold text-red-600">
+                  Warning: {deletingPrompt.jobs_count} job(s) are using this prompt. Deletion will be blocked.
+                </span>
+              ) : (
+                <span className="mt-2 block">
+                  This action cannot be undone.
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              disabled={deleteMutation.isPending}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {deleteMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

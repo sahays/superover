@@ -37,11 +37,12 @@ export default function SceneAnalysisPage() {
     },
   })
 
-  const handleVideoSelect = async (videoId: string, isCompressed: boolean, gcsPath: string, chunkDuration: number) => {
+  const handleVideoSelect = async (videoId: string, isCompressed: boolean, gcsPath: string, chunkDuration: number, promptId: string) => {
     // Start scene analysis for the selected (already compressed) video
     // The video is already compressed from /media workflow, we just need to chunk and analyze
     try {
       await videoApi.processVideo(videoId, {
+        prompt_id: promptId,             // User-selected prompt (required)
         compressed_video_path: gcsPath, // GCS path from media job
         chunk_duration: chunkDuration,  // User-selected chunk duration
         chunk: chunkDuration > 0,       // Only chunk if duration > 0

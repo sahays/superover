@@ -1,10 +1,12 @@
 'use client'
 
+import { useState } from 'react'
 import { SceneJob, SceneJobStatus } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { CheckCircle, XCircle, Loader2, Eye, Trash2 } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { CheckCircle, XCircle, Loader2, Eye, Trash2, FileText } from 'lucide-react'
 import Link from 'next/link'
 
 interface SceneJobCardProps {
@@ -14,6 +16,17 @@ interface SceneJobCardProps {
 }
 
 export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps) {
+  const [showPromptDialog, setShowPromptDialog] = useState(false)
+
+  // Get prompt type label (use 'custom' if not specified for backward compatibility)
+  const getPromptTypeLabel = (type?: string) => {
+    if (!type) return 'Custom'
+    return type
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ')
+  }
+
   const getStatusBadge = (status: SceneJobStatus) => {
     switch (status) {
       case SceneJobStatus.COMPLETED:
@@ -92,6 +105,12 @@ export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps
         {/* Configuration */}
         <div className="grid gap-2 text-sm">
           <div className="flex justify-between">
+            <span className="text-muted-foreground">Prompt Type:</span>
+            <Badge variant="outline" className="text-xs">
+              {getPromptTypeLabel(job.prompt_type)}
+            </Badge>
+          </div>
+          <div className="flex justify-between">
             <span className="text-muted-foreground">Chunk Duration:</span>
             <span className="font-medium">
               {job.config.chunk_duration > 0
@@ -104,6 +123,17 @@ export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps
               <span className="text-muted-foreground">Source:</span>
               <span className="font-medium text-xs">Compressed video</span>
             </div>
+          )}
+          {job.prompt_text && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowPromptDialog(true)}
+              className="w-full justify-start text-xs text-muted-foreground hover:text-primary"
+            >
+              <FileText className="mr-2 h-3 w-3" />
+              View Prompt
+            </Button>
           )}
         </div>
 
@@ -164,6 +194,25 @@ export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps
           )}
         </div>
       </CardContent>
+
+      {/* Prompt Dialog */}
+      <Dialog open={showPromptDialog} onOpenChange={setShowPromptDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Analysis Prompt</DialogTitle>
+            <DialogDescription>
+              The prompt used for this scene analysis job
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4">
+            <div className="rounded-lg bg-gray-50 p-4">
+              <pre className="whitespace-pre-wrap text-sm font-mono">
+                {job.prompt_text}
+              </pre>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

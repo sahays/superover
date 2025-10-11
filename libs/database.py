@@ -295,6 +295,7 @@ class FirestoreDB:
         job_id: str,
         video_id: str,
         config: Dict[str, Any],
+        prompt_id: str,
         prompt_text: str,
     ) -> Dict[str, Any]:
         """
@@ -304,7 +305,8 @@ class FirestoreDB:
             job_id: Unique job ID
             video_id: Associated video ID
             config: Processing configuration (chunk_duration, etc.)
-            prompt_text: The exact prompt text to be used for this job.
+            prompt_id: ID of the prompt being used
+            prompt_text: The exact prompt text to be used for this job (embedded for reliability)
 
         Returns:
             Created job document
@@ -314,13 +316,14 @@ class FirestoreDB:
             "video_id": video_id,
             "status": SceneJobStatus.PENDING,
             "config": config,
+            "prompt_id": prompt_id,
             "prompt_text": prompt_text,
             "created_at": firestore.SERVER_TIMESTAMP,
             "updated_at": firestore.SERVER_TIMESTAMP,
         }
 
         self.scene_jobs.document(job_id).set(job_data)
-        logger.info(f"Created scene job: {job_id} for video: {video_id}")
+        logger.info(f"Created scene job: {job_id} for video: {video_id} with prompt: {prompt_id}")
         return self.get_scene_job(job_id)
 
     def get_scene_job(self, job_id: str) -> Optional[Dict[str, Any]]:
@@ -480,50 +483,119 @@ class FirestoreDB:
 
     def create_prompt(
         self,
-        prompt_id: str,
-        prompt_name: str,
-        prompt_type: str,
+        name: str,
+        type: str,
         prompt_text: str,
     ) -> Dict[str, Any]:
-        """Create a new prompt document."""
-        # Check if a prompt with this ID already exists
-        if self.prompts.document(prompt_id).get().exists:
-            raise ValueError(f"Prompt with ID '{prompt_id}' already exists.")
+        """
+        Create a new prompt document with auto-generated ID.
 
+        Args:
+            name: User-friendly name for the prompt
+            type: Type of the prompt (scene_analysis, object_identification, etc.)
+            prompt_text: The full prompt text
+
+        Returns:
+            Created prompt document
+        """
+        import uuid
+
+        prompt_id = str(uuid.uuid4())
         prompt_data = {
             "prompt_id": prompt_id,
-            "prompt_name": prompt_name,
-            "prompt_type": prompt_type,
+            "name": name,
+            "type": type,
             "prompt_text": prompt_text,
             "created_at": firestore.SERVER_TIMESTAMP,
             "updated_at": firestore.SERVER_TIMESTAMP,
         }
         self.prompts.document(prompt_id).set(prompt_data)
-        logger.info(f"Created prompt document: {prompt_id}")
+        logger.info(f"Created prompt: {prompt_id} ({name}) of type {type}")
         return self.get_prompt(prompt_id)
 
     def get_prompt(self, prompt_id: str) -> Optional[Dict[str, Any]]:
         """Get a prompt document by its ID."""
         doc = self.prompts.document(prompt_id).get()
-        return doc.to_dict() if doc.exists else None
+        if doc.exists:
+            data = doc.to_dict()
+            # Backward compatibility: default to 'custom' if type is missing
+            if 'type' not in data:
+                data['type'] = 'custom'
+            # Backward compatibility: use prompt_name if name is missing (old schema)
+            if 'name' not in data and 'prompt_name' in data:
+                data['name'] = data['prompt_name']
+            # Backward compatibility: set a default name if still missing
+            if 'name' not in data:
+                data['name'] = f"Prompt {data.get('prompt_id', 'unknown')[:8]}"
+            return data
+        return None
 
     def list_prompts(self) -> List[Dict[str, Any]]:
-        """List all prompt documents."""
-        return [doc.to_dict() for doc in self.prompts.stream()]
+        """List all prompt documents ordered by creation date."""
+        query = self.prompts.order_by("created_at", direction=firestore.Query.DESCENDING)
+        prompts = []
+        for doc in query.stream():
+            data = doc.to_dict()
+            # Backward compatibility: default to 'custom' if type is missing
+            if 'type' not in data:
+                data['type'] = 'custom'
+            # Backward compatibility: use prompt_name if name is missing (old schema)
+            if 'name' not in data and 'prompt_name' in data:
+                data['name'] = data['prompt_name']
+            # Backward compatibility: set a default name if still missing
+            if 'name' not in data:
+                data['name'] = f"Prompt {data.get('prompt_id', 'unknown')[:8]}"
+            prompts.append(data)
+        return prompts
 
-    def update_prompt(self, prompt_id: str, prompt_text: str) -> Optional[Dict[str, Any]]:
-        """Update the text of a prompt document."""
+    def update_prompt(
+        self,
+        prompt_id: str,
+        name: Optional[str] = None,
+        type: Optional[str] = None,
+        prompt_text: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update a prompt document.
+
+        Args:
+            prompt_id: ID of the prompt to update
+            name: New name (optional)
+            type: New type (optional)
+            prompt_text: New prompt text (optional)
+
+        Returns:
+            Updated prompt document or None if not found
+        """
         prompt_ref = self.prompts.document(prompt_id)
         if not prompt_ref.get().exists:
             return None
 
-        update_data = {
-            "prompt_text": prompt_text,
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        }
+        update_data = {"updated_at": firestore.SERVER_TIMESTAMP}
+
+        if name is not None:
+            update_data["name"] = name
+        if type is not None:
+            update_data["type"] = type
+        if prompt_text is not None:
+            update_data["prompt_text"] = prompt_text
+
+        if len(update_data) == 1:  # Only updated_at
+            raise ValueError("At least one field (name, type, or prompt_text) must be provided")
+
         prompt_ref.update(update_data)
         logger.info(f"Updated prompt: {prompt_id}")
         return self.get_prompt(prompt_id)
+
+    def delete_prompt(self, prompt_id: str) -> None:
+        """Delete a prompt document."""
+        self.prompts.document(prompt_id).delete()
+        logger.info(f"Deleted prompt: {prompt_id}")
+
+    def count_jobs_using_prompt(self, prompt_id: str) -> int:
+        """Count how many scene jobs are using this prompt."""
+        query = self.scene_jobs.where("prompt_id", "==", prompt_id)
+        return len(list(query.stream()))
 
 
 

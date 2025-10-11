@@ -41,11 +41,19 @@ export const videoApi = {
     return response.data
   },
 
-  processVideo: async (videoId: string, options = {}) => {
+  processVideo: async (videoId: string, options: {
+    prompt_id: string
+    compressed_video_path?: string
+    chunk_duration?: number
+    chunk?: boolean
+    compress?: boolean
+    extract_audio?: boolean
+  }) => {
     const response = await apiClient.post(`/api/scenes/${videoId}/process`, {
-      compress: true,
+      compress: false,
       chunk: true,
-      extract_audio: true,
+      extract_audio: false,
+      chunk_duration: 30,
       ...options,
     })
     return response.data
@@ -184,8 +192,18 @@ export const promptApi = {
     return response.data
   },
 
-  updatePrompt: async (promptId: string, data: { prompt_text: string }) => {
+  createPrompt: async (data: { name: string; type: string; prompt_text: string }) => {
+    const response = await apiClient.post('/api/prompts', data)
+    return response.data
+  },
+
+  updatePrompt: async (promptId: string, data: { name?: string; type?: string; prompt_text?: string }) => {
     const response = await apiClient.put(`/api/prompts/${promptId}`, data)
+    return response.data
+  },
+
+  deletePrompt: async (promptId: string) => {
+    const response = await apiClient.delete(`/api/prompts/${promptId}`)
     return response.data
   },
 }

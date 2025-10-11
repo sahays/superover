@@ -35,6 +35,7 @@ export const sceneJobSchema = z.object({
   status: z.nativeEnum(SceneJobStatus),
   config: z.record(z.any()),
   prompt_text: z.string(),
+  prompt_type: z.string().optional(),
   results: z.record(z.any()).optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
@@ -130,3 +131,16 @@ export type MediaProcessingConfig = z.infer<typeof mediaProcessingConfigSchema>
 export type MediaJobResults = z.infer<typeof mediaJobResultsSchema>
 export type MediaJob = z.infer<typeof mediaJobSchema>
 export type MediaPreset = z.infer<typeof mediaPresetSchema>
+
+// Prompt Management Types
+export const promptSchema = z.object({
+  prompt_id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  prompt_text: z.string(),
+  created_at: z.string().optional(),
+  updated_at: z.string().optional(),
+  jobs_count: z.number().optional(),
+})
+
+export type Prompt = z.infer<typeof promptSchema>

@@ -292,9 +292,9 @@ async def list_videos(
 @router.post("/{video_id}/process", response_model=ProcessingJobResponse)
 async def process_video(video_id: str, request: ProcessVideoRequest):
     """
-    Start scene processing (compression, chunking, audio extraction).
+    Start scene processing with user-selected prompt.
 
-    This creates a scene job and task that will be picked up by a worker.
+    This creates a scene job that will be picked up by a worker.
     """
     try:
         db = get_db()
@@ -307,15 +307,15 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
                 detail=f"Video not found: {video_id}"
             )
 
-        # Get the default prompt for scene analysis
-        prompt = db.get_prompt("default_scene_analysis")
+        # Get the specified prompt (REQUIRED)
+        prompt = db.get_prompt(request.prompt_id)
         if not prompt:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Default scene analysis prompt not found. Please create it.",
+                detail=f"Prompt not found: {request.prompt_id}. Please select a valid prompt.",
             )
 
-        # Create scene job
+        # Create scene job with prompt_id and embedded prompt_text
         job_id = str(uuid.uuid4())
         job_data = db.create_scene_job(
             job_id=job_id,
@@ -325,7 +325,8 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
                 "chunk_duration": request.chunk_duration,
                 "chunk": request.chunk,
             },
-            prompt_text=prompt["prompt_text"],  # Embed the prompt text
+            prompt_id=request.prompt_id,  # Store prompt reference
+            prompt_text=prompt["prompt_text"],  # Embed for reliability
         )
 
         return ProcessingJobResponse(
