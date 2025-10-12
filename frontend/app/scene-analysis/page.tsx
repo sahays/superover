@@ -5,7 +5,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { Video as VideoIcon, FileVideo, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { videoApi, sceneJobApi } from '@/lib/api-client'
-import { SceneJob, SceneJobStatus } from '@/lib/types'
+import { SceneJob, SceneJobStatus, ContextItem } from '@/lib/types'
 import { VideoPicker } from '@/components/video-picker'
 import { SceneJobCard } from '@/components/scene/job-card'
 import { Button } from '@/components/ui/button'
@@ -37,7 +37,14 @@ export default function SceneAnalysisPage() {
     },
   })
 
-  const handleVideoSelect = async (videoId: string, isCompressed: boolean, gcsPath: string, chunkDuration: number, promptId: string) => {
+  const handleVideoSelect = async (
+    videoId: string,
+    isCompressed: boolean,
+    gcsPath: string,
+    chunkDuration: number,
+    promptId: string,
+    contextItems?: ContextItem[]
+  ) => {
     // Start scene analysis for the selected (already compressed) video
     // The video is already compressed from /media workflow, we just need to chunk and analyze
     try {
@@ -46,6 +53,7 @@ export default function SceneAnalysisPage() {
       console.log('gcsPath:', gcsPath)
       console.log('chunkDuration:', chunkDuration, 'type:', typeof chunkDuration)
       console.log('promptId:', promptId)
+      console.log('contextItems:', contextItems)
 
       await videoApi.processVideo(videoId, {
         prompt_id: promptId,             // User-selected prompt (required)
@@ -54,6 +62,7 @@ export default function SceneAnalysisPage() {
         chunk: chunkDuration > 0,       // Only chunk if duration > 0
         compress: false,                 // Already compressed in media workflow
         extract_audio: false,            // Already extracted in media workflow
+        context_items: contextItems,     // Optional context files for analysis
       })
       setShowPicker(false)
       refetch()

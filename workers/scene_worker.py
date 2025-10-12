@@ -158,6 +158,7 @@ class SceneWorker:
         compressed_video_path = config.get("compressed_video_path")
         chunk_duration = config.get("chunk_duration", 30)
         should_chunk = config.get("chunk", True)
+        context_items = config.get("context_items", [])
 
         logger.info(f"=== Scene worker processing ===")
         logger.info(f"video_id: {video_id}")
@@ -165,6 +166,8 @@ class SceneWorker:
         logger.info(f"chunk_duration from config: {chunk_duration} (type: {type(chunk_duration).__name__})")
         logger.info(f"should_chunk: {should_chunk}")
         logger.info(f"compressed_video_path: {compressed_video_path}")
+        if context_items:
+            logger.info(f"context_items: {len(context_items)} file(s)")
 
         # Get video info
         video = self.db.get_video(video_id)
@@ -255,7 +258,8 @@ class SceneWorker:
                 job_id=job_id,
                 video_id=video_id,
                 prompt_text=prompt_text,
-                prompt_type=prompt_type
+                prompt_type=prompt_type,
+                context_items=context_items if context_items else None
             )
 
             # Update scene job status to completed

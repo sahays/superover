@@ -45,6 +45,10 @@ async def create_prompt(request: CreatePromptRequest):
             name=request.name,
             type=request.type,
             prompt_text=request.prompt_text,
+            supports_context=request.supports_context,
+            context_description=request.context_description,
+            required_context_types=request.required_context_types,
+            max_context_items=request.max_context_items,
         )
         prompt_data["jobs_count"] = 0  # New prompt has no jobs yet
         return PromptResponse(**prompt_data)
@@ -83,15 +87,23 @@ async def get_prompt(prompt_id: str):
 
 @router.put("/{prompt_id}", response_model=PromptResponse)
 async def update_prompt(prompt_id: str, request: UpdatePromptRequest):
-    """Update a prompt's name, type, and/or text."""
+    """Update a prompt's name, type, text, and/or context settings."""
     try:
         db = get_db()
 
         # Validate at least one field is provided
-        if request.name is None and request.type is None and request.prompt_text is None:
+        if all([
+            request.name is None,
+            request.type is None,
+            request.prompt_text is None,
+            request.supports_context is None,
+            request.context_description is None,
+            request.required_context_types is None,
+            request.max_context_items is None
+        ]):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="At least one field (name, type, or prompt_text) must be provided"
+                detail="At least one field must be provided for update"
             )
 
         updated_prompt = db.update_prompt(
@@ -99,6 +111,10 @@ async def update_prompt(prompt_id: str, request: UpdatePromptRequest):
             name=request.name,
             type=request.type,
             prompt_text=request.prompt_text,
+            supports_context=request.supports_context,
+            context_description=request.context_description,
+            required_context_types=request.required_context_types,
+            max_context_items=request.max_context_items,
         )
 
         if not updated_prompt:

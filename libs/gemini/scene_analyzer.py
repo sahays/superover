@@ -75,6 +75,7 @@ class SceneAnalyzer:
         chunk_duration: float,
         prompt_text: str,
         prompt_type: str = "scene_analysis",
+        context_text: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Analyze a video chunk with comprehensive scene analysis.
@@ -85,6 +86,7 @@ class SceneAnalyzer:
             chunk_duration: Duration of the chunk in seconds
             prompt_text: The full prompt text to use for the analysis.
             prompt_type: Type of analysis (scene_analysis, subtitling, etc.)
+            context_text: Optional pre-loaded context text to append to prompt
 
         Returns:
             Comprehensive analysis results as a dictionary
@@ -107,19 +109,32 @@ class SceneAnalyzer:
 
             logger.info(f"Analyzing chunk {chunk_index} with Gemini")
 
-            # Determine max output tokens based on prompt type
-            # Subtitling/transcription needs much more tokens for long SRT output
-            if prompt_type in ["subtitling", "transcription"]:
-                max_tokens = 65536  # Maximum for Gemini (65k tokens ~= 50k words)
-                logger.info(f"Using max_output_tokens={max_tokens} for {prompt_type}")
+            # Use max output tokens from config (model-specific)
+            # Gemini 2.0 Flash: 8192 tokens
+            # Gemini 2.5 Pro: 65536 tokens
+            max_tokens = settings.gemini_max_output_tokens
+            logger.info(f"Using max_output_tokens={max_tokens} for model {settings.gemini_model}")
+
+            # Build content parts: prompt + context (if any) + video
+            content_parts = []
+
+            # Add prompt text (with context appended if provided)
+            if context_text:
+                # Append pre-loaded context to prompt
+                full_prompt = prompt_text + "\n\n" + context_text
+                content_parts.append(full_prompt)
+                logger.info(f"Including context ({len(context_text)} chars) in analysis")
             else:
-                max_tokens = 8192  # Standard for scene analysis
+                content_parts.append(prompt_text)
+
+            # Add video file
+            content_parts.append(video_file)
 
             # Generate analysis with extended timeout for video processing
             # Use retry logic to handle transient failures
             response = self._retry_with_backoff(
                 self.model.generate_content,
-                [prompt_text, video_file],
+                content_parts,
                 generation_config=genai.GenerationConfig(
                     temperature=0.1,  # Low temperature for more consistent/factual output
                     max_output_tokens=max_tokens,

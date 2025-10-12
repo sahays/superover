@@ -31,7 +31,8 @@ class SequentialSceneProcessor(SceneProcessor):
         job_id: str,
         video_id: str,
         prompt_text: str,
-        prompt_type: str = "scene_analysis"
+        prompt_type: str = "scene_analysis",
+        context_items: List[Dict[str, Any]] = None
     ) -> None:
         """
         Process video chunks sequentially.
@@ -42,11 +43,17 @@ class SequentialSceneProcessor(SceneProcessor):
             video_id: Video ID
             prompt_text: Analysis prompt text
             prompt_type: Type of analysis (scene_analysis, subtitling, etc.)
+            context_items: Optional list of context items to include in analysis
 
         Raises:
             Exception: If processing fails
         """
         logger.info(f"[SEQUENTIAL] Analyzing {len(chunks)} chunk(s) for job {job_id}")
+
+        # Load context files once (not per chunk)
+        context_text = self.load_context_text(context_items) if context_items else None
+        if context_text:
+            logger.info(f"[SEQUENTIAL] Loaded context text ({len(context_text)} chars) - will be reused for all chunks")
 
         for chunk in chunks:
             chunk_index = chunk["index"]
@@ -77,13 +84,14 @@ class SequentialSceneProcessor(SceneProcessor):
                 self.storage.download_file(chunk_gcs, local_chunk_path)
 
             try:
-                # Analyze with Gemini
+                # Analyze with Gemini (context already loaded and passed as text)
                 result = self.analyzer.analyze_chunk(
                     video_path=local_chunk_path,
                     chunk_index=chunk_index,
                     chunk_duration=chunk["duration"],
                     prompt_text=prompt_text,
                     prompt_type=prompt_type,
+                    context_text=context_text,
                 )
 
                 # Save result to database

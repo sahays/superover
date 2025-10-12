@@ -52,6 +52,8 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
     local_chunk_path = Path(chunk_data['local_chunk_path'])
     chunk_duration = chunk_data['chunk_duration']
     prompt_text = chunk_data['prompt_text']
+    prompt_type = chunk_data.get('prompt_type', 'scene_analysis')
+    context_text = chunk_data.get('context_text')  # Pre-loaded context text
     job_id = chunk_data['job_id']
     video_id = chunk_data['video_id']
     total_chunks = chunk_data['total_chunks']
@@ -65,11 +67,14 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         # Analyze with Gemini (isolated SSL context per process)
+        # Context text is already loaded and passed as string
         result = analyzer.analyze_chunk(
             video_path=local_chunk_path,
             chunk_index=chunk_index,
             chunk_duration=chunk_duration,
             prompt_text=prompt_text,
+            prompt_type=prompt_type,
+            context_text=context_text,
         )
 
         # Save result to database
@@ -192,7 +197,9 @@ class ParallelSceneProcessor(SceneProcessor):
         chunks: List[Dict[str, Any]],
         job_id: str,
         video_id: str,
-        prompt_text: str
+        prompt_text: str,
+        prompt_type: str = "scene_analysis",
+        context_items: List[Dict[str, Any]] = None
     ) -> None:
         """
         Hybrid processing: Sequential I/O, Parallel Gemini API calls.
@@ -206,6 +213,8 @@ class ParallelSceneProcessor(SceneProcessor):
             job_id: Scene job ID for progress tracking
             video_id: Video ID
             prompt_text: Analysis prompt text
+            prompt_type: Type of analysis (scene_analysis, subtitling, etc.)
+            context_items: Optional list of context items to include in analysis
 
         Raises:
             Exception: If processing fails
@@ -235,6 +244,11 @@ class ParallelSceneProcessor(SceneProcessor):
 
             local_chunk_paths.append(local_chunk_path)
 
+        # Load context files once (not per chunk, not per process)
+        context_text = self.load_context_text(context_items) if context_items else None
+        if context_text:
+            logger.info(f"[HYBRID] Loaded context text ({len(context_text)} chars) - will be reused for all chunks")
+
         logger.info(f"[HYBRID] Step 2/3: Analyzing {total_chunks} chunks in parallel with Gemini...")
 
         # STEP 2: Analyze with Gemini in PARALLEL (isolated processes)
@@ -248,6 +262,8 @@ class ParallelSceneProcessor(SceneProcessor):
                 "local_chunk_path": str(local_chunk_paths[i]),
                 "chunk_duration": chunk["duration"],
                 "prompt_text": prompt_text,
+                "prompt_type": prompt_type,
+                "context_text": context_text,  # Pre-loaded context text (not items)
                 "job_id": job_id,
                 "video_id": video_id,
                 "total_chunks": total_chunks,

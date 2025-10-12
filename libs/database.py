@@ -498,6 +498,10 @@ class FirestoreDB:
         name: str,
         type: str,
         prompt_text: str,
+        supports_context: bool = False,
+        context_description: Optional[str] = None,
+        required_context_types: Optional[List[str]] = None,
+        max_context_items: int = 5,
     ) -> Dict[str, Any]:
         """
         Create a new prompt document with auto-generated ID.
@@ -506,6 +510,10 @@ class FirestoreDB:
             name: User-friendly name for the prompt
             type: Type of the prompt (scene_analysis, object_identification, etc.)
             prompt_text: The full prompt text
+            supports_context: Whether this prompt supports additional context files
+            context_description: Description of what context is expected
+            required_context_types: List of required context types (text, image, video, audio)
+            max_context_items: Maximum number of context items allowed
 
         Returns:
             Created prompt document
@@ -518,11 +526,19 @@ class FirestoreDB:
             "name": name,
             "type": type,
             "prompt_text": prompt_text,
+            "supports_context": supports_context,
             "created_at": firestore.SERVER_TIMESTAMP,
             "updated_at": firestore.SERVER_TIMESTAMP,
         }
+
+        # Add context-related fields only if context is supported
+        if supports_context:
+            prompt_data["context_description"] = context_description or "Upload additional context files"
+            prompt_data["required_context_types"] = required_context_types or []
+            prompt_data["max_context_items"] = max_context_items
+
         self.prompts.document(prompt_id).set(prompt_data)
-        logger.info(f"Created prompt: {prompt_id} ({name}) of type {type}")
+        logger.info(f"Created prompt: {prompt_id} ({name}) of type {type}, supports_context={supports_context}")
         return self.get_prompt(prompt_id)
 
     def get_prompt(self, prompt_id: str) -> Optional[Dict[str, Any]]:
@@ -539,6 +555,9 @@ class FirestoreDB:
             # Backward compatibility: set a default name if still missing
             if 'name' not in data:
                 data['name'] = f"Prompt {data.get('prompt_id', 'unknown')[:8]}"
+            # Backward compatibility: default supports_context to False for old prompts
+            if 'supports_context' not in data:
+                data['supports_context'] = False
             return data
         return None
 
@@ -557,6 +576,9 @@ class FirestoreDB:
             # Backward compatibility: set a default name if still missing
             if 'name' not in data:
                 data['name'] = f"Prompt {data.get('prompt_id', 'unknown')[:8]}"
+            # Backward compatibility: default supports_context to False for old prompts
+            if 'supports_context' not in data:
+                data['supports_context'] = False
             prompts.append(data)
         return prompts
 
@@ -565,7 +587,11 @@ class FirestoreDB:
         prompt_id: str,
         name: Optional[str] = None,
         type: Optional[str] = None,
-        prompt_text: Optional[str] = None
+        prompt_text: Optional[str] = None,
+        supports_context: Optional[bool] = None,
+        context_description: Optional[str] = None,
+        required_context_types: Optional[List[str]] = None,
+        max_context_items: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Update a prompt document.
@@ -575,6 +601,10 @@ class FirestoreDB:
             name: New name (optional)
             type: New type (optional)
             prompt_text: New prompt text (optional)
+            supports_context: Whether this prompt supports additional context files (optional)
+            context_description: Description of what context is expected (optional)
+            required_context_types: List of required context types (optional)
+            max_context_items: Maximum number of context items allowed (optional)
 
         Returns:
             Updated prompt document or None if not found
@@ -591,9 +621,17 @@ class FirestoreDB:
             update_data["type"] = type
         if prompt_text is not None:
             update_data["prompt_text"] = prompt_text
+        if supports_context is not None:
+            update_data["supports_context"] = supports_context
+        if context_description is not None:
+            update_data["context_description"] = context_description
+        if required_context_types is not None:
+            update_data["required_context_types"] = required_context_types
+        if max_context_items is not None:
+            update_data["max_context_items"] = max_context_items
 
         if len(update_data) == 1:  # Only updated_at
-            raise ValueError("At least one field (name, type, or prompt_text) must be provided")
+            raise ValueError("At least one field must be provided for update")
 
         prompt_ref.update(update_data)
         logger.info(f"Updated prompt: {prompt_id}")

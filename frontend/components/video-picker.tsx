@@ -2,17 +2,27 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Video, FileVideo, CheckCircle, ExternalLink, Loader2, Music } from 'lucide-react'
+import { Video, FileVideo, CheckCircle, ExternalLink, Loader2, Music, Upload, X, FileText } from 'lucide-react'
 import Link from 'next/link'
-import { mediaApi } from '@/lib/api-client'
+import { mediaApi, promptApi, videoApi, uploadToGCS } from '@/lib/api-client'
+import { v4 as uuidv4 } from 'uuid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatBytes, formatDuration } from '@/lib/utils'
-import { MediaJobStatus, type MediaJob } from '@/lib/types'
+import { MediaJobStatus, type MediaJob, type Prompt, type ContextItem } from '@/lib/types'
 import { PromptSelector } from '@/components/prompts/prompt-selector'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 interface VideoPickerProps {
-  onSelect: (videoId: string, isCompressed: boolean, gcsPath: string, chunkDuration: number, promptId: string) => void
+  onSelect: (
+    videoId: string,
+    isCompressed: boolean,
+    gcsPath: string,
+    chunkDuration: number,
+    promptId: string,
+    contextItems?: ContextItem[]
+  ) => void
   onCancel: () => void
 }
 
@@ -46,12 +56,26 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
   } | null>(null)
   const [chunkDuration, setChunkDuration] = useState<number>(0) // Default: No chunking
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null)
+  const [contextFiles, setContextFiles] = useState<Array<{
+    file: File
+    description: string
+  }>>([])
+  const [uploadedContextItems, setUploadedContextItems] = useState<ContextItem[]>([])
+  const [showContextUpload, setShowContextUpload] = useState(false)
+  const [isUploadingContext, setIsUploadingContext] = useState(false)
 
   // Fetch all videos with their jobs
   const { data: allVideosWithJobs, isLoading: isLoadingVideos } = useQuery<VideoWithJobs[]>({
     queryKey: ['videos-with-jobs'],
     queryFn: mediaApi.getAllVideosWithJobs,
     refetchInterval: 5000, // Refresh every 5 seconds for active jobs
+  })
+
+  // Fetch selected prompt details
+  const { data: selectedPrompt } = useQuery<Prompt>({
+    queryKey: ['prompt', selectedPromptId],
+    queryFn: () => promptApi.getPrompt(selectedPromptId!),
+    enabled: !!selectedPromptId,
   })
 
   // Filter to only show videos with completed media processing jobs (video or audio)
@@ -259,6 +283,151 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
               error={!selectedPromptId ? 'Please select a prompt' : undefined}
             />
 
+            {/* Context Upload Section - Progressive Disclosure */}
+            {selectedPrompt?.supports_context && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm font-medium">Additional Context (Optional)</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {selectedPrompt.context_description || 'Upload additional context files to enhance analysis'}
+                    </p>
+                  </div>
+                  {!showContextUpload && contextFiles.length === 0 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowContextUpload(true)}
+                    >
+                      <Upload className="mr-2 h-4 w-4" />
+                      Add Context
+                    </Button>
+                  )}
+                </div>
+
+                {/* Context Files List */}
+                {contextFiles.length > 0 && (
+                  <div className="space-y-2">
+                    {contextFiles.map((item, index) => (
+                      <div key={index} className="flex items-start gap-2 rounded-lg border p-3">
+                        <FileText className="h-4 w-4 mt-0.5 text-blue-600 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{item.file.name}</p>
+                          <p className="text-xs text-muted-foreground">{formatBytes(item.file.size)}</p>
+                          {item.description && (
+                            <p className="text-xs text-muted-foreground mt-1 italic">{item.description}</p>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setContextFiles(contextFiles.filter((_, i) => i !== index))
+                            setUploadedContextItems(uploadedContextItems.filter((_, i) => i !== index))
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    {contextFiles.length < (selectedPrompt.max_context_items || 5) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowContextUpload(true)}
+                      >
+                        <Upload className="mr-2 h-4 w-4" />
+                        Add Another File
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* Context Upload Form */}
+                {showContextUpload && (
+                  <div className="rounded-lg border p-4 space-y-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="context-file" className="text-sm">Text File</Label>
+                      <Input
+                        id="context-file"
+                        type="file"
+                        accept=".txt,.md,.json"
+                        disabled={isUploadingContext}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0]
+                          if (file) {
+                            // Validate file size (max 10MB)
+                            if (file.size > 10 * 1024 * 1024) {
+                              alert('File size must be less than 10MB')
+                              return
+                            }
+
+                            try {
+                              setIsUploadingContext(true)
+
+                              // Get signed URL for upload
+                              const { signed_url, gcs_path } = await videoApi.getContextSignedUrl(
+                                file.name,
+                                file.type || 'text/plain'
+                              )
+
+                              // Upload file to GCS
+                              await uploadToGCS(signed_url, file)
+
+                              // Determine file type based on extension
+                              const fileExt = file.name.split('.').pop()?.toLowerCase()
+                              const contextType = 'text' // Currently only supporting text files
+
+                              // Create context item
+                              const contextItem: ContextItem = {
+                                context_id: uuidv4(),
+                                type: contextType,
+                                gcs_path,
+                                filename: file.name,
+                                description: '',
+                                size_bytes: file.size,
+                              }
+
+                              // Add to uploaded items
+                              setUploadedContextItems([...uploadedContextItems, contextItem])
+
+                              // Add to local display list
+                              setContextFiles([...contextFiles, { file, description: '' }])
+                              setShowContextUpload(false)
+                              e.target.value = '' // Reset input
+                            } catch (error) {
+                              console.error('Failed to upload context file:', error)
+                              alert('Failed to upload context file. Please try again.')
+                            } finally {
+                              setIsUploadingContext(false)
+                            }
+                          }
+                        }}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Supported formats: .txt, .md, .json (max 10MB)
+                        {isUploadingContext && <span className="ml-2 text-blue-600">Uploading...</span>}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowContextUpload(false)}
+                        disabled={isUploadingContext}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Chunk Duration */}
             <div className="space-y-2">
               <label className="text-sm font-medium">
@@ -351,7 +520,7 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
                 Cancel
               </Button>
               <Button
-                disabled={!selectedPromptId}
+                disabled={!selectedPromptId || isUploadingContext}
                 onClick={() => {
                   if (selectedPromptId) {
                     onSelect(
@@ -359,12 +528,20 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
                       selectedVideo.isCompressed,
                       selectedVideo.gcsPath,
                       chunkDuration,
-                      selectedPromptId
+                      selectedPromptId,
+                      uploadedContextItems.length > 0 ? uploadedContextItems : undefined
                     )
                   }
                 }}
               >
-                {selectedVideo.mediaType === 'audio' ? 'Start Audio Analysis' : 'Start Scene Analysis'}
+                {isUploadingContext ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  selectedVideo.mediaType === 'audio' ? 'Start Audio Analysis' : 'Start Scene Analysis'
+                )}
               </Button>
             </div>
           </CardContent>

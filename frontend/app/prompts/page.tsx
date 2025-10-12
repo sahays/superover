@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { FileText, Plus, Edit2, Trash2, ArrowLeft, Loader2 } from 'lucide-react'
+import { FileText, Plus, Edit2, Trash2, ArrowLeft, Loader2, Paperclip } from 'lucide-react'
 import Link from 'next/link'
 import { promptApi } from '@/lib/api-client'
 import { Prompt } from '@/lib/types'
@@ -20,6 +20,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,6 +36,8 @@ interface PromptFormData {
   name: string
   type: string
   prompt_text: string
+  supports_context?: boolean
+  context_description?: string
 }
 
 const PROMPT_TYPE_OPTIONS = [
@@ -99,7 +102,13 @@ export default function PromptsPage() {
   })
 
   const resetForm = () => {
-    setFormData({ name: '', type: 'scene_analysis', prompt_text: '' })
+    setFormData({
+      name: '',
+      type: 'scene_analysis',
+      prompt_text: '',
+      supports_context: false,
+      context_description: ''
+    })
     setFormErrors({})
   }
 
@@ -149,6 +158,8 @@ export default function PromptsPage() {
       name: prompt.name,
       type: prompt.type,
       prompt_text: prompt.prompt_text,
+      supports_context: prompt.supports_context || false,
+      context_description: prompt.context_description || '',
     })
   }
 
@@ -206,9 +217,18 @@ export default function PromptsPage() {
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <CardTitle className="line-clamp-1">{prompt.name}</CardTitle>
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="line-clamp-1">{prompt.name}</CardTitle>
+                        {prompt.supports_context && (
+                          <span title="Supports context files">
+                            <Paperclip className="h-4 w-4 text-blue-600" aria-label="Supports context files" />
+                          </span>
+                        )}
+                      </div>
                       <CardDescription className="mt-1">
-                        {prompt.jobs_count || 0} job(s) using this prompt
+                        {PROMPT_TYPE_OPTIONS.find(opt => opt.value === prompt.type)?.label || prompt.type}
+                        {' • '}
+                        {prompt.jobs_count || 0} job(s)
                       </CardDescription>
                     </div>
                   </div>
@@ -217,6 +237,11 @@ export default function PromptsPage() {
                   <p className="text-sm text-muted-foreground line-clamp-3">
                     {prompt.prompt_text}
                   </p>
+                  {prompt.supports_context && prompt.context_description && (
+                    <p className="mt-2 text-xs text-blue-600 italic">
+                      Context: {prompt.context_description}
+                    </p>
+                  )}
                 </CardContent>
                 <CardContent className="flex justify-end gap-2 border-t pt-4">
                   <Button
@@ -331,6 +356,41 @@ export default function PromptsPage() {
               <p className="text-xs text-muted-foreground">
                 {formData.prompt_text.length.toLocaleString()} / 50,000 characters
               </p>
+            </div>
+            <div className="space-y-3 rounded-lg border p-4">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="supports_context"
+                  checked={formData.supports_context}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, supports_context: checked as boolean })
+                  }
+                />
+                <Label
+                  htmlFor="supports_context"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  Supports additional context files
+                </Label>
+              </div>
+              {formData.supports_context && (
+                <div className="space-y-2 pl-6">
+                  <Label htmlFor="context_description" className="text-sm">
+                    Context Description (Optional)
+                  </Label>
+                  <Input
+                    id="context_description"
+                    placeholder="e.g., Upload player statistics or team roster"
+                    value={formData.context_description || ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, context_description: e.target.value })
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Describe what type of context files users should upload for this prompt
+                  </p>
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>

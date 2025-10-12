@@ -48,6 +48,14 @@ export const videoApi = {
     chunk?: boolean
     compress?: boolean
     extract_audio?: boolean
+    context_items?: Array<{
+      context_id: string
+      type: string
+      gcs_path: string
+      filename: string
+      description?: string
+      size_bytes: number
+    }>
   }) => {
     const payload = {
       compress: false,
@@ -62,6 +70,14 @@ export const videoApi = {
     console.log('chunk_duration in payload:', payload.chunk_duration, 'type:', typeof payload.chunk_duration)
 
     const response = await apiClient.post(`/api/scenes/${videoId}/process`, payload)
+    return response.data
+  },
+
+  getContextSignedUrl: async (filename: string, contentType: string) => {
+    const response = await apiClient.post('/api/scenes/context/signed-url', {
+      filename,
+      content_type: contentType,
+    })
     return response.data
   },
 

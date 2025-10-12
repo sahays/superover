@@ -140,9 +140,25 @@ export const promptSchema = z.object({
   name: z.string(),
   type: z.string(),
   prompt_text: z.string(),
+  supports_context: z.boolean().default(false),
+  context_description: z.string().optional(),
+  required_context_types: z.array(z.string()).optional(),
+  max_context_items: z.number().optional().default(5),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
   jobs_count: z.number().optional(),
 })
 
 export type Prompt = z.infer<typeof promptSchema>
+
+// Context Item Types
+export const contextItemSchema = z.object({
+  context_id: z.string(),
+  type: z.enum(['text', 'image', 'video', 'audio']),
+  gcs_path: z.string(),
+  filename: z.string(),
+  description: z.string().optional(),
+  size_bytes: z.number(),
+})
+
+export type ContextItem = z.infer<typeof contextItemSchema>

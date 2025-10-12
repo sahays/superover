@@ -58,6 +58,41 @@ async def get_signed_upload_url(request: SignedUrlRequest):
         )
 
 
+@router.post("/context/signed-url", response_model=SignedUrlResponse)
+async def get_context_signed_upload_url(request: SignedUrlRequest):
+    """
+    Generate a signed URL for direct context file upload to GCS.
+
+    Context files (text, images, etc.) are uploaded to a separate path
+    for use with scene analysis jobs.
+    """
+    try:
+        storage = get_storage()
+
+        # Generate unique filename for context file
+        file_ext = request.filename.split(".")[-1] if "." in request.filename else "txt"
+        unique_filename = f"context/{uuid.uuid4()}.{file_ext}"
+
+        signed_url, gcs_path = storage.generate_signed_upload_url(
+            filename=unique_filename,
+            content_type=request.content_type,
+            bucket_type="processed"  # Store in processed bucket
+        )
+
+        return SignedUrlResponse(
+            signed_url=signed_url,
+            gcs_path=gcs_path,
+            expires_in_minutes=15
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to generate context signed URL: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate context signed URL: {str(e)}"
+        )
+
+
 @router.post("", response_model=VideoResponse, status_code=status.HTTP_201_CREATED)
 async def create_video(request: CreateVideoRequest):
     """
@@ -330,6 +365,12 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
             "chunk_duration": request.chunk_duration,
             "chunk": request.chunk,
         }
+
+        # Add context items to config if provided
+        if request.context_items:
+            config["context_items"] = [item.dict() for item in request.context_items]
+            logger.info(f"Added {len(request.context_items)} context items to job config")
+
         logger.info(f"Creating job with config: {config}")
 
         job_data = db.create_scene_job(
