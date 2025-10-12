@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { mediaApi } from '@/lib/api-client'
+import { mediaApi, videoApi } from '@/lib/api-client'
 import { MediaProcessingConfig } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -22,8 +22,8 @@ export function StartProcessing({ videoId, onSuccess, onCancel }: StartProcessin
     compress: true,
     compress_resolution: '480p',
     extract_audio: true,
-    audio_format: 'mp3',
-    audio_bitrate: '128k',
+    audio_format: 'aac',
+    audio_bitrate: '96k',
     crf: 23,
     preset: 'medium',
   })
@@ -32,6 +32,14 @@ export function StartProcessing({ videoId, onSuccess, onCancel }: StartProcessin
     queryKey: ['media-presets'],
     queryFn: () => mediaApi.getPresets(),
   })
+
+  const { data: video } = useQuery({
+    queryKey: ['video', videoId],
+    queryFn: () => videoApi.getVideo(videoId),
+  })
+
+  // Check if this is an audio-only file (no video stream)
+  const isAudioOnly = video && !video.metadata?.video
 
   const createJobMutation = useMutation({
     mutationFn: () => mediaApi.createJob({ video_id: videoId, config }),
@@ -45,38 +53,50 @@ export function StartProcessing({ videoId, onSuccess, onCancel }: StartProcessin
       {!createJobMutation.isSuccess && !createJobMutation.isPending && (
         <>
           <div className="space-y-4">
-            {/* Compression Settings */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="compress">Enable Compression</Label>
-                <Switch
-                  id="compress"
-                  checked={config.compress}
-                  onCheckedChange={(checked) => setConfig({ ...config, compress: checked })}
-                />
+            {/* Show info banner for audio-only files */}
+            {isAudioOnly && (
+              <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900 dark:bg-blue-900/20 dark:text-blue-100">
+                <p className="font-medium">Audio-only file detected</p>
+                <p className="mt-1 text-xs text-blue-700 dark:text-blue-300">
+                  Video compression options are not available for audio files. Only audio extraction can be configured.
+                </p>
               </div>
+            )}
 
-              {config.compress && (
-                <div className="space-y-2 pl-4">
-                  <Label htmlFor="resolution">Resolution</Label>
-                  <Select
-                    value={config.compress_resolution}
-                    onValueChange={(value) => setConfig({ ...config, compress_resolution: value })}
-                  >
-                    <SelectTrigger id="resolution">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {presets?.resolutions.map((res: string) => (
-                        <SelectItem key={res} value={res}>
-                          {res}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+            {/* Compression Settings - Only show for video files */}
+            {!isAudioOnly && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="compress">Enable Compression</Label>
+                  <Switch
+                    id="compress"
+                    checked={config.compress}
+                    onCheckedChange={(checked) => setConfig({ ...config, compress: checked })}
+                  />
                 </div>
-              )}
-            </div>
+
+                {config.compress && (
+                  <div className="space-y-2 pl-4">
+                    <Label htmlFor="resolution">Resolution</Label>
+                    <Select
+                      value={config.compress_resolution}
+                      onValueChange={(value) => setConfig({ ...config, compress_resolution: value })}
+                    >
+                      <SelectTrigger id="resolution">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {presets?.resolutions.map((res: string) => (
+                          <SelectItem key={res} value={res}>
+                            {res}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Audio Settings */}
             <div className="space-y-2">
@@ -90,44 +110,33 @@ export function StartProcessing({ videoId, onSuccess, onCancel }: StartProcessin
               </div>
 
               {config.extract_audio && (
-                <div className="grid gap-4 pl-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="audio-format">Format</Label>
-                    <Select
-                      value={config.audio_format}
-                      onValueChange={(value) => setConfig({ ...config, audio_format: value })}
-                    >
-                      <SelectTrigger id="audio-format">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {presets?.audio_formats.map((format: string) => (
-                          <SelectItem key={format} value={format}>
-                            {format.toUpperCase()}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="audio-bitrate">Bitrate</Label>
-                    <Select
-                      value={config.audio_bitrate}
-                      onValueChange={(value) => setConfig({ ...config, audio_bitrate: value })}
-                    >
-                      <SelectTrigger id="audio-bitrate">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {presets?.audio_bitrates.map((bitrate: string) => (
-                          <SelectItem key={bitrate} value={bitrate}>
-                            {bitrate}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                <div className="space-y-2 pl-4">
+                  <Label htmlFor="audio-profile">Audio Profile</Label>
+                  <Select
+                    value={`${config.audio_format}-${config.audio_bitrate}`}
+                    onValueChange={(value) => {
+                      const [format, bitrate] = value.split('-')
+                      setConfig({ ...config, audio_format: format, audio_bitrate: bitrate })
+                    }}
+                  >
+                    <SelectTrigger id="audio-profile">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="aac-96k">
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">AAC 96kbps Mono</span>
+                          <span className="text-xs text-muted-foreground">Optimized for speech/dialogue</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="mp3-128k">
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">MP3 128kbps Stereo</span>
+                          <span className="text-xs text-muted-foreground">General purpose audio</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
             </div>

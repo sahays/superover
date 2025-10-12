@@ -20,6 +20,8 @@ class MediaProcessingConfig:
     extract_audio: bool = True
     audio_format: str = "mp3"
     audio_bitrate: str = "128k"
+    audio_sample_rate: str = "22050"  # For audio compression (speech: 16000 or 22050)
+    audio_channels: int = 1  # 1=mono, 2=stereo (mono recommended for speech)
     crf: int = 23
     preset: str = "medium"
 
@@ -50,7 +52,61 @@ class MediaProcessor:
         self.temp_dir = temp_dir
         self.temp_dir.mkdir(parents=True, exist_ok=True)
 
+    def detect_media_type(self, input_path: Path) -> str:
+        """
+        Detect if file is video or audio using metadata.
+
+        Args:
+            input_path: Path to media file
+
+        Returns:
+            'video' or 'audio'
+        """
+        try:
+            metadata = extract_metadata(input_path)
+            # If video stream exists, it's a video
+            if metadata.get('video'):
+                return 'video'
+            # If only audio stream exists, it's audio
+            elif metadata.get('audio'):
+                return 'audio'
+            else:
+                # Fallback: assume video
+                return 'video'
+        except Exception as e:
+            logger.warning(f"Could not detect media type: {e}, assuming video")
+            return 'video'
+
     def process(
+        self,
+        input_path: Path,
+        video_id: str,
+        config: MediaProcessingConfig,
+        progress_callback: Optional[Callable[[str, int], None]] = None
+    ) -> MediaProcessingResult:
+        """
+        Process media file (video or audio) with appropriate operations.
+
+        Args:
+            input_path: Path to input media file
+            video_id: Unique media identifier
+            config: Processing configuration
+            progress_callback: Optional callback for progress updates (step_name, progress_percent)
+
+        Returns:
+            MediaProcessingResult with all outputs and metadata
+        """
+        # Detect media type
+        media_type = self.detect_media_type(input_path)
+        logger.info(f"Detected media type: {media_type}")
+
+        # Route to appropriate processor
+        if media_type == 'audio':
+            return self._process_audio(input_path, video_id, config, progress_callback)
+        else:
+            return self._process_video(input_path, video_id, config, progress_callback)
+
+    def _process_video(
         self,
         input_path: Path,
         video_id: str,
@@ -159,6 +215,97 @@ class MediaProcessor:
 
         except Exception as e:
             logger.error(f"Media processing failed for {video_id}: {e}")
+            result.error = str(e)
+            return result
+
+    def _process_audio(
+        self,
+        input_path: Path,
+        video_id: str,
+        config: MediaProcessingConfig,
+        progress_callback: Optional[Callable[[str, int], None]] = None
+    ) -> MediaProcessingResult:
+        """
+        Process audio file with metadata extraction and optional format conversion.
+
+        Args:
+            input_path: Path to input audio file
+            video_id: Unique audio identifier
+            config: Processing configuration
+            progress_callback: Optional callback for progress updates
+
+        Returns:
+            MediaProcessingResult with audio output and metadata
+        """
+        result = MediaProcessingResult(metadata={})
+
+        try:
+            # Step 1: Extract metadata
+            logger.info(f"[1/2] Extracting audio metadata for {video_id}")
+            if progress_callback:
+                progress_callback("extracting_metadata", 20)
+
+            result.metadata = extract_metadata(input_path)
+            result.original_size_bytes = input_path.stat().st_size
+
+            logger.info(
+                f"Audio metadata extracted: {result.metadata.get('duration', 0):.2f}s, "
+                f"{result.metadata.get('audio', {}).get('bitrate', 'unknown')} bitrate"
+            )
+
+            if progress_callback:
+                progress_callback("extracting_metadata", 40)
+
+            # Step 2: Convert/compress audio (always do this for optimization)
+            logger.info(f"[2/2] Converting audio to {config.audio_format} @ {config.audio_bitrate}")
+            if progress_callback:
+                progress_callback("converting_audio", 50)
+
+            audio_ext = config.audio_format
+            audio_path = self.temp_dir / f"{video_id}_audio.{audio_ext}"
+
+            try:
+                audio_result = self._extract_audio_task(
+                    input_path,
+                    audio_path,
+                    config
+                )
+                if audio_result:
+                    result.audio_path = audio_result
+                    result.audio_size_bytes = audio_result.stat().st_size
+                    result.compression_ratio = (
+                        1 - result.audio_size_bytes / result.original_size_bytes
+                    ) * 100 if result.original_size_bytes > 0 else 0
+
+                    logger.info(
+                        f"Audio conversion complete: "
+                        f"{result.original_size_bytes / 1024 / 1024:.2f}MB → "
+                        f"{result.audio_size_bytes / 1024 / 1024:.2f}MB "
+                        f"({result.compression_ratio:.1f}% reduction)"
+                    )
+                    if progress_callback:
+                        progress_callback("converting_audio", 90)
+                else:
+                    # If conversion failed, use original file
+                    result.audio_path = input_path
+                    result.audio_size_bytes = result.original_size_bytes
+                    logger.warning("Audio conversion failed, using original file")
+            except Exception as e:
+                logger.error(f"Audio conversion failed: {e}")
+                # Fallback: use original file
+                result.audio_path = input_path
+                result.audio_size_bytes = result.original_size_bytes
+                if result.error is None:
+                    result.error = f"Audio conversion failed: {str(e)}"
+
+            if progress_callback:
+                progress_callback("completed", 100)
+
+            logger.info(f"Audio processing completed for {video_id}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Audio processing failed for {video_id}: {e}")
             result.error = str(e)
             return result
 

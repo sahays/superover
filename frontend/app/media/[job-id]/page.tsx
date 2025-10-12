@@ -191,22 +191,27 @@ export default function MediaJobDetailPage({ params }: { params: Promise<{ 'job-
             </CardHeader>
             <CardContent>
               <dl className="grid gap-3 text-sm sm:grid-cols-2">
-                <div>
-                  <dt className="font-medium text-muted-foreground">Compression</dt>
-                  <dd className="mt-1">
-                    {job.config.compress ? job.config.compress_resolution : 'Disabled'}
-                  </dd>
-                </div>
-                {job.config.compress && (
+                {/* Only show compression settings if there's a video stream in the source */}
+                {video?.metadata?.video && (
                   <>
                     <div>
-                      <dt className="font-medium text-muted-foreground">CRF</dt>
-                      <dd className="mt-1">{job.config.crf}</dd>
+                      <dt className="font-medium text-muted-foreground">Compression</dt>
+                      <dd className="mt-1">
+                        {job.config.compress ? job.config.compress_resolution : 'Disabled'}
+                      </dd>
                     </div>
-                    <div>
-                      <dt className="font-medium text-muted-foreground">Preset</dt>
-                      <dd className="mt-1 capitalize">{job.config.preset}</dd>
-                    </div>
+                    {job.config.compress && (
+                      <>
+                        <div>
+                          <dt className="font-medium text-muted-foreground">CRF</dt>
+                          <dd className="mt-1">{job.config.crf}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-medium text-muted-foreground">Preset</dt>
+                          <dd className="mt-1 capitalize">{job.config.preset}</dd>
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
                 <div>

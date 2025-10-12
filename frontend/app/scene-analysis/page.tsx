@@ -41,6 +41,12 @@ export default function SceneAnalysisPage() {
     // Start scene analysis for the selected (already compressed) video
     // The video is already compressed from /media workflow, we just need to chunk and analyze
     try {
+      console.log('=== handleVideoSelect called ===')
+      console.log('videoId:', videoId)
+      console.log('gcsPath:', gcsPath)
+      console.log('chunkDuration:', chunkDuration, 'type:', typeof chunkDuration)
+      console.log('promptId:', promptId)
+
       await videoApi.processVideo(videoId, {
         prompt_id: promptId,             // User-selected prompt (required)
         compressed_video_path: gcsPath, // GCS path from media job

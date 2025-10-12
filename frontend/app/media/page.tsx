@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Film, Upload, ArrowLeft, Video as VideoIcon, Settings } from 'lucide-react'
+import { Film, Upload, ArrowLeft, Video as VideoIcon, Settings, Music } from 'lucide-react'
 import Link from 'next/link'
 import { videoApi, mediaApi } from '@/lib/api-client'
 import { UploadVideo } from '@/components/upload-video'
@@ -62,6 +62,12 @@ export default function MediaProcessingPage() {
     refetchJobs()
   }
 
+  // Create a map of video_id to filename for easy lookup
+  const videoFilenameMap = videos?.reduce((acc: Record<string, string>, video: any) => {
+    acc[video.video_id] = video.filename
+    return acc
+  }, {}) || {}
+
   // Group jobs by status
   const pendingJobs = allMediaJobs?.filter(j => j.status === 'pending') || []
   const processingJobs = allMediaJobs?.filter(j => j.status === 'processing') || []
@@ -78,16 +84,16 @@ export default function MediaProcessingPage() {
         </div>
         <Button onClick={() => setShowUpload(true)} size="lg">
           <Upload className="mr-2 h-4 w-4" />
-          Upload Video
+          Upload Media
         </Button>
       </div>
         {showUpload ? (
           <div className="mx-auto max-w-2xl">
             <Card>
               <CardHeader>
-                <CardTitle>Upload Video for Processing</CardTitle>
+                <CardTitle>Upload Media for Processing</CardTitle>
                 <CardDescription>
-                  Upload a video file to compress and extract audio
+                  Upload a video or audio file to process
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -134,50 +140,56 @@ export default function MediaProcessingPage() {
               </Card>
             </div>
 
-            {/* Videos Available for Processing */}
+            {/* Media Files Available for Processing */}
             <Card>
               <CardHeader>
-                <CardTitle>Videos</CardTitle>
-                <CardDescription>Select a video to start media processing</CardDescription>
+                <CardTitle>Media Files</CardTitle>
+                <CardDescription>Select a file to start processing</CardDescription>
               </CardHeader>
               <CardContent>
                 {videosLoading ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    Loading videos...
+                    Loading media files...
                   </div>
                 ) : videos && videos.length > 0 ? (
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {videos.map((video: any) => (
-                      <Card key={video.video_id} className="relative">
-                        <CardHeader>
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <CardTitle className="text-base line-clamp-1">
-                                {video.filename}
-                              </CardTitle>
-                              <CardDescription className="text-xs">
-                                {video.size_bytes ? formatBytes(video.size_bytes) : 'Size unknown'}
-                              </CardDescription>
+                    {videos.map((video: any) => {
+                      const isAudio = video.source_type === 'audio'
+                      const MediaIcon = isAudio ? Music : VideoIcon
+                      const mediaType = isAudio ? 'Audio' : 'Video'
+
+                      return (
+                        <Card key={video.video_id} className="relative">
+                          <CardHeader>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <CardTitle className="text-base line-clamp-1">
+                                  {video.filename}
+                                </CardTitle>
+                                <CardDescription className="text-xs">
+                                  {video.size_bytes ? formatBytes(video.size_bytes) : 'Size unknown'}
+                                </CardDescription>
+                              </div>
+                              <MediaIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                             </div>
-                            <VideoIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                          </div>
-                        </CardHeader>
-                        <CardContent>
-                          <Button
-                            className="w-full"
-                            size="sm"
-                            onClick={() => handleStartProcessing(video.video_id)}
-                          >
-                            <Settings className="mr-2 h-4 w-4" />
-                            Process Video
-                          </Button>
-                        </CardContent>
-                      </Card>
-                    ))}
+                          </CardHeader>
+                          <CardContent>
+                            <Button
+                              className="w-full"
+                              size="sm"
+                              onClick={() => handleStartProcessing(video.video_id)}
+                            >
+                              <Settings className="mr-2 h-4 w-4" />
+                              Process {mediaType}
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">
-                    No videos uploaded yet. Upload a video to get started.
+                    No media files uploaded yet. Upload a file to get started.
                   </div>
                 )}
               </CardContent>
@@ -196,6 +208,7 @@ export default function MediaProcessingPage() {
                       <JobCard
                         key={job.job_id}
                         job={job}
+                        videoFilename={videoFilenameMap[job.video_id]}
                         onDelete={(jobId) => deleteJobMutation.mutate(jobId)}
                       />
                     ))}

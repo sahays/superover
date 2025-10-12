@@ -20,6 +20,7 @@ export const videoSchema = z.object({
   video_id: z.string(),
   filename: z.string(),
   gcs_path: z.string(),
+  source_type: z.enum(['video', 'audio']).optional().default('video'),
   status: z.string(), // Allow any string for status
   content_type: z.string().optional(),
   size_bytes: z.number().optional(),

@@ -68,9 +68,9 @@ export function UploadVideo({ onComplete, onCancel }: UploadVideoProps) {
       {!selectedFile && !uploadMutation.isPending && (
         <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 p-12 transition hover:border-primary">
           <Upload className="h-12 w-12 text-gray-400" />
-          <h3 className="mt-4 text-lg font-semibold">Upload Video</h3>
+          <h3 className="mt-4 text-lg font-semibold">Upload Media</h3>
           <p className="mt-2 text-sm text-gray-500">
-            Select a video file (up to 500MB)
+            Select a video or audio file (up to 500MB)
           </p>
           <label htmlFor="file-upload" className="mt-4">
             <Button type="button" onClick={() => document.getElementById('file-upload')?.click()}>
@@ -80,7 +80,7 @@ export function UploadVideo({ onComplete, onCancel }: UploadVideoProps) {
           <input
             id="file-upload"
             type="file"
-            accept="video/*"
+            accept="video/*,audio/*"
             onChange={handleFileSelect}
             className="hidden"
           />
@@ -148,7 +148,7 @@ export function UploadVideo({ onComplete, onCancel }: UploadVideoProps) {
             <CheckCircle className="mx-auto h-12 w-12 text-green-600" />
             <h3 className="mt-4 text-lg font-semibold text-green-900">Upload Complete!</h3>
             <p className="mt-2 text-sm text-green-700">
-              Video uploaded successfully
+              Media file uploaded successfully
             </p>
           </div>
         </div>

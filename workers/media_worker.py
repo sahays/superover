@@ -111,8 +111,10 @@ class MediaWorker:
                 compress=config_dict.get("compress", True),
                 compress_resolution=config_dict.get("compress_resolution", "480p"),
                 extract_audio=config_dict.get("extract_audio", True),
-                audio_format=config_dict.get("audio_format", "mp3"),
-                audio_bitrate=config_dict.get("audio_bitrate", "128k"),
+                audio_format=config_dict.get("audio_format", "aac"),
+                audio_bitrate=config_dict.get("audio_bitrate", "96k"),
+                audio_sample_rate=config_dict.get("audio_sample_rate", "22050"),
+                audio_channels=config_dict.get("audio_channels", 1),  # Mono for speech
                 crf=config_dict.get("crf", 23),
                 preset=config_dict.get("preset", "medium")
             )

@@ -159,7 +159,12 @@ class SceneWorker:
         chunk_duration = config.get("chunk_duration", 30)
         should_chunk = config.get("chunk", True)
 
-        logger.info(f"Processing scene for video {video_id} with chunk_duration={chunk_duration}s")
+        logger.info(f"=== Scene worker processing ===")
+        logger.info(f"video_id: {video_id}")
+        logger.info(f"config: {config}")
+        logger.info(f"chunk_duration from config: {chunk_duration} (type: {type(chunk_duration).__name__})")
+        logger.info(f"should_chunk: {should_chunk}")
+        logger.info(f"compressed_video_path: {compressed_video_path}")
 
         # Get video info
         video = self.db.get_video(video_id)
@@ -187,10 +192,13 @@ class SceneWorker:
             "processed_path": video_path_to_process
         }
 
-        # Get the prompt text from the job
+        # Get the prompt text and type from the job
         prompt_text = job.get("prompt_text")
         if not prompt_text:
             raise ValueError(f"Prompt text not found in scene job: {job_id}")
+
+        prompt_type = job.get("prompt_type", "scene_analysis")
+        logger.info(f"Using prompt_type: {prompt_type}")
 
         try:
             # ===== STEP 1: Chunk the video (if needed) =====
@@ -199,10 +207,17 @@ class SceneWorker:
                 self.db.update_scene_job_status(job_id, SceneJobStatus.PROCESSING, results={"step": "chunking"})
 
                 chunks_dir = self.temp_dir / f"{video_id}_chunks"
+
+                # Get expected duration from video metadata (more reliable than probing extracted audio)
+                expected_duration = video.get("metadata", {}).get("duration")
+                if expected_duration:
+                    logger.info(f"Using expected duration from metadata: {expected_duration:.2f}s")
+
                 chunks = chunk_video(
                     input_path=local_video_path,
                     output_dir=chunks_dir,
-                    chunk_duration=chunk_duration
+                    chunk_duration=chunk_duration,
+                    expected_duration=expected_duration
                 )
 
                 # Upload chunks to GCS
@@ -239,7 +254,8 @@ class SceneWorker:
                 chunks=chunks,
                 job_id=job_id,
                 video_id=video_id,
-                prompt_text=prompt_text
+                prompt_text=prompt_text,
+                prompt_type=prompt_type
             )
 
             # Update scene job status to completed

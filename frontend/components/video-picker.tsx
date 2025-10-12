@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Video, FileVideo, CheckCircle, ExternalLink, Loader2 } from 'lucide-react'
+import { Video, FileVideo, CheckCircle, ExternalLink, Loader2, Music } from 'lucide-react'
 import Link from 'next/link'
 import { mediaApi } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
@@ -30,6 +30,7 @@ export interface VideoWithJobs {
   }
   jobs: MediaJob[]
   hasCompressed: boolean
+  hasAudio: boolean
 }
 
 export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
@@ -38,7 +39,9 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
     isCompressed: boolean
     gcsPath: string
     jobId: string
+    mediaType: 'video' | 'audio'
     compressedResolution?: string
+    audioFormat?: string
     duration?: number
   } | null>(null)
   const [chunkDuration, setChunkDuration] = useState<number>(30) // Default 30 seconds
@@ -51,9 +54,12 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
     refetchInterval: 5000, // Refresh every 5 seconds for active jobs
   })
 
-  // Filter to only show videos with completed media processing jobs
+  // Filter to only show videos with completed media processing jobs (video or audio)
   const videosWithJobs = allVideosWithJobs?.filter(video =>
-    video.jobs.some(job => job.status === MediaJobStatus.COMPLETED && job.results?.compressed_video_path)
+    video.jobs.some(job =>
+      job.status === MediaJobStatus.COMPLETED &&
+      (job.results?.compressed_video_path || job.results?.audio_path)
+    )
   )
 
   const isEmpty = !isLoadingVideos && (!videosWithJobs || videosWithJobs.length === 0)
@@ -77,12 +83,12 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
         <CardContent className="flex items-center justify-center py-12">
           <div className="text-center">
             <Video className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-4 text-lg font-semibold">No processed videos available</h3>
+            <h3 className="mt-4 text-lg font-semibold">No processed media available</h3>
             <p className="mt-2 text-sm text-muted-foreground">
               You need to upload and process videos in the Media workflow first
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Scene analysis requires compressed videos from media processing jobs
+              Scene analysis can use compressed videos or extracted audio files from media processing
             </p>
             <Link href="/media">
               <Button className="mt-4">
@@ -100,9 +106,9 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold">Pick a Video</h3>
+          <h3 className="text-lg font-semibold">Pick Video or Audio</h3>
           <p className="text-sm text-muted-foreground">
-            Select a video from your processed library
+            Select compressed video or extracted audio from your processed library
           </p>
         </div>
         <Button variant="outline" onClick={onCancel}>
@@ -132,44 +138,91 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              {/* Processed Video Options - Only show completed jobs with compressed video */}
+              {/* Processed Video and Audio Options */}
               {video.jobs
-                .filter((job) => job.status === MediaJobStatus.COMPLETED && job.results?.compressed_video_path)
+                .filter((job) =>
+                  job.status === MediaJobStatus.COMPLETED &&
+                  (job.results?.compressed_video_path || job.results?.audio_path)
+                )
                 .map((job) => (
-                  <Button
-                    key={job.job_id}
-                    variant={
-                      selectedVideo?.jobId === job.job_id
-                        ? 'default'
-                        : 'outline'
-                    }
-                    className="w-full justify-start"
-                    onClick={() => {
-                      if (job.results?.compressed_video_path) {
-                        setSelectedVideo({
-                          videoId: video.video_id,
-                          isCompressed: true,
-                          gcsPath: job.results.compressed_video_path,
-                          jobId: job.job_id,
-                          compressedResolution: job.config.compress_resolution,
-                          duration: job.results.metadata?.duration,
-                        })
-                      }
-                    }}
-                  >
-                    <FileVideo className="mr-2 h-4 w-4" />
-                    <span className="flex-1 text-left">
-                      {job.config.compress_resolution} Compressed
-                      {job.results?.compression_ratio && (
-                        <span className="ml-1 text-xs text-muted-foreground">
-                          ({job.results.compression_ratio.toFixed(1)}% smaller)
+                  <div key={job.job_id} className="space-y-2">
+                    {/* Compressed Video Option */}
+                    {job.results?.compressed_video_path && (
+                      <Button
+                        variant={
+                          selectedVideo?.jobId === job.job_id && selectedVideo?.mediaType === 'video'
+                            ? 'default'
+                            : 'outline'
+                        }
+                        className="w-full justify-start"
+                        onClick={() => {
+                          setSelectedVideo({
+                            videoId: video.video_id,
+                            isCompressed: true,
+                            gcsPath: job.results!.compressed_video_path!,
+                            jobId: job.job_id,
+                            mediaType: 'video',
+                            compressedResolution: job.config.compress_resolution,
+                            duration: job.results?.metadata?.duration || video.metadata?.duration,
+                          })
+                        }}
+                      >
+                        <FileVideo className="mr-2 h-4 w-4" />
+                        <span className="flex-1 text-left">
+                          {job.config.compress_resolution} Video
+                          {job.results?.compression_ratio && (
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              ({job.results.compression_ratio.toFixed(1)}% smaller)
+                            </span>
+                          )}
                         </span>
-                      )}
-                    </span>
-                    {selectedVideo?.jobId === job.job_id && (
-                      <CheckCircle className="h-4 w-4" />
+                        {selectedVideo?.jobId === job.job_id && selectedVideo?.mediaType === 'video' && (
+                          <CheckCircle className="h-4 w-4" />
+                        )}
+                      </Button>
                     )}
-                  </Button>
+
+                    {/* Audio Option */}
+                    {job.results?.audio_path && (
+                      <Button
+                        variant={
+                          selectedVideo?.jobId === job.job_id && selectedVideo?.mediaType === 'audio'
+                            ? 'default'
+                            : 'outline'
+                        }
+                        className="w-full justify-start"
+                        onClick={() => {
+                          setSelectedVideo({
+                            videoId: video.video_id,
+                            isCompressed: false,
+                            gcsPath: job.results!.audio_path!,
+                            jobId: job.job_id,
+                            mediaType: 'audio',
+                            audioFormat: job.config.audio_format,
+                            duration: job.results?.metadata?.duration || video.metadata?.duration,
+                          })
+                        }}
+                      >
+                        <Music className="mr-2 h-4 w-4" />
+                        <span className="flex-1 text-left">
+                          {job.config.audio_format?.toUpperCase() || 'Audio'} @ {job.config.audio_bitrate}
+                          {job.results?.audio_size_bytes && (
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              ({formatBytes(job.results.audio_size_bytes)})
+                            </span>
+                          )}
+                          {(job.results?.metadata?.duration || video.metadata?.duration) && (
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              • {formatDuration(job.results?.metadata?.duration || video.metadata?.duration)}
+                            </span>
+                          )}
+                        </span>
+                        {selectedVideo?.jobId === job.job_id && selectedVideo?.mediaType === 'audio' && (
+                          <CheckCircle className="h-4 w-4" />
+                        )}
+                      </Button>
+                    )}
+                  </div>
                 ))}
             </CardContent>
           </Card>
@@ -180,9 +233,36 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Configure Scene Analysis</CardTitle>
-            <CardDescription>Select prompt and set chunk duration</CardDescription>
+            <CardDescription>
+              Select prompt and set chunk duration for {selectedVideo.mediaType} analysis
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Media Type Info */}
+            <div className="rounded-lg bg-blue-50 p-3 text-sm">
+              <div className="flex items-center gap-2">
+                {selectedVideo.mediaType === 'audio' ? (
+                  <>
+                    <Music className="h-4 w-4 text-blue-600" />
+                    <span className="font-medium text-blue-900">Audio file selected</span>
+                  </>
+                ) : (
+                  <>
+                    <FileVideo className="h-4 w-4 text-blue-600" />
+                    <span className="font-medium text-blue-900">
+                      {selectedVideo.compressedResolution} video selected
+                    </span>
+                  </>
+                )}
+              </div>
+              {selectedVideo.mediaType === 'audio' && (
+                <p className="mt-1 text-xs text-blue-700">
+                  Audio-only analysis is ideal for subtitling, transcription, and voice analysis tasks.
+                  Use chunking for long audio files to avoid hitting token limits.
+                </p>
+              )}
+            </div>
+
             {/* Prompt Selector */}
             <PromptSelector
               value={selectedPromptId}
@@ -208,8 +288,8 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
                 <div className="flex-1 space-y-1">
                   <p className="text-sm text-muted-foreground">
                     {chunkDuration === 0
-                      ? 'No chunking - analyze entire video as one piece'
-                      : `Split video into ${chunkDuration}-second chunks for analysis`
+                      ? `No chunking - analyze entire ${selectedVideo.mediaType} as one piece`
+                      : `Split ${selectedVideo.mediaType} into ${chunkDuration}-second chunks for analysis`
                     }
                   </p>
                   {selectedVideo.duration && chunkDuration > 0 && (
@@ -220,47 +300,47 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 mt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setChunkDuration(0)}
-                >
-                  No chunks
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setChunkDuration(15)}
-                >
-                  15s
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setChunkDuration(30)}
-                >
-                  30s
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setChunkDuration(60)}
-                >
-                  60s
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setChunkDuration(120)}
-                >
-                  120s
-                </Button>
-              </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setChunkDuration(0)}
+                  >
+                    No chunks
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setChunkDuration(15)}
+                  >
+                    15s
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setChunkDuration(30)}
+                  >
+                    30s
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setChunkDuration(60)}
+                  >
+                    60s
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setChunkDuration(120)}
+                  >
+                    120s
+                  </Button>
+                </div>
             </div>
 
             <div className="flex justify-end gap-2 border-t pt-4">
@@ -281,7 +361,7 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
                   }
                 }}
               >
-                Start Scene Analysis
+                {selectedVideo.mediaType === 'audio' ? 'Start Audio Analysis' : 'Start Scene Analysis'}
               </Button>
             </div>
           </CardContent>

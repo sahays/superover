@@ -324,8 +324,8 @@ export function generateSceneJSON(
 /**
  * Triggers a browser download of content
  */
-export function downloadFile(content: string | object, filename: string, type: 'csv' | 'json') {
-  const mimeType = type === 'csv' ? 'text/csv' : 'application/json'
+export function downloadFile(content: string | object, filename: string, type: 'csv' | 'json' | 'srt') {
+  const mimeType = type === 'csv' ? 'text/csv' : type === 'srt' ? 'text/plain' : 'application/json'
   const fileContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2)
 
   const blob = new Blob([fileContent], { type: mimeType })

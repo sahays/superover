@@ -30,17 +30,18 @@ class SequentialSceneProcessor(SceneProcessor):
         chunks: List[Dict[str, Any]],
         job_id: str,
         video_id: str,
-        prompt_text: str
+        prompt_text: str,
+        prompt_type: str = "scene_analysis"
     ) -> None:
         """
         Process video chunks sequentially.
-        This is the EXACT current implementation - no changes.
 
         Args:
             chunks: List of chunk metadata dictionaries
             job_id: Scene job ID for progress tracking
             video_id: Video ID
             prompt_text: Analysis prompt text
+            prompt_type: Type of analysis (scene_analysis, subtitling, etc.)
 
         Raises:
             Exception: If processing fails
@@ -82,6 +83,7 @@ class SequentialSceneProcessor(SceneProcessor):
                     chunk_index=chunk_index,
                     chunk_duration=chunk["duration"],
                     prompt_text=prompt_text,
+                    prompt_type=prompt_type,
                 )
 
                 # Save result to database

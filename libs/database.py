@@ -77,11 +77,15 @@ class FirestoreDB:
         Returns:
             Created video document
         """
+        # Auto-detect source_type from content_type
+        source_type = 'audio' if content_type.startswith('audio/') else 'video'
+
         video_data = {
             "video_id": video_id,
             "filename": filename,
             "gcs_path": gcs_path,
             "content_type": content_type,
+            "source_type": source_type,
             "size_bytes": size_bytes,
             "created_at": firestore.SERVER_TIMESTAMP,
             "updated_at": firestore.SERVER_TIMESTAMP,
@@ -89,7 +93,7 @@ class FirestoreDB:
         }
 
         self.videos.document(video_id).set(video_data)
-        logger.info(f"Created video document: {video_id}")
+        logger.info(f"Created {source_type} document: {video_id}")
 
         # Fetch the document to get the actual timestamp values
         return self.get_video(video_id)

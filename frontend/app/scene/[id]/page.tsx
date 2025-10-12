@@ -80,6 +80,24 @@ export default function SceneDetailPage({ params }: { params: Promise<{ id: stri
     enabled: isCompleted,
   })
 
+  // Check if this is a subtitle job
+  const isSubtitleJob = results && results.length > 0 &&
+    (results[0].result_data?.prompt_type === 'subtitling' ||
+     results[0].result_data?.prompt_type === 'transcription')
+
+  const downloadAsSRT = () => {
+    if (!results) return
+
+    // Combine all subtitle texts from all chunks
+    const srtContent = results
+      .map((result: any) => result.result_data?.subtitle_text)
+      .filter((text: string) => text)
+      .join('\n\n')
+
+    const filename = scene?.filename ? scene.filename.replace(/\.[^/.]+$/, '.srt') : `subtitles-${jobId}.srt`
+    downloadFile(srtContent, filename, 'srt')
+  }
+
   if (isLoading) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -284,43 +302,80 @@ export default function SceneDetailPage({ params }: { params: Promise<{ id: stri
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div>
-                      <CardTitle>Scene Analysis</CardTitle>
-                      <CardDescription>{results.length} chunks analyzed</CardDescription>
+                      <CardTitle>{isSubtitleJob ? 'Subtitles' : 'Scene Analysis'}</CardTitle>
+                      <CardDescription>
+                        {results.length} chunk(s) analyzed
+                        {isSubtitleJob && results.length > 0 && (
+                          <span className="ml-2">
+                            • {results.reduce((sum: number, r: any) =>
+                              sum + (r.result_data?.subtitle_text?.length || 0), 0).toLocaleString()} characters
+                          </span>
+                        )}
+                      </CardDescription>
                     </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm">
-                          <Download className="mr-2 h-4 w-4" />
-                          Download All
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={downloadAsJSON}>
-                          <FileJson className="mr-2 h-4 w-4" />
-                          Download as JSON
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={downloadAsCSV}>
-                          <FileSpreadsheet className="mr-2 h-4 w-4" />
-                          Download as CSV
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    {isSubtitleJob ? (
+                      <Button variant="outline" size="sm" onClick={downloadAsSRT}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Download SRT
+                      </Button>
+                    ) : (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm">
+                            <Download className="mr-2 h-4 w-4" />
+                            Download All
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={downloadAsJSON}>
+                            <FileJson className="mr-2 h-4 w-4" />
+                            Download as JSON
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={downloadAsCSV}>
+                            <FileSpreadsheet className="mr-2 h-4 w-4" />
+                            Download as CSV
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent>
                   <Accordion type="single" collapsible className="w-full">
-                    {results.map((result: any, idx: number) => (
-                      <AccordionItem key={result.result_id} value={`result-${idx}`}>
-                        <AccordionTrigger>
-                          {result.result_type.replace('_', ' ')} - Chunk {idx}
-                        </AccordionTrigger>
-                        <AccordionContent>
-                          <pre className="overflow-x-auto rounded bg-slate-100 p-3 text-xs dark:bg-slate-800">
-                            {JSON.stringify(result.result_data, null, 2)}
-                          </pre>
-                        </AccordionContent>
-                      </AccordionItem>
-                    ))}
+                    {results.map((result: any, idx: number) => {
+                      const isSubtitle = result.result_data?.prompt_type === 'subtitling' || result.result_data?.prompt_type === 'transcription'
+                      const subtitleText = result.result_data?.subtitle_text
+
+                      return (
+                        <AccordionItem key={result.result_id} value={`result-${idx}`}>
+                          <AccordionTrigger>
+                            {result.result_type.replace('_', ' ')} - Chunk {idx}
+                            {isSubtitle && <span className="ml-2 text-xs text-muted-foreground">(Subtitles)</span>}
+                          </AccordionTrigger>
+                          <AccordionContent>
+                            {isSubtitle && subtitleText ? (
+                              <div className="space-y-4">
+                                <div className="rounded bg-slate-100 p-4 dark:bg-slate-800">
+                                  <pre className="whitespace-pre-wrap text-sm font-mono">
+                                    {subtitleText}
+                                  </pre>
+                                </div>
+                                <details className="text-xs text-muted-foreground">
+                                  <summary className="cursor-pointer hover:text-foreground">Show raw JSON</summary>
+                                  <pre className="mt-2 overflow-x-auto rounded bg-slate-50 p-3 dark:bg-slate-900">
+                                    {JSON.stringify(result.result_data, null, 2)}
+                                  </pre>
+                                </details>
+                              </div>
+                            ) : (
+                              <pre className="overflow-x-auto rounded bg-slate-100 p-3 text-xs dark:bg-slate-800">
+                                {JSON.stringify(result.result_data, null, 2)}
+                              </pre>
+                            )}
+                          </AccordionContent>
+                        </AccordionItem>
+                      )
+                    })}
                   </Accordion>
                 </CardContent>
               </Card>

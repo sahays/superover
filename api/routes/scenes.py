@@ -299,6 +299,13 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
     try:
         db = get_db()
 
+        logger.info(f"=== process_video API called ===")
+        logger.info(f"video_id: {video_id}")
+        logger.info(f"request.chunk_duration: {request.chunk_duration} (type: {type(request.chunk_duration).__name__})")
+        logger.info(f"request.chunk: {request.chunk}")
+        logger.info(f"request.compressed_video_path: {request.compressed_video_path}")
+        logger.info(f"request.prompt_id: {request.prompt_id}")
+
         # Verify video exists
         video = db.get_video(video_id)
         if not video:
@@ -317,14 +324,18 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
 
         # Create scene job with prompt_id, embedded prompt_text, prompt_type, and prompt_name
         job_id = str(uuid.uuid4())
+
+        config = {
+            "compressed_video_path": request.compressed_video_path,
+            "chunk_duration": request.chunk_duration,
+            "chunk": request.chunk,
+        }
+        logger.info(f"Creating job with config: {config}")
+
         job_data = db.create_scene_job(
             job_id=job_id,
             video_id=video_id,
-            config={
-                "compressed_video_path": request.compressed_video_path,
-                "chunk_duration": request.chunk_duration,
-                "chunk": request.chunk,
-            },
+            config=config,
             prompt_id=request.prompt_id,  # Store prompt reference
             prompt_text=prompt["prompt_text"],  # Embed for reliability
             prompt_type=prompt.get("type", "custom"),  # Embed prompt type for display
@@ -413,12 +424,24 @@ async def get_manifest(video_id: str):
                 detail=f"Manifest not found for video: {video_id}"
             )
 
-        return ManifestResponse(**manifest)
+        # Ensure required fields exist with defaults
+        manifest_data = {
+            "video_id": manifest.get("video_id", video_id),
+            "version": manifest.get("version", "1.0"),
+            "original": manifest.get("original", {}),
+            "compressed": manifest.get("compressed"),
+            "chunks": manifest.get("chunks"),
+            "audio": manifest.get("audio"),
+            "processing": manifest.get("processing"),
+        }
+
+        return ManifestResponse(**manifest_data)
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get manifest: {e}")
+        logger.error(f"Failed to get manifest for {video_id}: {e}")
+        logger.error(f"Manifest data: {manifest if 'manifest' in locals() else 'not loaded'}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get manifest: {str(e)}"

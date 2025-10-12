@@ -31,7 +31,8 @@ class SceneProcessor(ABC):
         chunks: List[Dict[str, Any]],
         job_id: str,
         video_id: str,
-        prompt_text: str
+        prompt_text: str,
+        prompt_type: str = "scene_analysis"
     ) -> None:
         """
         Process video chunks with scene analysis.
@@ -41,6 +42,7 @@ class SceneProcessor(ABC):
             job_id: Scene job ID for progress tracking
             video_id: Video ID
             prompt_text: Analysis prompt text
+            prompt_type: Type of analysis (scene_analysis, subtitling, etc.)
 
         Raises:
             Exception: If processing fails

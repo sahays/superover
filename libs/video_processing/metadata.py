@@ -54,7 +54,14 @@ def extract_metadata(video_path: Path) -> Dict[str, Any]:
                 "bit_rate": int(audio_stream.get('bit_rate', 0)) if 'bit_rate' in audio_stream else None,
             }
 
-        logger.info(f"Extracted metadata from {video_path.name}: {metadata['duration']:.2f}s, {metadata['video']['width']}x{metadata['video']['height']}")
+        # Log appropriate message based on media type
+        if video_stream:
+            logger.info(f"Extracted video metadata from {video_path.name}: {metadata['duration']:.2f}s, {metadata['video']['width']}x{metadata['video']['height']}")
+        elif audio_stream:
+            logger.info(f"Extracted audio metadata from {video_path.name}: {metadata['duration']:.2f}s, {metadata['audio']['channels']} channels")
+        else:
+            logger.warning(f"No video or audio streams found in {video_path.name}")
+
         return metadata
 
     except Exception as e:

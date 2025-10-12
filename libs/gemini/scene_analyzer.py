@@ -74,6 +74,7 @@ class SceneAnalyzer:
         chunk_index: int,
         chunk_duration: float,
         prompt_text: str,
+        prompt_type: str = "scene_analysis",
     ) -> Dict[str, Any]:
         """
         Analyze a video chunk with comprehensive scene analysis.
@@ -83,6 +84,7 @@ class SceneAnalyzer:
             chunk_index: Index of this chunk in the full video
             chunk_duration: Duration of the chunk in seconds
             prompt_text: The full prompt text to use for the analysis.
+            prompt_type: Type of analysis (scene_analysis, subtitling, etc.)
 
         Returns:
             Comprehensive analysis results as a dictionary
@@ -105,6 +107,14 @@ class SceneAnalyzer:
 
             logger.info(f"Analyzing chunk {chunk_index} with Gemini")
 
+            # Determine max output tokens based on prompt type
+            # Subtitling/transcription needs much more tokens for long SRT output
+            if prompt_type in ["subtitling", "transcription"]:
+                max_tokens = 65536  # Maximum for Gemini (65k tokens ~= 50k words)
+                logger.info(f"Using max_output_tokens={max_tokens} for {prompt_type}")
+            else:
+                max_tokens = 8192  # Standard for scene analysis
+
             # Generate analysis with extended timeout for video processing
             # Use retry logic to handle transient failures
             response = self._retry_with_backoff(
@@ -112,7 +122,7 @@ class SceneAnalyzer:
                 [prompt_text, video_file],
                 generation_config=genai.GenerationConfig(
                     temperature=0.1,  # Low temperature for more consistent/factual output
-                    max_output_tokens=8192,  # Allow long detailed responses
+                    max_output_tokens=max_tokens,
                 ),
                 request_options={"timeout": 600}  # 10 minute timeout for video analysis
             )
@@ -151,23 +161,44 @@ class SceneAnalyzer:
 
                 return result
 
-            # Parse JSON response
+            # Parse response based on prompt type
             response_text = response.text.strip()
 
-            # Remove markdown code blocks if present
-            if response_text.startswith("```"):
-                response_text = response_text.split("```json")[-1].split("```")[0].strip()
-            elif response_text.startswith("```"):
-                response_text = response_text.split("```")[1].strip()
+            # Handle different output formats based on prompt_type
+            if prompt_type in ["subtitling", "transcription"]:
+                # For subtitling/transcription, response may be SRT or plain text
+                # Wrap in a JSON structure for consistent storage
+                result = {
+                    "subtitle_text": response_text,
+                    "format": "srt" if "\n\n" in response_text and "-->" in response_text else "text",
+                    "prompt_type": prompt_type
+                }
+                logger.info(f"Successfully analyzed chunk {chunk_index} as {prompt_type}")
+            else:
+                # For scene_analysis and other types, expect JSON
+                # Remove markdown code blocks if present
+                if response_text.startswith("```"):
+                    response_text = response_text.split("```json")[-1].split("```")[0].strip()
+                elif response_text.startswith("```"):
+                    response_text = response_text.split("```")[1].strip()
 
-            result = json.loads(response_text)
+                try:
+                    result = json.loads(response_text)
+                except json.JSONDecodeError as e:
+                    # If JSON parsing fails but response exists, wrap it
+                    logger.warning(f"Failed to parse as JSON for prompt_type={prompt_type}, wrapping raw response")
+                    result = {
+                        "raw_response": response_text,
+                        "parse_error": str(e),
+                        "prompt_type": prompt_type
+                    }
+
+                logger.info(f"Successfully analyzed chunk {chunk_index}")
 
             # Add metadata
             result["chunk_index"] = chunk_index
             result["chunk_duration"] = chunk_duration
             result["gemini_file_uri"] = video_file.uri
-
-            logger.info(f"Successfully analyzed chunk {chunk_index}")
 
             # Clean up uploaded file
             try:
@@ -177,11 +208,6 @@ class SceneAnalyzer:
                 logger.warning(f"Failed to delete uploaded file: {e}")
 
             return result
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemini response as JSON: {e}")
-            logger.error(f"Response text: {response_text[:500]}")
-            raise ValueError(f"Invalid JSON response from Gemini: {e}")
 
         except Exception as e:
             logger.error(f"Error analyzing chunk {chunk_index}: {e}")

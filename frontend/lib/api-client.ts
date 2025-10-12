@@ -49,13 +49,19 @@ export const videoApi = {
     compress?: boolean
     extract_audio?: boolean
   }) => {
-    const response = await apiClient.post(`/api/scenes/${videoId}/process`, {
+    const payload = {
       compress: false,
       chunk: true,
       extract_audio: false,
       chunk_duration: 30,
       ...options,
-    })
+    }
+    console.log('=== processVideo API call ===')
+    console.log('videoId:', videoId)
+    console.log('payload:', JSON.stringify(payload, null, 2))
+    console.log('chunk_duration in payload:', payload.chunk_duration, 'type:', typeof payload.chunk_duration)
+
+    const response = await apiClient.post(`/api/scenes/${videoId}/process`, payload)
     return response.data
   },
 

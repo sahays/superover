@@ -5,15 +5,42 @@ import { formatBytes } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { CheckCircle, XCircle, Loader2, Download, Trash2 } from 'lucide-react'
+import { CheckCircle, XCircle, Loader2, Download, Trash2, Clock } from 'lucide-react'
 import Link from 'next/link'
 
 interface JobCardProps {
   job: MediaJob
+  videoFilename?: string
   onDelete?: (jobId: string) => void
 }
 
-export function JobCard({ job, onDelete }: JobCardProps) {
+export function JobCard({ job, videoFilename, onDelete }: JobCardProps) {
+  // Check if this is an audio-only file (no compressed video output)
+  const isAudioOnly = job.status === MediaJobStatus.COMPLETED &&
+    job.results?.audio_path &&
+    !job.results?.compressed_video_path
+
+  // Calculate time taken for completed jobs
+  const getTimeTaken = () => {
+    if (job.status === MediaJobStatus.COMPLETED && job.created_at && job.updated_at) {
+      const start = new Date(job.created_at).getTime()
+      const end = new Date(job.updated_at).getTime()
+      const diffMs = end - start
+      const diffSec = Math.floor(diffMs / 1000)
+      const diffMin = Math.floor(diffSec / 60)
+      const diffHour = Math.floor(diffMin / 60)
+
+      if (diffHour > 0) {
+        return `${diffHour}h ${diffMin % 60}m`
+      } else if (diffMin > 0) {
+        return `${diffMin}m ${diffSec % 60}s`
+      } else {
+        return `${diffSec}s`
+      }
+    }
+    return null
+  }
+
   const getStatusBadge = (status: MediaJobStatus) => {
     switch (status) {
       case MediaJobStatus.COMPLETED:
@@ -72,9 +99,17 @@ export function JobCard({ job, onDelete }: JobCardProps) {
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
-          <div>
-            <CardTitle className="text-base">Media Processing Job</CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
+          <div className="flex-1">
+            <CardTitle className="text-base line-clamp-1">
+              {videoFilename || 'Media Processing Job'}
+            </CardTitle>
+            {job.status === MediaJobStatus.COMPLETED && getTimeTaken() && (
+              <div className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Clock className="h-3.5 w-3.5" />
+                <span>{getTimeTaken()}</span>
+              </div>
+            )}
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {new Date(job.created_at || '').toLocaleString()}
             </p>
           </div>
@@ -84,7 +119,8 @@ export function JobCard({ job, onDelete }: JobCardProps) {
       <CardContent className="space-y-4">
         {/* Configuration */}
         <div className="grid gap-2 text-sm">
-          {job.config.compress && (
+          {/* Only show compression for files that actually have compressed video output */}
+          {job.config.compress && !isAudioOnly && (
             <div className="flex justify-between">
               <span className="text-muted-foreground">Compression:</span>
               <span className="font-medium">{job.config.compress_resolution}</span>

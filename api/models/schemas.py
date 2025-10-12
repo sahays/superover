@@ -57,6 +57,8 @@ class VideoResponse(BaseModel):
     video_id: str
     filename: str
     gcs_path: str
+    source_type: Optional[str] = 'video'  # 'video' or 'audio', default for backward compatibility
+    content_type: Optional[str] = None
     status: Optional[str] = None  # Optional - status lives in jobs now
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
