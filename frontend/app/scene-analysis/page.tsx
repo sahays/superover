@@ -71,19 +71,28 @@ export default function SceneAnalysisPage() {
           <h1 className="text-3xl font-bold">Scene Analysis</h1>
           <p className="text-muted-foreground mt-1">AI-Powered Scene Analysis with Gemini</p>
         </div>
-        <Button onClick={() => setShowPicker(true)} size="lg">
-          <FileVideo className="mr-2 h-4 w-4" />
-          Pick Video
-        </Button>
+        {!showPicker && (
+          <Button onClick={() => setShowPicker(true)} size="lg">
+            <FileVideo className="mr-2 h-4 w-4" />
+            Start New Analysis
+          </Button>
+        )}
       </div>
         {showPicker ? (
           <div className="mx-auto max-w-4xl">
             <Card>
               <CardHeader>
-                <CardTitle>Pick Video for Scene Analysis</CardTitle>
-                <CardDescription>
-                  Select a video from your processed library for scene analysis with Gemini AI
-                </CardDescription>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle>Select Media for Analysis</CardTitle>
+                    <CardDescription>
+                      Choose compressed video or extracted audio from your processed library
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" onClick={() => setShowPicker(false)}>
+                    Cancel
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <VideoPicker

@@ -44,7 +44,7 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
     audioFormat?: string
     duration?: number
   } | null>(null)
-  const [chunkDuration, setChunkDuration] = useState<number>(30) // Default 30 seconds
+  const [chunkDuration, setChunkDuration] = useState<number>(0) // Default: No chunking
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null)
 
   // Fetch all videos with their jobs
@@ -104,18 +104,6 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold">Pick Video or Audio</h3>
-          <p className="text-sm text-muted-foreground">
-            Select compressed video or extracted audio from your processed library
-          </p>
-        </div>
-        <Button variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-
       <div className="grid gap-4 md:grid-cols-2">
         {videosWithJobs?.map((video) => (
           <Card key={video.video_id} className="overflow-hidden">
@@ -276,6 +264,21 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
               <label className="text-sm font-medium">
                 Chunk Duration (seconds)
               </label>
+
+              {/* Chunking Guidance */}
+              <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                <p className="font-medium mb-1">Chunking splits your media into segments for analysis.</p>
+                <p className="mb-1">Recommended:</p>
+                <ul className="list-disc list-inside space-y-0.5 ml-2">
+                  <li>Audio &lt; 5 hours: No chunking (default)</li>
+                  <li>Video &lt; 1 hour: No chunking (default)</li>
+                  <li>Longer files: Use chunking to stay within limits</li>
+                </ul>
+                <p className="mt-2 text-slate-600 dark:text-slate-400">
+                  Note: No chunking gives you 4× better API quota usage and avoids timestamp ordering issues.
+                </p>
+              </div>
+
               <div className="flex items-center gap-4">
                 <input
                   type="number"
@@ -306,23 +309,7 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
                     size="sm"
                     onClick={() => setChunkDuration(0)}
                   >
-                    No chunks
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setChunkDuration(15)}
-                  >
-                    15s
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setChunkDuration(30)}
-                  >
-                    30s
+                    No chunks (recommended)
                   </Button>
                   <Button
                     type="button"
@@ -339,6 +326,22 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
                     onClick={() => setChunkDuration(120)}
                   >
                     120s
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setChunkDuration(300)}
+                  >
+                    5 min
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setChunkDuration(600)}
+                  >
+                    10 min
                   </Button>
                 </div>
             </div>
