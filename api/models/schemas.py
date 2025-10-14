@@ -212,11 +212,8 @@ PROMPT_TYPES = [
     'scene_analysis',
     'object_identification',
     'subtitling',
-    'character_identification',
     'key_moments',
-    'action_recognition',
-    'sentiment_analysis',
-    'brand_detection',
+    'cliffhanger_analysis',
     'custom'
 ]
 

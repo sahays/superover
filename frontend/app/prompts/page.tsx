@@ -44,11 +44,8 @@ const PROMPT_TYPE_OPTIONS = [
   { value: 'scene_analysis', label: 'Scene Analysis' },
   { value: 'object_identification', label: 'Object Identification' },
   { value: 'subtitling', label: 'Subtitling' },
-  { value: 'character_identification', label: 'Character Identification' },
   { value: 'key_moments', label: 'Key Moments' },
-  { value: 'action_recognition', label: 'Action Recognition' },
-  { value: 'sentiment_analysis', label: 'Sentiment Analysis' },
-  { value: 'brand_detection', label: 'Brand Detection' },
+  { value: 'cliffhanger_analysis', label: 'Cliffhanger Analysis' },
   { value: 'custom', label: 'Custom' },
 ]
 

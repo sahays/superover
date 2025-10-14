@@ -1,34 +1,115 @@
 # Super Over Alchemy
 
-Video analysis and scene recognition system using Gemini AI.
+AI-powered video analysis platform using Google Gemini, featuring separated media processing and scene analysis
+workflows with custom prompt management and context file support.
 
 ## Features
 
-- **Video Processing**: Automatic compression, chunking, and audio extraction
-- **Scene Analysis**: AI-powered scene detection and description
-- **Object Detection**: Identify and track objects throughout the video
-- **Transcription**: Generate subtitles and speech-to-text
-- **Content Moderation**: Automated content safety checking
-- **Cloud-Native**: Designed to run locally or deploy to Google Cloud Run
+### Media Processing Workflow
+
+- **Video Compression**: Multi-resolution transcoding (360p-2160p) with configurable CRF and presets
+- **Audio Extraction**: Multiple formats (MP3, AAC, WAV) with configurable bitrates
+- **Metadata Analysis**: Automatic extraction of video/audio properties
+- **Job Management**: Track processing status, progress, and results
+
+### Scene Analysis Workflow
+
+- **Custom Prompts**: Create and manage reusable analysis prompts with different types
+- **Context Support**: Upload additional context files (text, markdown, JSON) to enhance analysis accuracy
+- **Flexible Chunking**: Optional video/audio chunking for long files (or analyze entire files)
+- **AI-Powered Analysis**: Leverage Google Gemini 2.5 Pro for intelligent scene understanding
+- **Multiple Analysis Types**: Scene detection, object identification, transcription, character identification, key
+  moments, sentiment analysis, and more
+
+### Technical Features
+
+- **Dual Worker Architecture**: Separate workers for media processing and scene analysis
+- **Sequential/Parallel Processing**: Configurable processing modes for scene analysis
+- **Cloud-Native**: Designed for local development with easy Cloud Run deployment
+- **Modern Frontend**: Next.js 15 with TypeScript, TailwindCSS, and shadcn/ui
 
 ## Architecture
 
-- **API**: FastAPI REST API for video management
-- **Worker**: Background processor for video processing and Gemini analysis
-- **Storage**: Google Cloud Storage for video files
-- **Database**: Cloud Firestore for metadata and state management
-- **AI**: Google Gemini API for video analysis
+### Components
+
+1. **API (FastAPI)**
+
+   - RESTful endpoints for media, scenes, prompts, and jobs
+   - Signed URL generation for direct GCS uploads
+   - Job creation and status tracking
+
+2. **Workers**
+
+   - **Media Worker**: Handles video compression and audio extraction
+   - **Scene Worker**: Processes scene analysis with Gemini AI
+   - Poll-based job processing with configurable concurrency
+
+3. **Storage (Google Cloud Storage)**
+
+   - `uploads/`: Original uploaded videos/audio
+   - `processed/`: Compressed videos, extracted audio, chunks
+   - `context/`: User-uploaded context files for analysis
+
+4. **Database (Cloud Firestore)**
+
+   - Videos and media metadata
+   - Media jobs and scene jobs (separate collections)
+   - Prompts and analysis results
+   - Processing manifests
+
+5. **AI (Google Gemini)**
+
+   - Model: Configurable (Gemini 2.0 Flash / 2.5 Pro)
+   - Max Output Tokens: Configurable (8192 for Flash, 65536 for Pro)
+   - Context Window: Up to 1M tokens input
+
+6. **Frontend (Next.js)**
+   - Media workflow: Upload, configure processing, monitor jobs
+   - Prompt management: Create/edit/delete analysis prompts
+   - Scene analysis: Select media, choose prompt, upload context, start analysis
+   - Job monitoring: Real-time status updates for all workflows
+
+## Sequence Diagrams
+
+Detailed sequence diagrams are available for both workflows:
+
+- **[Media Worker Sequence Diagram](docs/media-worker-sequence.md)** - Shows the complete flow from video upload through
+  processing to result delivery
+- **[Scene Worker Sequence Diagram](docs/scene-worker-sequence.md)** - Shows the scene analysis workflow including
+  context file support, chunking strategies, and Gemini integration
+
+## Workflows
+
+### Workflow 1: Media Processing
+
+```
+Upload Video/Audio → Create Media Job → Worker Processes → Results Available
+                            ↓
+                    Configure: Resolution, Audio Format, Bitrate, CRF, Preset
+```
+
+### Workflow 2: Scene Analysis
+
+```
+Select Processed Media → Choose Prompt → Upload Context (Optional) → Configure Chunking → Start Analysis
+                                                                              ↓
+                                                                      Worker Analyzes with Gemini
+                                                                              ↓
+                                                                      View Results in Frontend
+```
 
 ## Local Development Setup
 
 ### Prerequisites
 
 1. **Python 3.9+**
+
    ```bash
    python --version
    ```
 
-2. **ffmpeg**
+2. **ffmpeg** (for media processing)
+
    ```bash
    # macOS
    brew install ffmpeg
@@ -41,6 +122,7 @@ Video analysis and scene recognition system using Gemini AI.
    ```
 
 3. **Google Cloud SDK**
+
    ```bash
    # macOS
    brew install --cask google-cloud-sdk
@@ -59,38 +141,41 @@ Video analysis and scene recognition system using Gemini AI.
 ### GCP Setup
 
 1. **Create GCP Project**
+
    ```bash
    export PROJECT_ID="your-project-id"
    gcloud config set project $PROJECT_ID
    ```
 
 2. **Enable APIs**
+
    ```bash
    gcloud services enable \
      storage.googleapis.com \
-     firestore.googleapis.com \
-     aiplatform.googleapis.com
+     firestore.googleapis.com
    ```
 
 3. **Create GCS Buckets**
+
    ```bash
    gsutil mb -l asia-south1 gs://${PROJECT_ID}-uploads
    gsutil mb -l asia-south1 gs://${PROJECT_ID}-processed
-   gsutil mb -l asia-south1 gs://${PROJECT_ID}-results
    ```
 
 4. **Create Firestore Database**
+
    ```bash
    gcloud firestore databases create --location=asia-south1
    ```
 
 5. **Get Gemini API Key**
-   - Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
+   - Visit [Google AI Studio](https://aistudio.google.com/apikey)
    - Create an API key
 
-### Application Setup
+### Backend Setup
 
-1. **Clone and setup**
+1. **Install Python dependencies**
+
    ```bash
    cd super-over-alchemy
    python -m venv venv
@@ -99,142 +184,340 @@ Video analysis and scene recognition system using Gemini AI.
    ```
 
 2. **Configure environment**
+
    ```bash
    cp .env.example .env
    # Edit .env with your values
    ```
 
    Example `.env`:
+
    ```bash
+   # GCP Configuration
    GCP_PROJECT_ID=your-project-id
    GCP_REGION=asia-south1
 
+   # GCS Buckets
    UPLOADS_BUCKET=your-project-id-uploads
    PROCESSED_BUCKET=your-project-id-processed
-   RESULTS_BUCKET=your-project-id-results
 
+   # Gemini API
    GEMINI_API_KEY=your-gemini-api-key
-   GEMINI_MODEL=models/gemini-2.0-flash-exp
+   GEMINI_MODEL=models/gemini-2.5-pro
+   GEMINI_MAX_OUTPUT_TOKENS=65536
 
+   # Worker Settings
+   WORKER_POLL_INTERVAL_SECONDS=5
+   MAX_CONCURRENT_TASKS=3
+
+   # Scene Processing Mode
+   SCENE_PROCESSING_MODE=sequential  # or "parallel"
+   MAX_GEMINI_WORKERS=10
+
+   # Environment
    ENVIRONMENT=local
    API_URL=http://localhost:8000
    FRONTEND_URL=http://localhost:3000
    ```
 
 3. **Run the API**
+
    ```bash
    python api/main.py
    ```
 
-   API will be available at `http://localhost:8000`
+   API available at `http://localhost:8000`
+
    - Swagger docs: `http://localhost:8000/docs`
    - Health check: `http://localhost:8000/health`
 
-4. **Run the Worker** (in a new terminal)
+4. **Run the Workers** (in separate terminals)
+
    ```bash
+   # Terminal 1: Media Worker
    source venv/bin/activate
-   python workers/video_worker.py
+   python workers/media_worker.py
+
+   # Terminal 2: Scene Worker
+   source venv/bin/activate
+   python workers/scene_worker.py
    ```
 
-## Usage
+### Frontend Setup
 
-### Upload and Process a Video
+1. **Install dependencies**
 
-1. **Get signed URL for upload**
    ```bash
-   curl -X POST http://localhost:8000/api/videos/signed-url \
-     -H "Content-Type: application/json" \
-     -d '{
-       "filename": "test.mp4",
-       "content_type": "video/mp4"
-     }'
+   cd frontend
+   npm install
    ```
 
-2. **Upload video to GCS** (use signed URL from previous step)
+2. **Configure environment**
+
    ```bash
-   curl -X PUT "<signed_url>" \
-     -H "Content-Type: video/mp4" \
-     --data-binary @test.mp4
+   cp .env.local.example .env.local
+   # Edit .env.local with your API URL
    ```
 
-3. **Create video record**
+   Example `.env.local`:
+
    ```bash
-   curl -X POST http://localhost:8000/api/videos \
-     -H "Content-Type: application/json" \
-     -d '{
-       "filename": "test.mp4",
-       "gcs_path": "<gcs_path from step 1>",
-       "content_type": "video/mp4",
-       "size_bytes": 1048576
-     }'
+   NEXT_PUBLIC_API_URL=http://localhost:8000
    ```
 
-4. **Start processing**
+3. **Run development server**
+
    ```bash
-   curl -X POST http://localhost:8000/api/videos/<video_id>/process \
-     -H "Content-Type: application/json" \
-     -d '{
-       "compress": true,
-       "chunk": true,
-       "extract_audio": true
-     }'
+   npm run dev
    ```
 
-5. **Check status**
+   Frontend available at `http://localhost:3000`
+
+4. **Build for production**
    ```bash
-   curl http://localhost:8000/api/videos/<video_id>
+   npm run build
+   npm start
    ```
 
-6. **Start analysis** (after processing is complete)
-   ```bash
-   curl -X POST http://localhost:8000/api/videos/<video_id>/analyze \
-     -H "Content-Type: application/json" \
-     -d '{
-       "analysis_types": ["scene", "objects", "transcription", "moderation"]
-     }'
-   ```
+## Usage Guide
 
-7. **Get results**
-   ```bash
-   curl http://localhost:8000/api/videos/<video_id>/results
-   ```
+### 1. Upload and Process Media
+
+1. Navigate to `http://localhost:3000/media`
+2. Click "Upload Video" and select a file
+3. Configure processing options:
+   - Compression resolution (360p-2160p)
+   - Audio format (MP3, AAC, WAV)
+   - Audio bitrate
+   - CRF (quality: 0-51, lower = better)
+   - Preset (speed vs efficiency)
+4. Click "Start Processing"
+5. Monitor job status in the dashboard
+
+### 2. Create Analysis Prompts
+
+1. Navigate to `http://localhost:3000/prompts`
+2. Click "Create Prompt"
+3. Fill in:
+   - Name (e.g., "Sports Commentary Analysis")
+   - Type (Scene Analysis, Subtitling, Custom, etc.)
+   - Prompt text (instructions for Gemini)
+   - **Optional**: Check "Supports additional context files"
+   - **Optional**: Add context description
+4. Save the prompt
+
+### 3. Analyze Scenes
+
+1. Navigate to `http://localhost:3000/scene-analysis`
+2. Click "Start New Analysis"
+3. Select processed media (compressed video or extracted audio)
+4. Choose a prompt from the dropdown
+5. **If prompt supports context**: Upload additional context files (text, markdown, JSON)
+6. Configure chunking:
+   - No chunking (recommended for audio < 5 hours, video < 1 hour)
+   - Or set chunk duration (60s, 120s, 5min, 10min)
+7. Click "Start Scene Analysis"
+8. View results when processing completes
+
+### 4. API Usage (Programmatic)
+
+#### Create Media Job
+
+```bash
+curl -X POST http://localhost:8000/api/media/jobs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_id": "video-uuid",
+    "config": {
+      "compress": true,
+      "compress_resolution": "720p",
+      "extract_audio": true,
+      "audio_format": "mp3",
+      "audio_bitrate": "192k",
+      "crf": 23,
+      "preset": "medium"
+    }
+  }'
+```
+
+#### Create Scene Job
+
+```bash
+curl -X POST http://localhost:8000/api/scenes/{video_id}/process \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt_id": "prompt-uuid",
+    "compressed_video_path": "gs://bucket/path/to/video.mp4",
+    "chunk_duration": 0,
+    "chunk": false,
+    "context_items": [
+      {
+        "context_id": "ctx-uuid",
+        "type": "text",
+        "gcs_path": "gs://bucket/context/file.txt",
+        "filename": "reference.txt",
+        "description": "Player statistics",
+        "size_bytes": 1024
+      }
+    ]
+  }'
+```
 
 ## Project Structure
 
 ```
 super-over-alchemy/
-├── api/                      # FastAPI application
-│   ├── main.py              # Main application
-│   ├── routes/              # API routes
-│   │   ├── videos.py        # Video endpoints
-│   │   └── tasks.py         # Task endpoints
-│   └── models/              # Pydantic models
-│       └── schemas.py
-├── libs/                     # Reusable libraries
-│   ├── storage.py           # GCS operations
-│   ├── database.py          # Firestore operations
-│   ├── video_processing/    # Video tools
-│   │   ├── metadata.py
-│   │   ├── compressor.py
-│   │   ├── chunker.py
-│   │   ├── audio.py
-│   │   └── manifest.py
-│   └── gemini/              # Gemini integration
-│       └── analyzer.py
-├── workers/                  # Background workers
-│   └── video_worker.py      # Processing worker
-├── frontend/                 # Next.js frontend (coming soon)
-├── storage/                  # Local temp storage
-│   └── temp/
-├── config.py                 # Configuration
-├── requirements.txt          # Python dependencies
-├── .env.example             # Example environment file
-└── README.md                # This file
+├── api/                          # FastAPI REST API
+│   ├── main.py                  # Application entry point
+│   ├── routes/
+│   │   ├── scenes.py            # Scene analysis endpoints
+│   │   ├── media.py             # Media processing endpoints
+│   │   ├── prompts.py           # Prompt management endpoints
+│   │   └── tasks.py             # Task status endpoints
+│   └── models/
+│       └── schemas.py           # Pydantic request/response models
+├── libs/                         # Shared libraries
+│   ├── storage.py               # Google Cloud Storage client
+│   ├── database.py              # Firestore client with collections
+│   ├── video_processing/        # FFmpeg-based processing
+│   │   ├── metadata.py          # Probe video/audio metadata
+│   │   ├── compressor.py        # Video transcoding
+│   │   ├── chunker.py           # Video chunking
+│   │   ├── audio.py             # Audio extraction
+│   │   └── manifest.py          # Processing manifests
+│   ├── gemini/                  # Gemini AI integration
+│   │   └── scene_analyzer.py   # Scene analysis with context support
+│   └── scene_processing/        # Scene processing strategies
+│       ├── base.py              # Abstract processor
+│       ├── sequential.py        # Sequential chunk processing
+│       ├── parallel.py          # Parallel chunk processing
+│       └── factory.py           # Processor factory
+├── workers/                      # Background job processors
+│   ├── media_worker.py          # Media processing worker
+│   └── scene_worker.py          # Scene analysis worker
+├── frontend/                     # Next.js 15 frontend
+│   ├── app/                     # App router pages
+│   │   ├── media/               # Media workflow
+│   │   ├── prompts/             # Prompt management
+│   │   ├── scene-analysis/      # Scene analysis workflow
+│   │   └── scene/               # Scene results
+│   ├── components/              # React components
+│   │   ├── ui/                  # shadcn/ui components
+│   │   ├── media/               # Media-specific components
+│   │   ├── scene/               # Scene-specific components
+│   │   └── prompts/             # Prompt components
+│   └── lib/                     # Frontend utilities
+│       ├── api-client.ts        # API client with typed methods
+│       ├── types.ts             # TypeScript types
+│       └── utils.ts             # Helper functions
+├── tests/                        # Test suites
+├── storage/temp/                 # Local temporary files
+├── config.py                     # Centralized configuration
+├── requirements.txt              # Python dependencies
+├── .env.example                 # Environment template
+└── README.md                    # This file
 ```
 
-## Deployment to Cloud Run
+## Configuration
 
-Coming soon...
+### Key Environment Variables
+
+| Variable                   | Description            | Default                       | Example                 |
+| -------------------------- | ---------------------- | ----------------------------- | ----------------------- |
+| `GEMINI_MODEL`             | Gemini model to use    | `models/gemini-2.0-flash-exp` | `models/gemini-2.5-pro` |
+| `GEMINI_MAX_OUTPUT_TOKENS` | Max tokens in response | `8192`                        | `65536` (for 2.5 Pro)   |
+| `SCENE_PROCESSING_MODE`    | Sequential or parallel | `sequential`                  | `parallel`              |
+| `MAX_GEMINI_WORKERS`       | Parallel worker count  | `10`                          | `4`                     |
+| `CHUNK_DURATION_SECONDS`   | Default chunk size     | `30`                          | `0` (no chunking)       |
+| `COMPRESS_RESOLUTION`      | Default resolution     | `480p`                        | `720p`                  |
+
+### Processing Modes
+
+**Sequential Mode** (Default)
+
+- Processes one chunk at a time
+- Lower memory usage
+- Predictable performance
+- Recommended for most use cases
+
+**Parallel Mode**
+
+- Processes multiple chunks simultaneously
+- Higher memory usage
+- Faster for long videos with many chunks
+- Uses process-based parallelism (isolated SSL contexts)
+
+## Advanced Features
+
+### Context File Support
+
+Upload additional context files to enhance analysis accuracy:
+
+1. Create a prompt with "Supports additional context files" enabled
+2. During scene analysis, upload text files (.txt, .md, .json) up to 10MB
+3. Context is loaded once and included with all chunks
+4. Gemini receives: prompt + context + video/audio
+
+**Use Cases**:
+
+- Sports analysis: Upload team rosters, player stats
+- Educational content: Upload lecture notes, reference material
+- Product reviews: Upload specification sheets
+- Interview analysis: Upload company background, job description
+
+### Custom Prompts
+
+Create specialized prompts for different analysis types:
+
+- **Scene Analysis**: General scene understanding
+- **Subtitling**: Generate SRT-formatted subtitles
+- **Character Identification**: Track people across frames
+- **Key Moments**: Identify highlights and important events
+- **Sentiment Analysis**: Analyze emotional tone
+- **Brand Detection**: Identify logos and products
+- **Custom**: Any specialized analysis task
+
+### Chunking Strategies
+
+**No Chunking** (Recommended for most cases)
+
+- Analyzes entire file as one piece
+- Better API quota usage (4× more efficient)
+- No timestamp ordering issues
+- Best for: Audio < 5 hours, Video < 1 hour
+
+**Fixed Duration Chunking**
+
+- Split into equal segments (60s, 120s, 5min, 10min)
+- Required for very long files
+- Each chunk analyzed separately
+- Results combined in order
+
+## Deployment
+
+### Cloud Run Deployment
+
+Coming soon... The application is designed for easy Cloud Run deployment with:
+
+- Containerized API and workers
+- Cloud Storage for file handling
+- Firestore for state management
+- Automatic scaling
+
+## Monitoring and Debugging
+
+### Logs
+
+- **API**: Console logs with FastAPI
+- **Workers**: Detailed logging with progress tracking
+- **Frontend**: Browser console and Network tab
+
+### Common Issues
+
+1. **Worker not picking up jobs**: Check worker is running and polling interval
+2. **Gemini API errors**: Verify API key and model availability
+3. **Video processing fails**: Ensure ffmpeg is installed and accessible
+4. **Context upload fails**: Check file size < 10MB and format (.txt, .md, .json)
 
 ## Contributing
 

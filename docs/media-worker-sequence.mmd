@@ -1,0 +1,29 @@
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant API
+    participant Firestore
+    participant MediaWorker
+    participant GCS
+
+    User->>Frontend: Upload video file
+    Frontend->>API: Request signed URL
+    API-->>Frontend: Signed URL
+    Frontend->>GCS: Upload to GCS
+
+    Frontend->>API: Create video + media job
+    API->>Firestore: Store job (status: pending)
+    API-->>Frontend: Return job_id
+
+    loop Poll for jobs
+        MediaWorker->>Firestore: Get pending job
+        MediaWorker->>GCS: Download video
+        MediaWorker->>MediaWorker: Compress + Extract audio + Metadata
+        MediaWorker->>GCS: Upload results
+        MediaWorker->>Firestore: Update job (completed)
+    end
+
+    Frontend->>API: Poll job status
+    API->>Firestore: Get job details
+    API-->>Frontend: Status + results
+    Frontend-->>User: Show complete

@@ -1,0 +1,50 @@
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant API
+    participant Firestore
+    participant SceneWorker
+    participant GCS
+    participant Gemini
+
+    User->>Frontend: Select prompt + media
+    Frontend->>API: Get prompts
+    API-->>Frontend: Prompts list
+
+    opt Context files
+        Frontend->>API: Request signed URL
+        Frontend->>GCS: Upload context files
+    end
+
+    Frontend->>API: Create scene job
+    API->>Firestore: Store job (status: pending)
+    API-->>Frontend: Return job_id
+
+    loop Poll for jobs
+        SceneWorker->>Firestore: Get pending job
+        SceneWorker->>GCS: Download media
+        SceneWorker->>SceneWorker: Chunk media (if needed)
+
+        alt Sequential
+            SceneWorker->>GCS: Load context (once)
+            loop Each chunk
+                SceneWorker->>Gemini: Analyze (prompt + context + chunk)
+                Gemini-->>SceneWorker: Result
+                SceneWorker->>Firestore: Save result
+            end
+        else Parallel
+            SceneWorker->>GCS: Load context (once)
+            par N workers
+                SceneWorker->>Gemini: Analyze chunks
+                Gemini-->>SceneWorker: Results
+            end
+            SceneWorker->>Firestore: Save all results
+        end
+
+        SceneWorker->>Firestore: Update job (completed)
+    end
+
+    Frontend->>API: Poll job status
+    API->>Firestore: Get job + results
+    API-->>Frontend: Status + results
+    Frontend-->>User: Display analysis
