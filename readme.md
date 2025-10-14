@@ -30,44 +30,41 @@ workflows with custom prompt management and context file support.
 
 ## Architecture
 
-### Components
+![Architecture Diagram](./docs/architecture.png)
 
-1. **API (FastAPI)**
+### System Components
 
-   - RESTful endpoints for media, scenes, prompts, and jobs
-   - Signed URL generation for direct GCS uploads
-   - Job creation and status tracking
+**Frontend Layer**
 
-2. **Workers**
+- **Next.js Frontend** - React-based UI for media upload, job management, and results visualization
+- **Agentspace** - User interaction and workflow orchestration
 
-   - **Media Worker**: Handles video compression and audio extraction
-   - **Scene Worker**: Processes scene analysis with Gemini AI
-   - Poll-based job processing with configurable concurrency
+**API & Messaging**
 
-3. **Storage (Google Cloud Storage)**
+- **FastAPI** - RESTful API handling requests, job creation, and status queries
+- **Pub/Sub** - Event-driven messaging for asynchronous job processing
 
-   - `uploads/`: Original uploaded videos/audio
-   - `processed/`: Compressed videos, extracted audio, chunks
-   - `context/`: User-uploaded context files for analysis
+**Data Layer**
 
-4. **Database (Cloud Firestore)**
+- **Firestore** - NoSQL database storing videos, jobs, prompts, and analysis results
+- **Cloud Storage** - Object storage for uploaded media, processed outputs, and context files
 
-   - Videos and media metadata
-   - Media jobs and scene jobs (separate collections)
-   - Prompts and analysis results
-   - Processing manifests
+**Processing Layer**
 
-5. **AI (Google Gemini)**
+- **Media Processor** - FFmpeg-based worker for video compression and audio extraction
+- **Analysis Engine** - AI-powered scene analysis using Google Gemini (Vertex AI)
 
-   - Model: Configurable (Gemini 2.0 Flash / 2.5 Pro)
-   - Max Output Tokens: Configurable (8192 for Flash, 65536 for Pro)
-   - Context Window: Up to 1M tokens input
+**Analytics**
 
-6. **Frontend (Next.js)**
-   - Media workflow: Upload, configure processing, monitor jobs
-   - Prompt management: Create/edit/delete analysis prompts
-   - Scene analysis: Select media, choose prompt, upload context, start analysis
-   - Job monitoring: Real-time status updates for all workflows
+- **BigQuery** - Data warehouse for analytics and reporting on job metrics and results
+
+### Data Flow
+
+1. **Upload**: Frontend → API → Cloud Storage
+2. **Job Creation**: API → Firestore → Pub/Sub
+3. **Media Processing**: Media Processor reads from Pub/Sub, processes files, writes to Cloud Storage
+4. **Scene Analysis**: Analysis Engine reads from Pub/Sub, calls Vertex AI, stores results in Firestore
+5. **Analytics**: Results exported to BigQuery for analysis
 
 ## Sequence Diagrams
 
