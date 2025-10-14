@@ -39,7 +39,8 @@ export function StartProcessing({ videoId, onSuccess, onCancel }: StartProcessin
   })
 
   // Check if this is an audio-only file (no video stream)
-  const isAudioOnly = video && !video.metadata?.video
+  // Use source_type if available, otherwise check metadata
+  const isAudioOnly = video?.source_type === 'audio' || (video?.metadata && !video.metadata.video && video.metadata.audio)
 
   const createJobMutation = useMutation({
     mutationFn: () => mediaApi.createJob({ video_id: videoId, config }),
