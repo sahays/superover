@@ -469,13 +469,12 @@ Upload additional context files to enhance analysis accuracy:
 
 Create specialized prompts for different analysis types:
 
-- **Scene Analysis**: General scene understanding
-- **Subtitling**: Generate SRT-formatted subtitles
-- **Character Identification**: Track people across frames
-- **Key Moments**: Identify highlights and important events
-- **Sentiment Analysis**: Analyze emotional tone
-- **Brand Detection**: Identify logos and products
-- **Custom**: Any specialized analysis task
+- **Scene Analysis**: General scene understanding and visual analysis
+- **Object Identification**: Detect and track objects, brands, or specific items
+- **Subtitling**: Generate SRT-formatted subtitles and transcriptions
+- **Key Moments**: Identify highlights, important events, and memorable scenes
+- **Cliffhanger Analysis**: Detect suspenseful moments and dramatic endings
+- **Custom**: Any specialized analysis task tailored to your needs
 
 ### Chunking Strategies
 
