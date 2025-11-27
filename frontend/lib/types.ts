@@ -70,6 +70,10 @@ export const resultSchema = z.object({
     candidates_tokens: z.number(),
     total_tokens: z.number(),
     estimated_cost_usd: z.number(),
+    input_cost_usd: z.number().optional(),
+    output_cost_usd: z.number().optional(),
+    applied_input_rate: z.number().optional(),
+    applied_output_rate: z.number().optional(),
   }).optional(),
 })
 

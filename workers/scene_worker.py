@@ -262,6 +262,27 @@ class SceneWorker:
                 context_items=context_items if context_items else None
             )
 
+            # Calculate aggregated stats
+            job_results = self.db.get_results_for_job(job_id)
+            total_tokens = 0
+            total_cost = 0.0
+            total_input_cost = 0.0
+            total_output_cost = 0.0
+
+            for res in job_results:
+                usage = res.get("result_data", {}).get("token_usage", {})
+                total_tokens += usage.get("total_tokens", 0)
+                total_cost += usage.get("estimated_cost_usd", 0.0)
+                total_input_cost += usage.get("input_cost_usd", 0.0)
+                total_output_cost += usage.get("output_cost_usd", 0.0)
+
+            token_usage_summary = {
+                "total_tokens": total_tokens,
+                "estimated_cost_usd": round(total_cost, 6),
+                "input_cost_usd": round(total_input_cost, 6),
+                "output_cost_usd": round(total_output_cost, 6)
+            }
+
             # Update scene job status to completed
             self.db.update_scene_job_status(
                 job_id,
@@ -269,7 +290,8 @@ class SceneWorker:
                 results={
                     "manifest_created": True,
                     "chunks_analyzed": len(chunks),
-                    "step": "completed"
+                    "step": "completed",
+                    "token_usage": token_usage_summary
                 }
             )
 

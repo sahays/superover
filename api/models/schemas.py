@@ -190,6 +190,7 @@ class SceneJobResultsResponse(BaseModel):
     chunks_analyzed: int = 0
     step: Optional[str] = None
     progress: Optional[Dict[str, Any]] = None
+    token_usage: Optional[Dict[str, Any]] = None
 
 class SceneJobResponse(BaseModel):
     """Scene processing job response."""

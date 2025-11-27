@@ -59,6 +59,8 @@ export default function SceneDetailPage({ params }: { params: Promise<{ id: stri
   // Calculate totals
   const totalTokens = results?.reduce((acc: number, r: any) => acc + (r.result_data?.token_usage?.total_tokens || 0), 0) || 0
   const totalCost = results?.reduce((acc: number, r: any) => acc + (r.result_data?.token_usage?.estimated_cost_usd || 0), 0) || 0
+  const totalInputCost = results?.reduce((acc: number, r: any) => acc + (r.result_data?.token_usage?.input_cost_usd || 0), 0) || 0
+  const totalOutputCost = results?.reduce((acc: number, r: any) => acc + (r.result_data?.token_usage?.output_cost_usd || 0), 0) || 0
 
   const getDownloadFilename = (extension: string) => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19).replace('T', '-')
@@ -221,11 +223,18 @@ export default function SceneDetailPage({ params }: { params: Promise<{ id: stri
                     </div>
                     <div>
                       <dt className="text-sm font-medium text-muted-foreground">Est. Cost</dt>
-                      <dd className={`mt-1 text-sm font-medium flex items-center gap-1 ${totalCost > 0 ? 'text-green-600' : 'text-muted-foreground'}`}>
+                      <dd className={`mt-1 text-sm font-medium flex flex-wrap items-center gap-1 ${totalCost > 0 ? 'text-green-600' : 'text-muted-foreground'}`}>
                         {totalCost > 0 ? (
                           <>
-                            <Coins className="h-3.5 w-3.5" />
-                            ${totalCost.toFixed(4)}
+                            <div className="flex items-center gap-1">
+                              <Coins className="h-3.5 w-3.5" />
+                              ${totalCost.toFixed(4)}
+                            </div>
+                            {(totalInputCost > 0 || totalOutputCost > 0) && (
+                              <span className="text-xs font-normal text-muted-foreground ml-1">
+                                (In: ${totalInputCost.toFixed(4)} | Out: ${totalOutputCost.toFixed(4)})
+                              </span>
+                            )}
                           </>
                         ) : (
                           <span className="text-muted-foreground font-normal">N/A (Historical)</span>
@@ -396,8 +405,18 @@ export default function SceneDetailPage({ params }: { params: Promise<{ id: stri
                           <AccordionContent>
                             {result.result_data?.token_usage && (
                               <div className="mb-4 text-xs text-muted-foreground flex gap-4 border-b pb-2">
-                                <div>Prompt Tokens: <span className="font-mono">{result.result_data.token_usage.prompt_tokens?.toLocaleString()}</span></div>
-                                <div>Output Tokens: <span className="font-mono">{result.result_data.token_usage.candidates_tokens?.toLocaleString()}</span></div>
+                                <div>
+                                  Prompt Tokens: <span className="font-mono">{result.result_data.token_usage.prompt_tokens?.toLocaleString()}</span>
+                                  {result.result_data.token_usage.applied_input_rate && (
+                                    <span className="ml-1 opacity-70">(@ ${result.result_data.token_usage.applied_input_rate.toFixed(2)}/1M)</span>
+                                  )}
+                                </div>
+                                <div>
+                                  Output Tokens: <span className="font-mono">{result.result_data.token_usage.candidates_tokens?.toLocaleString()}</span>
+                                  {result.result_data.token_usage.applied_output_rate && (
+                                    <span className="ml-1 opacity-70">(@ ${result.result_data.token_usage.applied_output_rate.toFixed(2)}/1M)</span>
+                                  )}
+                                </div>
                                 <div>Total: <span className="font-mono">{result.result_data.token_usage.total_tokens?.toLocaleString()}</span></div>
                               </div>
                             )}

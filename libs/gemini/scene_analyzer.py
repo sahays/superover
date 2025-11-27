@@ -93,42 +93,51 @@ class SceneAnalyzer:
         total_tokens = usage_metadata.total_token_count
         
         model_name = settings.gemini_model.lower()
-        cost = 0.0
+        input_rate = 0.0
+        output_rate = 0.0
 
         if "gemini-3" in model_name: # Gemini 3.0 Pro Preview
             # Input cost
             if prompt_tokens <= 200000:
-                cost += (prompt_tokens / 1_000_000) * 2.00
+                input_rate = 2.00
             else:
-                cost += (prompt_tokens / 1_000_000) * 4.00
+                input_rate = 4.00
             
             # Output cost
             if prompt_tokens <= 200000:
-                cost += (candidates_tokens / 1_000_000) * 12.00
+                output_rate = 12.00
             else:
-                cost += (candidates_tokens / 1_000_000) * 18.00
+                output_rate = 18.00
                 
         elif "gemini-2.5" in model_name or "gemini-pro" in model_name: # Gemini 2.5 Pro
             # Input cost
             if prompt_tokens <= 128000:
-                cost += (prompt_tokens / 1_000_000) * 1.25
+                input_rate = 1.25
             else:
-                cost += (prompt_tokens / 1_000_000) * 2.50
+                input_rate = 2.50
             
             # Output cost
             if prompt_tokens <= 128000:
-                cost += (candidates_tokens / 1_000_000) * 5.00
+                output_rate = 5.00
             else:
-                cost += (candidates_tokens / 1_000_000) * 10.00
+                output_rate = 10.00
 
         elif "flash" in model_name: # Flash models (cheap)
-            cost += (prompt_tokens / 1_000_000) * 0.10
-            cost += (candidates_tokens / 1_000_000) * 0.40
+            input_rate = 0.10
+            output_rate = 0.40
+
+        input_cost = (prompt_tokens / 1_000_000) * input_rate
+        output_cost = (candidates_tokens / 1_000_000) * output_rate
+        cost = input_cost + output_cost
 
         return {
             "prompt_tokens": prompt_tokens,
             "candidates_tokens": candidates_tokens,
             "total_tokens": total_tokens,
+            "applied_input_rate": input_rate,
+            "applied_output_rate": output_rate,
+            "input_cost_usd": round(input_cost, 6),
+            "output_cost_usd": round(output_cost, 6),
             "estimated_cost_usd": round(cost, 6)
         }
 

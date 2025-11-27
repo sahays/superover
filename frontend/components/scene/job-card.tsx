@@ -1,5 +1,3 @@
-'use client'
-
 import { useState } from 'react'
 import { SceneJob, SceneJobStatus } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -107,6 +105,15 @@ export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps
     return null
   }
 
+  const getSourceLabel = () => {
+    const path = job.config.compressed_video_path?.toLowerCase()
+    if (!path) return 'Processed Media'
+    if (path.endsWith('.mp3') || path.endsWith('.wav') || path.endsWith('.aac') || path.endsWith('.m4a')) {
+      return 'Audio Source'
+    }
+    return 'Video Source'
+  }
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -154,18 +161,47 @@ export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps
               </Badge>
             )}
           </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Chunk Duration:</span>
-            <span className="font-medium">
-              {job.config.chunk_duration > 0
-                ? `${job.config.chunk_duration}s`
-                : 'No chunking'}
-            </span>
-          </div>
+          
+          {/* Cost and Tokens (for completed jobs) or Chunk Duration (for others) */}
+          {job.status === SceneJobStatus.COMPLETED ? (
+            <>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Est. Cost:</span>
+                <span className={`font-medium flex items-center gap-1 ${job.results?.token_usage ? 'text-green-600' : 'text-muted-foreground'}`}>
+                  {job.results?.token_usage ? (
+                    <>
+                      <Coins className="h-3 w-3" />
+                      ${job.results.token_usage.estimated_cost_usd.toFixed(4)}
+                    </>
+                  ) : (
+                    <span className="text-xs">DNC</span>
+                  )}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Tokens:</span>
+                <span className="font-medium text-xs text-muted-foreground">
+                  {job.results?.token_usage ? job.results.token_usage.total_tokens.toLocaleString() : 'DNC'}
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Chunk Duration:</span>
+              <span className="font-medium">
+                {job.config.chunk_duration > 0
+                  ? `${job.config.chunk_duration}s`
+                  : 'No chunking'}
+              </span>
+            </div>
+          )}
+
           {job.config.compressed_video_path && (
             <div className="flex justify-between">
               <span className="text-muted-foreground">Source:</span>
-              <span className="font-medium text-xs">Compressed video</span>
+              <span className="font-medium text-xs">
+                {getSourceLabel()}
+              </span>
             </div>
           )}
         </div>
