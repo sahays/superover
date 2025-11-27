@@ -2,7 +2,7 @@
 
 import { use, useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { ArrowLeft, Play, Download, Settings, FileJson, FileSpreadsheet } from 'lucide-react'
+import { ArrowLeft, Play, Download, Settings, FileJson, FileSpreadsheet, Coins } from 'lucide-react'
 import Link from 'next/link'
 import { videoApi, mediaApi, sceneJobApi } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
@@ -18,30 +18,6 @@ import { JobCard } from '@/components/media/job-card'
 export default function SceneDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: jobId } = use(params)
   const [showMediaDialog, setShowMediaDialog] = useState(false)
-
-  const downloadAsJSON = () => {
-    if (!results || !sceneJob) return
-
-    const chunkDuration = sceneJob.config.chunk_duration || 0
-    const jsonData = generateSceneJSON(
-      results,
-      chunkDuration,
-      jobId,
-      sceneJob.video_id,
-      scene?.filename
-    )
-
-    downloadFile(jsonData, `scene-analysis-${scene?.filename || jobId}.json`, 'json')
-  }
-
-  const downloadAsCSV = () => {
-    if (!results || !sceneJob) return
-
-    const chunkDuration = sceneJob.config.chunk_duration || 0
-    const csvContent = generateSceneCSV(results, chunkDuration)
-
-    downloadFile(csvContent, `scene-analysis-${scene?.filename || jobId}.csv`, 'csv')
-  }
 
   // First get the scene job
   const { data: sceneJob, isLoading: isLoadingJob } = useQuery({
@@ -80,6 +56,46 @@ export default function SceneDetailPage({ params }: { params: Promise<{ id: stri
     enabled: isCompleted,
   })
 
+  // Calculate totals
+  const totalTokens = results?.reduce((acc: number, r: any) => acc + (r.result_data?.token_usage?.total_tokens || 0), 0) || 0
+  const totalCost = results?.reduce((acc: number, r: any) => acc + (r.result_data?.token_usage?.estimated_cost_usd || 0), 0) || 0
+
+  const getDownloadFilename = (extension: string) => {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19).replace('T', '-')
+    const baseFilename = scene?.filename ? scene.filename.replace(/\.[^/.]+$/, '') : 'scene'
+    const promptName = sceneJob?.prompt_name 
+      ? sceneJob.prompt_name.replace(/[^a-zA-Z0-9]/g, '_') 
+      : (sceneJob?.prompt_type || 'analysis')
+    
+    return `${baseFilename}_${promptName}_${timestamp}.${extension}`
+  }
+
+  const downloadAsJSON = () => {
+    if (!results || !sceneJob) return
+
+    const chunkDuration = sceneJob.config.chunk_duration || 0
+    const jsonData = generateSceneJSON(
+      results,
+      chunkDuration,
+      jobId,
+      sceneJob.video_id,
+      scene?.filename
+    )
+
+    downloadFile(jsonData, getDownloadFilename('json'), 'json')
+  }
+
+  const downloadAsCSV = () => {
+    if (!results || !sceneJob) return
+
+    const chunkDuration = sceneJob.config.chunk_duration || 0
+    const csvContent = generateSceneCSV(results, chunkDuration)
+
+    downloadFile(csvContent, getDownloadFilename('csv'), 'csv')
+  }
+
+
+
   // Check if this is a subtitle job
   const isSubtitleJob = results && results.length > 0 &&
     (results[0].result_data?.prompt_type === 'subtitling' ||
@@ -94,8 +110,7 @@ export default function SceneDetailPage({ params }: { params: Promise<{ id: stri
       .filter((text: string) => text)
       .join('\n\n')
 
-    const filename = scene?.filename ? scene.filename.replace(/\.[^/.]+$/, '.srt') : `subtitles-${jobId}.srt`
-    downloadFile(srtContent, filename, 'srt')
+    downloadFile(srtContent, getDownloadFilename('srt'), 'srt')
   }
 
   if (isLoading) {
@@ -205,6 +220,25 @@ export default function SceneDetailPage({ params }: { params: Promise<{ id: stri
                       <dd className="mt-1 text-sm capitalize">{sceneJob.status}</dd>
                     </div>
                     <div>
+                      <dt className="text-sm font-medium text-muted-foreground">Est. Cost</dt>
+                      <dd className={`mt-1 text-sm font-medium flex items-center gap-1 ${totalCost > 0 ? 'text-green-600' : 'text-muted-foreground'}`}>
+                        {totalCost > 0 ? (
+                          <>
+                            <Coins className="h-3.5 w-3.5" />
+                            ${totalCost.toFixed(4)}
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground font-normal">N/A (Historical)</span>
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm font-medium text-muted-foreground">Total Tokens</dt>
+                      <dd className="mt-1 text-sm">
+                        {totalTokens > 0 ? totalTokens.toLocaleString() : <span className="text-muted-foreground">N/A</span>}
+                      </dd>
+                    </div>
+                    <div>
                       <dt className="text-sm font-medium text-muted-foreground">Chunk Duration</dt>
                       <dd className="mt-1 text-sm">
                         {sceneJob.config.chunk_duration > 0
@@ -307,7 +341,7 @@ export default function SceneDetailPage({ params }: { params: Promise<{ id: stri
                         {results.length} chunk(s) analyzed
                         {isSubtitleJob && results.length > 0 && (
                           <span className="ml-2">
-                            • {results.reduce((sum: number, r: any) =>
+                            • {results.reduce((sum: number, r: any) => 
                               sum + (r.result_data?.subtitle_text?.length || 0), 0).toLocaleString()} characters
                           </span>
                         )}
@@ -349,10 +383,24 @@ export default function SceneDetailPage({ params }: { params: Promise<{ id: stri
                       return (
                         <AccordionItem key={result.result_id} value={`result-${idx}`}>
                           <AccordionTrigger>
-                            {result.result_type.replace('_', ' ')} - Chunk {idx}
-                            {isSubtitle && <span className="ml-2 text-xs text-muted-foreground">(Subtitles)</span>}
+                            <div className="flex gap-2 items-center">
+                              <span>{result.result_type.replace('_', ' ')} - Chunk {idx}</span>
+                              {result.result_data?.token_usage?.estimated_cost_usd !== undefined && (
+                                <span className="text-xs font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                                  ${result.result_data.token_usage.estimated_cost_usd.toFixed(4)}
+                                </span>
+                              )}
+                              {isSubtitle && <span className="text-xs text-muted-foreground">(Subtitles)</span>}
+                            </div>
                           </AccordionTrigger>
                           <AccordionContent>
+                            {result.result_data?.token_usage && (
+                              <div className="mb-4 text-xs text-muted-foreground flex gap-4 border-b pb-2">
+                                <div>Prompt Tokens: <span className="font-mono">{result.result_data.token_usage.prompt_tokens?.toLocaleString()}</span></div>
+                                <div>Output Tokens: <span className="font-mono">{result.result_data.token_usage.candidates_tokens?.toLocaleString()}</span></div>
+                                <div>Total: <span className="font-mono">{result.result_data.token_usage.total_tokens?.toLocaleString()}</span></div>
+                              </div>
+                            )}
                             {isSubtitle && subtitleText ? (
                               <div className="space-y-4">
                                 <div className="rounded bg-slate-100 p-4 dark:bg-slate-800">

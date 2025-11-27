@@ -1,7 +1,7 @@
 'use client'
 
 import { MediaJob, MediaJobStatus } from '@/lib/types'
-import { formatBytes } from '@/lib/utils'
+import { formatBytes, truncateFilename } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -100,8 +100,8 @@ export function JobCard({ job, videoFilename, onDelete }: JobCardProps) {
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex-1">
-            <CardTitle className="text-base line-clamp-1">
-              {videoFilename || 'Media Processing Job'}
+            <CardTitle className="text-base">
+              {videoFilename ? truncateFilename(videoFilename, 35) : 'Media Processing Job'}
             </CardTitle>
             {job.status === MediaJobStatus.COMPLETED && getTimeTaken() && (
               <div className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">

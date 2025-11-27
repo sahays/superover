@@ -6,8 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { CheckCircle, XCircle, Loader2, Eye, Trash2, FileText, Clock } from 'lucide-react'
+import { CheckCircle, XCircle, Loader2, Eye, Trash2, FileText, Clock, Coins } from 'lucide-react'
 import Link from 'next/link'
+import { truncateFilename } from '@/lib/utils'
 
 interface SceneJobCardProps {
   job: SceneJob
@@ -112,8 +113,14 @@ export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <CardTitle className="text-base">
-              {job.prompt_name || 'Scene Analysis Job'}
+              {truncateFilename(job.prompt_name || 'Scene Analysis Job', 40)}
             </CardTitle>
+            {videoFilename && (
+              <div className="mt-1 flex items-center gap-1.5 text-sm font-medium text-foreground/80">
+                <FileText className="h-3.5 w-3.5" />
+                <span>{truncateFilename(videoFilename, 35)}</span>
+              </div>
+            )}
             {job.status === SceneJobStatus.COMPLETED && getTimeTaken() && (
               <div className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
                 <Clock className="h-3.5 w-3.5" />

@@ -68,9 +68,73 @@ class SceneAnalyzer:
         # If we get here, all retries failed
         raise last_exception
 
+    def _calculate_cost(self, usage_metadata) -> Dict[str, Any]:
+        """
+        Calculate cost based on token usage and model pricing.
+        
+        Pricing (as of Nov 2025):
+        Gemini 3.0 Pro Preview:
+          Input: $2.00/1M (<=200k), $4.00/1M (>200k)
+          Output: $12.00/1M (<=200k), $18.00/1M (>200k)
+        
+        Gemini 2.5 Pro:
+          Input: $1.25/1M (<=128k), $2.50/1M (>128k)
+          Output: $5.00/1M (<=128k), $10.00/1M (>128k)
+
+        Gemini 2.0 Flash:
+          Input: $0.10/1M
+          Output: $0.40/1M
+        """
+        if not usage_metadata:
+            return {}
+
+        prompt_tokens = usage_metadata.prompt_token_count
+        candidates_tokens = usage_metadata.candidates_token_count
+        total_tokens = usage_metadata.total_token_count
+        
+        model_name = settings.gemini_model.lower()
+        cost = 0.0
+
+        if "gemini-3" in model_name: # Gemini 3.0 Pro Preview
+            # Input cost
+            if prompt_tokens <= 200000:
+                cost += (prompt_tokens / 1_000_000) * 2.00
+            else:
+                cost += (prompt_tokens / 1_000_000) * 4.00
+            
+            # Output cost
+            if prompt_tokens <= 200000:
+                cost += (candidates_tokens / 1_000_000) * 12.00
+            else:
+                cost += (candidates_tokens / 1_000_000) * 18.00
+                
+        elif "gemini-2.5" in model_name or "gemini-pro" in model_name: # Gemini 2.5 Pro
+            # Input cost
+            if prompt_tokens <= 128000:
+                cost += (prompt_tokens / 1_000_000) * 1.25
+            else:
+                cost += (prompt_tokens / 1_000_000) * 2.50
+            
+            # Output cost
+            if prompt_tokens <= 128000:
+                cost += (candidates_tokens / 1_000_000) * 5.00
+            else:
+                cost += (candidates_tokens / 1_000_000) * 10.00
+
+        elif "flash" in model_name: # Flash models (cheap)
+            cost += (prompt_tokens / 1_000_000) * 0.10
+            cost += (candidates_tokens / 1_000_000) * 0.40
+
+        return {
+            "prompt_tokens": prompt_tokens,
+            "candidates_tokens": candidates_tokens,
+            "total_tokens": total_tokens,
+            "estimated_cost_usd": round(cost, 6)
+        }
+
     def analyze_chunk(
         self,
-        video_path: Path,
+        media_path: Path,
         chunk_index: int,
         chunk_duration: float,
         prompt_text: str,
@@ -78,11 +142,11 @@ class SceneAnalyzer:
         context_text: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Analyze a video chunk with comprehensive scene analysis.
+        Analyze a media chunk (video or audio) with comprehensive analysis.
 
         Args:
-            video_path: Path to the video chunk file
-            chunk_index: Index of this chunk in the full video
+            media_path: Path to the media chunk file
+            chunk_index: Index of this chunk in the full file
             chunk_duration: Duration of the chunk in seconds
             prompt_text: The full prompt text to use for the analysis.
             prompt_type: Type of analysis (scene_analysis, subtitling, etc.)
@@ -92,19 +156,19 @@ class SceneAnalyzer:
             Comprehensive analysis results as a dictionary
         """
         try:
-            logger.info(f"Uploading chunk {chunk_index} to Gemini: {video_path.name}")
+            logger.info(f"Uploading chunk {chunk_index} to Gemini: {media_path.name}")
 
-            # Upload video file to Gemini
-            video_file = genai.upload_file(str(video_path))
+            # Upload media file to Gemini
+            media_file = genai.upload_file(str(media_path))
 
             # Wait for processing
             logger.info(f"Waiting for Gemini to process chunk {chunk_index}")
-            while video_file.state.name == "PROCESSING":
+            while media_file.state.name == "PROCESSING":
                 import time
                 time.sleep(2)
-                video_file = genai.get_file(video_file.name)
+                media_file = genai.get_file(media_file.name)
 
-            if video_file.state.name == "FAILED":
+            if media_file.state.name == "FAILED":
                 raise ValueError(f"Gemini processing failed for chunk {chunk_index}")
 
             logger.info(f"Analyzing chunk {chunk_index} with Gemini")
@@ -115,7 +179,7 @@ class SceneAnalyzer:
             max_tokens = settings.gemini_max_output_tokens
             logger.info(f"Using max_output_tokens={max_tokens} for model {settings.gemini_model}")
 
-            # Build content parts: prompt + context (if any) + video
+            # Build content parts: prompt + context (if any) + media
             content_parts = []
 
             # Add prompt text (with context appended if provided)
@@ -127,10 +191,10 @@ class SceneAnalyzer:
             else:
                 content_parts.append(prompt_text)
 
-            # Add video file
-            content_parts.append(video_file)
+            # Add media file
+            content_parts.append(media_file)
 
-            # Generate analysis with extended timeout for video processing
+            # Generate analysis with extended timeout for media processing
             # Use retry logic to handle transient failures
             response = self._retry_with_backoff(
                 self.model.generate_content,
@@ -139,7 +203,7 @@ class SceneAnalyzer:
                     temperature=0.1,  # Low temperature for more consistent/factual output
                     max_output_tokens=max_tokens,
                 ),
-                request_options={"timeout": 600}  # 10 minute timeout for video analysis
+                request_options={"timeout": 600}  # 10 minute timeout for analysis
             )
 
             # Check if response was blocked
@@ -164,12 +228,12 @@ class SceneAnalyzer:
                     ],
                     "chunk_index": chunk_index,
                     "chunk_duration": chunk_duration,
-                    "gemini_file_uri": video_file.uri
+                    "gemini_file_uri": media_file.uri
                 }
 
                 # Clean up uploaded file
                 try:
-                    genai.delete_file(video_file.name)
+                    genai.delete_file(media_file.name)
                     logger.info(f"Deleted uploaded file for chunk {chunk_index}")
                 except Exception as e:
                     logger.warning(f"Failed to delete file for chunk {chunk_index}: {e}")
@@ -210,14 +274,26 @@ class SceneAnalyzer:
 
                 logger.info(f"Successfully analyzed chunk {chunk_index}")
 
+            # Calculate cost and usage
+            if hasattr(response, "usage_metadata"):
+                usage_stats = self._calculate_cost(response.usage_metadata)
+                result["token_usage"] = usage_stats
+                logger.info(
+                    f"Chunk {chunk_index} usage: "
+                    f"Prompt={usage_stats.get('prompt_tokens', 0)}, "
+                    f"Output={usage_stats.get('candidates_tokens', 0)}, "
+                    f"Total={usage_stats.get('total_tokens', 0)} | "
+                    f"Cost=${usage_stats.get('estimated_cost_usd', 0):.6f}"
+                )
+
             # Add metadata
             result["chunk_index"] = chunk_index
             result["chunk_duration"] = chunk_duration
-            result["gemini_file_uri"] = video_file.uri
+            result["gemini_file_uri"] = media_file.uri
 
             # Clean up uploaded file
             try:
-                genai.delete_file(video_file.name)
+                genai.delete_file(media_file.name)
                 logger.info(f"Deleted uploaded file for chunk {chunk_index}")
             except Exception as e:
                 logger.warning(f"Failed to delete uploaded file: {e}")

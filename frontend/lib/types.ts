@@ -65,6 +65,12 @@ export const resultSchema = z.object({
   result_data: z.record(z.any()),
   gcs_path: z.string().optional(),
   created_at: z.string().optional(),
+  token_usage: z.object({
+    prompt_tokens: z.number(),
+    candidates_tokens: z.number(),
+    total_tokens: z.number(),
+    estimated_cost_usd: z.number(),
+  }).optional(),
 })
 
 // TypeScript Types

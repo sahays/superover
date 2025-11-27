@@ -28,3 +28,27 @@ export function formatDuration(seconds: number): string {
 
   return `${minutes}:${secs.toString().padStart(2, '0')}`
 }
+
+export function truncateFilename(filename: string, maxLength: number = 30): string {
+  if (!filename || filename.length <= maxLength) return filename
+
+  const parts = filename.split('.')
+  const ext = parts.length > 1 ? parts.pop() : ''
+  const name = parts.join('.')
+  
+  if (!ext) {
+    return name.substring(0, maxLength - 3) + '...'
+  }
+
+  const extLength = ext.length + 1 // +1 for dot
+  const availableNameLength = maxLength - extLength - 3 // -3 for ...
+
+  if (availableNameLength <= 0) {
+    return filename.substring(0, maxLength - 3) + '...'
+  }
+
+  const start = name.substring(0, Math.ceil(availableNameLength / 2))
+  const end = name.substring(name.length - Math.floor(availableNameLength / 2))
+
+  return `${start}...${end}.${ext}`
+}

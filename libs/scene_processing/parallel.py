@@ -69,7 +69,7 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
         # Analyze with Gemini (isolated SSL context per process)
         # Context text is already loaded and passed as string
         result = analyzer.analyze_chunk(
-            video_path=local_chunk_path,
+            media_path=local_chunk_path,
             chunk_index=chunk_index,
             chunk_duration=chunk_duration,
             prompt_text=prompt_text,

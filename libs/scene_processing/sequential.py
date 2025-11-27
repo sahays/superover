@@ -86,7 +86,7 @@ class SequentialSceneProcessor(SceneProcessor):
             try:
                 # Analyze with Gemini (context already loaded and passed as text)
                 result = self.analyzer.analyze_chunk(
-                    video_path=local_chunk_path,
+                    media_path=local_chunk_path,
                     chunk_index=chunk_index,
                     chunk_duration=chunk["duration"],
                     prompt_text=prompt_text,

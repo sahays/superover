@@ -1,5 +1,5 @@
 """Pydantic models for API requests and responses."""
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 from pydantic import BaseModel, Field, validator
 
@@ -83,7 +83,7 @@ class ManifestResponse(BaseModel):
     version: str
     original: Dict[str, Any]
     compressed: Optional[Dict[str, Any]] = None
-    chunks: Optional[Dict[str, Any]] = None
+    chunks: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None
     audio: Optional[Dict[str, Any]] = None
     processing: Optional[Dict[str, Any]] = None
 

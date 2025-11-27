@@ -17,6 +17,7 @@ workflows with custom prompt management and context file support.
 - **Custom Prompts**: Create and manage reusable analysis prompts with different types
 - **Context Support**: Upload additional context files (text, markdown, JSON) to enhance analysis accuracy
 - **Flexible Chunking**: Optional video/audio chunking for long files (or analyze entire files)
+- **Cost & Token Tracking**: detailed tracking of token usage and estimated costs per job and per chunk
 - **AI-Powered Analysis**: Leverage Google Gemini 2.5 Pro for intelligent scene understanding
 - **Multiple Analysis Types**: Scene detection, object identification, transcription, character identification, key
   moments, sentiment analysis, and more
@@ -92,7 +93,7 @@ Select Processed Media → Choose Prompt → Upload Context (Optional) → Confi
                                                                               ↓
                                                                       Worker Analyzes with Gemini
                                                                               ↓
-                                                                      View Results in Frontend
+                                                                      View Results & Cost in Frontend
 ```
 
 ## Local Development Setup
@@ -126,6 +127,10 @@ Select Processed Media → Choose Prompt → Upload Context (Optional) → Confi
 
    # Login and set project
    gcloud auth application-default login
+
+   gcloud auth application-default login \
+   --impersonate-service-account=secshare-service-account@search-and-reco.iam.gserviceaccount.com
+
    gcloud config set project YOUR_PROJECT_ID
    ```
 
