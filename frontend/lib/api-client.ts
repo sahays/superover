@@ -202,6 +202,43 @@ export const mediaApi = {
   },
 }
 
+// Image adaptation endpoints
+export const imageApi = {
+  createJob: async (data: {
+    video_id: string
+    prompt_id: string
+    config: {
+      aspect_ratios: string[]
+      resolution: string
+    }
+  }) => {
+    const response = await apiClient.post('/api/images/jobs', data)
+    return response.data
+  },
+
+  getJob: async (jobId: string) => {
+    const response = await apiClient.get(`/api/images/jobs/${jobId}`)
+    return response.data
+  },
+
+  listJobsForAsset: async (assetId: string) => {
+    const response = await apiClient.get(`/api/images/jobs/asset/${assetId}`)
+    return response.data
+  },
+
+  getResults: async (jobId: string) => {
+    const response = await apiClient.get(`/api/images/jobs/${jobId}/results`)
+    return response.data
+  },
+
+  getSignedUrl: async (gcsPath: string) => {
+    const response = await apiClient.post('/api/images/signed-url', null, {
+      params: { gcs_path: gcsPath }
+    })
+    return response.data
+  },
+}
+
 // Prompt management endpoints
 export const promptApi = {
   listPrompts: async () => {

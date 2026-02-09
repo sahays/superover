@@ -15,12 +15,19 @@ export enum SceneJobStatus {
   FAILED = 'failed',
 }
 
+export enum ImageJobStatus {
+  PENDING = 'pending',
+  PROCESSING = 'processing',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+}
+
 // Zod Schemas
 export const videoSchema = z.object({
   video_id: z.string(),
   filename: z.string(),
   gcs_path: z.string(),
-  source_type: z.enum(['video', 'audio']).optional().default('video'),
+  source_type: z.enum(['video', 'audio', 'image']).optional().default('video'),
   status: z.string(), // Allow any string for status
   content_type: z.string().optional(),
   size_bytes: z.number().optional(),
@@ -42,6 +49,37 @@ export const sceneJobSchema = z.object({
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
   error_message: z.string().optional(),
+})
+
+export const imageJobSchema = z.object({
+  job_id: z.string(),
+  video_id: z.string(),
+  status: z.nativeEnum(ImageJobStatus),
+  config: z.object({
+    aspect_ratios: z.array(z.string()),
+    resolution: z.string(),
+  }),
+  prompt_text: z.string(),
+  prompt_type: z.string(),
+  prompt_name: z.string().optional(),
+  usage: z.object({
+    input_tokens: z.number(),
+    output_tokens: z.number(),
+  }).optional(),
+  stop_reason: z.string().optional(),
+  results: z.array(z.any()).optional(),
+  created_at: z.string().optional(),
+  updated_at: z.string().optional(),
+  error_message: z.string().optional(),
+})
+
+export const imageResultSchema = z.object({
+  job_id: z.string(),
+  video_id: z.string(),
+  aspect_ratio: z.string(),
+  gcs_path: z.string(),
+  metadata: z.record(z.any()).optional(),
+  created_at: z.string().optional(),
 })
 
 export const manifestSchema = z.object({
@@ -80,6 +118,8 @@ export const resultSchema = z.object({
 // TypeScript Types
 export type Video = z.infer<typeof videoSchema>
 export type SceneJob = z.infer<typeof sceneJobSchema>
+export type ImageJob = z.infer<typeof imageJobSchema>
+export type ImageResult = z.infer<typeof imageResultSchema>
 export type Manifest = z.infer<typeof manifestSchema>
 export type Result = z.infer<typeof resultSchema>
 
@@ -87,8 +127,10 @@ export type Result = z.infer<typeof resultSchema>
 export const uploadFormSchema = z.object({
   file: z.instanceof(File).refine((file) => file.size <= 500 * 1024 * 1024, {
     message: 'File size must be less than 500MB',
-  }).refine((file) => file.type.startsWith('video/'), {
-    message: 'File must be a video',
+  }).refine((file) => {
+    return file.type.startsWith('video/') || file.type.startsWith('audio/') || file.type.startsWith('image/')
+  }, {
+    message: 'File must be video, audio, or image',
   }),
 })
 

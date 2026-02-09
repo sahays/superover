@@ -61,9 +61,31 @@ async def get_image_job(job_id: str):
 async def list_image_jobs_for_asset(asset_id: str):
     """List all image jobs for a specific asset."""
     db = get_db()
-    # Need to implement this in FirestoreDB or query here
-    query = db.image_jobs.where("video_id", "==", asset_id)
-    return [doc.to_dict() for doc in query.stream()]
+    return db.list_image_jobs_for_video(asset_id)
+
+@router.get("/results/{result_id}/download")
+async def get_image_download_url(result_id: str):
+    """Generate a signed URL for an image result."""
+    db = get_db()
+    from libs.storage import get_storage
+    storage = get_storage()
+    
+    # In this implementation, result_id is actually the document ID
+    # Since we don't have result_id in schemas yet, we'll fetch results for job
+    # For now, let's assume the frontend passes the GCS path directly or we fetch it
+    # Re-evaluating: It's safer to fetch the doc to get the gcs_path
+    
+    # We'll need a better way to get the specific doc if using .add()
+    # For this iteration, let's implement a simpler "Get signed URL from GCS path" helper
+    pass
+
+@router.post("/signed-url")
+async def get_signed_url(gcs_path: str):
+    """Generate a signed URL for any GCS path (Internal use)."""
+    from libs.storage import get_storage
+    storage = get_storage()
+    url = storage.generate_signed_download_url(gcs_path)
+    return {"url": url}
 
 @router.get("/jobs/{job_id}/results", response_model=List[Dict])
 async def get_image_results(job_id: str):

@@ -45,6 +45,10 @@ async def lifespan(app: FastAPI):
     # Ensure temp directory exists
     settings.get_temp_dir()
 
+    # Seed default prompts
+    from libs.database import get_db
+    get_db().seed_default_prompts()
+
     yield
 
     # Shutdown

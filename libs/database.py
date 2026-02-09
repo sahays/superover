@@ -64,6 +64,25 @@ class FirestoreDB:
         # Prompt management collection
         self.prompts = self.client.collection("prompts")
 
+    def seed_default_prompts(self):
+        """Seed default prompts if they don't exist."""
+        # Check if any image adaptation prompt exists
+        query = self.prompts.where("type", "==", "image_adaptation").limit(1)
+        if not list(query.stream()):
+            logger.info("Seeding default image adaptation prompt")
+            self.create_prompt(
+                name="Cinematic Vertical Adapt",
+                type="image_adaptation",
+                prompt_text="Generate a cinematic 9:16 vertical version of this image. Extend the background intelligently using outpainting. Maintain the focal point and lighting style.",
+                supports_context=False
+            )
+            self.create_prompt(
+                name="Social Media Square",
+                type="image_adaptation",
+                prompt_text="Generate a balanced 1:1 square version of this image suitable for Instagram. Ensure the main subject is centered.",
+                supports_context=False
+            )
+
     # === Video Operations ===
 
     def create_video(
@@ -635,6 +654,21 @@ class FirestoreDB:
         """Get all results for a specific image job."""
         query = self.image_results.where("job_id", "==", job_id)
         return [doc.to_dict() for doc in query.stream()]
+
+    def list_image_jobs_for_video(self, video_id: str) -> List[Dict[str, Any]]:
+        """List all image jobs for a specific video/image asset."""
+        query = self.image_jobs.where("video_id", "==", video_id).order_by("created_at", direction=firestore.Query.DESCENDING)
+        return [doc.to_dict() for doc in query.stream()]
+
+    def get_image_result(self, result_id: str) -> Optional[Dict[str, Any]]:
+        """Get a specific image result by document ID."""
+        # result_id here is the Firestore auto-gen ID
+        # Since we use .add(), we don't have a custom ID field inside the doc besides job_id/video_id
+        # We'll need to fetch by document reference or query
+        doc = self.image_results.document(result_id).get()
+        if doc.exists:
+            return doc.to_dict()
+        return None
 
     # === Prompt Management Operations ===
 

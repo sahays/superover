@@ -4,19 +4,21 @@ import { use } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { ArrowLeft, Download, Trash2, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import Link from 'next/link'
-import { mediaApi, videoApi } from '@/lib/api-client'
+import { mediaApi, videoApi, imageApi } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatBytes } from '@/lib/utils'
-import { MediaJobStatus } from '@/lib/types'
+import { MediaJobStatus, ImageJobStatus } from '@/lib/types'
 import { useRouter } from 'next/navigation'
+import { CreateAdapts } from '@/components/images/create-adapts'
+import { AdaptResults } from '@/components/images/adapt-results'
 
 export default function MediaJobDetailPage({ params }: { params: Promise<{ 'job-id': string }> }) {
   const { 'job-id': jobId } = use(params)
   const router = useRouter()
 
-  const { data: job, isLoading, refetch } = useQuery({
+  const { data: job, isLoading } = useQuery({
     queryKey: ['media-job', jobId],
     queryFn: () => mediaApi.getJob(jobId),
     refetchInterval: (query) => {
@@ -32,6 +34,12 @@ export default function MediaJobDetailPage({ params }: { params: Promise<{ 'job-
     queryKey: ['video', job?.video_id],
     queryFn: () => videoApi.getVideo(job!.video_id),
     enabled: !!job?.video_id,
+  })
+
+  const { data: imageJobs, refetch: refetchImageJobs } = useQuery({
+    queryKey: ['image-jobs', job?.video_id],
+    queryFn: () => imageApi.listJobsForAsset(job!.video_id),
+    enabled: !!job?.video_id && video?.source_type === 'image',
   })
 
   const deleteJobMutation = useMutation({
@@ -293,6 +301,31 @@ export default function MediaJobDetailPage({ params }: { params: Promise<{ 'job-
                 )}
               </CardContent>
             </Card>
+          )}
+
+          {/* Image Adaptation Section (Only for Images) */}
+          {video?.source_type === 'image' && job.status === MediaJobStatus.COMPLETED && (
+            <div className="space-y-6 pt-4">
+              <div className="border-t pt-6">
+                <h2 className="mb-4 text-2xl font-bold">Image Adaptation</h2>
+                <CreateAdapts 
+                  videoId={job.video_id} 
+                  onJobCreated={() => refetchImageJobs()} 
+                />
+              </div>
+
+              {imageJobs?.map((imgJob: any) => (
+                <div key={imgJob.job_id} className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-medium">Job: {imgJob.job_id.slice(0, 8)}</h3>
+                    <Badge variant={imgJob.status === 'completed' ? 'default' : 'outline'}>
+                      {imgJob.status}
+                    </Badge>
+                  </div>
+                  <AdaptResults jobId={imgJob.job_id} status={imgJob.status as ImageJobStatus} />
+                </div>
+              ))}
+            </div>
           )}
 
           {/* Actions */}
