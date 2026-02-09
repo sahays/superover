@@ -298,10 +298,14 @@ class AIWorker:
             job_results = self.db.get_results_for_job(job_id)
             total_tokens = 0
             total_cost = 0.0
+            last_stop_reason = "completed"
+
             for res in job_results:
                 usage = res.get("result_data", {}).get("token_usage", {})
                 total_tokens += usage.get("total_tokens", 0)
                 total_cost += usage.get("estimated_cost_usd", 0.0)
+                # Capture stop reason from chunks
+                last_stop_reason = res.get("result_data", {}).get("finish_reason", last_stop_reason)
 
             self.db.update_scene_job_status(
                 job_id,
@@ -314,7 +318,8 @@ class AIWorker:
                         "total_tokens": total_tokens,
                         "estimated_cost_usd": round(total_cost, 6)
                     }
-                }
+                },
+                stop_reason=last_stop_reason
             )
 
         finally:

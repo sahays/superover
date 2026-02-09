@@ -381,6 +381,7 @@ class FirestoreDB:
         job_id: str,
         status: SceneJobStatus,
         results: Optional[Dict[str, Any]] = None,
+        stop_reason: Optional[str] = None,
         error_message: Optional[str] = None
     ) -> None:
         """Update scene job status and optionally store results."""
@@ -391,6 +392,9 @@ class FirestoreDB:
 
         if results:
             update_data["results"] = results
+
+        if stop_reason:
+            update_data["stop_reason"] = stop_reason
 
         if error_message:
             update_data["error_message"] = error_message

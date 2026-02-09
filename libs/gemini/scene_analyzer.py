@@ -6,26 +6,37 @@ import logging
 import json
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions
+from pydantic import BaseModel, Field
 from config import settings
 
 logger = logging.getLogger(__name__)
 
+class SceneAnalysisResponse(BaseModel):
+    """Schema for scene analysis results."""
+    summary: str = Field(description="High-level summary of the scene")
+    objects: List[str] = Field(description="List of significant objects detected")
+    emotions: List[str] = Field(description="List of emotions detected in the scene")
+    transcription: Optional[str] = Field(None, description="Transcription of any spoken dialogue")
+    moderation_tags: List[str] = Field(description="Safety or moderation tags")
 
 class SceneAnalyzer:
     """Analyzes video scenes using Gemini with detailed prompts."""
 
     def __init__(self, max_retries: int = 3, base_delay: float = 2.0):
-        """Initialize Gemini API.
-
-        Args:
-            max_retries: Maximum number of retry attempts for API calls
-            base_delay: Base delay in seconds for exponential backoff
-        """
+        """Initialize Gemini API."""
         genai.configure(api_key=settings.gemini_api_key)
-        self.model = genai.GenerativeModel(settings.gemini_default_model)
+        
+        # Configure model with structured output schema
+        self.model = genai.GenerativeModel(
+            model_name=settings.gemini_default_model,
+            generation_config={
+                "response_mime_type": "application/json",
+                "response_schema": SceneAnalysisResponse,
+            }
+        )
         self.max_retries = max_retries
         self.base_delay = base_delay
 
@@ -204,84 +215,43 @@ class SceneAnalyzer:
             content_parts.append(media_file)
 
             # Generate analysis with extended timeout for media processing
-            # Use retry logic to handle transient failures
             response = self._retry_with_backoff(
                 self.model.generate_content,
                 content_parts,
                 generation_config=genai.GenerationConfig(
-                    temperature=0.1,  # Low temperature for more consistent/factual output
+                    temperature=0.1,
                     max_output_tokens=max_tokens,
+                    response_mime_type="application/json",
+                    response_schema=SceneAnalysisResponse
                 ),
-                request_options={"timeout": 600}  # 10 minute timeout for analysis
+                request_options={"timeout": 600}
             )
 
             # Check if response was blocked
             if not response.candidates or not response.candidates[0].content.parts:
-                # Response was blocked (safety, etc.)
-                finish_reason = response.candidates[0].finish_reason if response.candidates else None
-                safety_ratings = response.candidates[0].safety_ratings if response.candidates else None
-
+                finish_reason = response.candidates[0].finish_reason if response.candidates else "UNKNOWN"
                 logger.warning(f"Gemini response blocked for chunk {chunk_index}. Finish reason: {finish_reason}")
-                logger.warning(f"Safety ratings: {safety_ratings}")
-
-                # Return a fallback response indicating the block
-                result = {
-                    "summary": f"Analysis blocked by content filter (finish_reason: {finish_reason})",
+                
+                return {
+                    "summary": f"Analysis blocked (reason: {finish_reason})",
                     "blocked": True,
                     "finish_reason": str(finish_reason),
-                    "safety_ratings": [
-                        {
-                            "category": str(rating.category),
-                            "probability": str(rating.probability)
-                        } for rating in (safety_ratings or [])
-                    ],
                     "chunk_index": chunk_index,
-                    "chunk_duration": chunk_duration,
-                    "gemini_file_uri": media_file.uri
+                    "chunk_duration": chunk_duration
                 }
 
-                # Clean up uploaded file
-                try:
-                    genai.delete_file(media_file.name)
-                    logger.info(f"Deleted uploaded file for chunk {chunk_index}")
-                except Exception as e:
-                    logger.warning(f"Failed to delete file for chunk {chunk_index}: {e}")
-
-                return result
-
-            # Parse response based on prompt type
-            response_text = response.text.strip()
-
-            # Handle different output formats based on prompt_type
-            if prompt_type in ["subtitling", "transcription"]:
-                # For subtitling/transcription, response may be SRT or plain text
-                # Wrap in a JSON structure for consistent storage
-                result = {
-                    "subtitle_text": response_text,
-                    "format": "srt" if "\n\n" in response_text and "-->" in response_text else "text",
-                    "prompt_type": prompt_type
-                }
-                logger.info(f"Successfully analyzed chunk {chunk_index} as {prompt_type}")
-            else:
-                # For scene_analysis and other types, expect JSON
-                # Remove markdown code blocks if present
-                if response_text.startswith("```"):
-                    response_text = response_text.split("```json")[-1].split("```")[0].strip()
-                elif response_text.startswith("```"):
-                    response_text = response_text.split("```")[1].strip()
-
-                try:
-                    result = json.loads(response_text)
-                except json.JSONDecodeError as e:
-                    # If JSON parsing fails but response exists, wrap it
-                    logger.warning(f"Failed to parse as JSON for prompt_type={prompt_type}, wrapping raw response")
-                    result = {
-                        "raw_response": response_text,
-                        "parse_error": str(e),
-                        "prompt_type": prompt_type
-                    }
-
+            # Parse response
+            try:
+                result = json.loads(response.text)
+                result["finish_reason"] = str(response.candidates[0].finish_reason)
                 logger.info(f"Successfully analyzed chunk {chunk_index}")
+            except Exception as e:
+                logger.warning(f"Failed to parse structured output: {e}")
+                result = {
+                    "raw_response": response.text, 
+                    "parse_error": str(e),
+                    "finish_reason": str(response.candidates[0].finish_reason)
+                }
 
             # Calculate cost and usage
             if hasattr(response, "usage_metadata"):
