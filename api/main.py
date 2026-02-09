@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config import settings
-from api.routes import scenes, media, prompts
+from api.routes import scenes, media, prompts, images
 from api.models.schemas import HealthResponse
 
 # Configure logging
@@ -76,6 +76,7 @@ app.add_middleware(
 app.include_router(scenes.router, prefix="/api")
 app.include_router(media.router, prefix="/api")
 app.include_router(prompts.router, prefix="/api")
+app.include_router(images.router, prefix="/api")
 
 
 @app.get("/")

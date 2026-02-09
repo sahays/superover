@@ -54,24 +54,31 @@ class MediaProcessor:
 
     def detect_media_type(self, input_path: Path) -> str:
         """
-        Detect if file is video or audio using metadata.
+        Detect if file is video, audio, or image using metadata.
 
         Args:
             input_path: Path to media file
 
         Returns:
-            'video' or 'audio'
+            'video', 'audio', or 'image'
         """
         try:
             metadata = extract_metadata(input_path)
-            # If video stream exists, it's a video
+            # If video stream exists, check if it's a still image or actual video
             if metadata.get('video'):
+                # Some images are detected as having a single frame video stream
+                format_name = metadata.get('format', {}).get('format_name', '').lower()
+                if any(img_fmt in format_name for img_fmt in ['image2', 'png', 'jpeg', 'webp']):
+                    return 'image'
                 return 'video'
             # If only audio stream exists, it's audio
             elif metadata.get('audio'):
                 return 'audio'
             else:
-                # Fallback: assume video
+                # Fallback based on extension
+                ext = input_path.suffix.lower()
+                if ext in ['.jpg', '.jpeg', '.png', '.webp', '.tiff']:
+                    return 'image'
                 return 'video'
         except Exception as e:
             logger.warning(f"Could not detect media type: {e}, assuming video")
@@ -85,7 +92,7 @@ class MediaProcessor:
         progress_callback: Optional[Callable[[str, int], None]] = None
     ) -> MediaProcessingResult:
         """
-        Process media file (video or audio) with appropriate operations.
+        Process media file (video, audio, or image) with appropriate operations.
 
         Args:
             input_path: Path to input media file
@@ -103,8 +110,37 @@ class MediaProcessor:
         # Route to appropriate processor
         if media_type == 'audio':
             return self._process_audio(input_path, video_id, config, progress_callback)
+        elif media_type == 'image':
+            return self._process_image(input_path, video_id, config, progress_callback)
         else:
             return self._process_video(input_path, video_id, config, progress_callback)
+
+    def _process_image(
+        self,
+        input_path: Path,
+        video_id: str,
+        config: MediaProcessingConfig,
+        progress_callback: Optional[Callable[[str, int], None]] = None
+    ) -> MediaProcessingResult:
+        """
+        Process image file with metadata extraction and optional optimization.
+        """
+        result = MediaProcessingResult(metadata={})
+        try:
+            if progress_callback:
+                progress_callback("extracting_metadata", 20)
+            
+            result.metadata = extract_metadata(input_path)
+            result.original_size_bytes = input_path.stat().st_size
+            
+            if progress_callback:
+                progress_callback("completed", 100)
+            
+            return result
+        except Exception as e:
+            logger.error(f"Image processing failed: {e}")
+            result.error = str(e)
+            return result
 
     def _process_video(
         self,

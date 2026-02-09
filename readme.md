@@ -242,7 +242,7 @@ Select Processed Media → Choose Prompt → Upload Context (Optional) → Confi
 
    # Terminal 2: Scene Worker
    source venv/bin/activate
-   python workers/scene_worker.py
+   python workers/ai_worker.py
    ```
 
 ### Frontend Setup
@@ -396,7 +396,7 @@ super-over-alchemy/
 │       └── factory.py           # Processor factory
 ├── workers/                      # Background job processors
 │   ├── media_worker.py          # Media processing worker
-│   └── scene_worker.py          # Scene analysis worker
+│   └── ai_worker.py             # AI analysis worker (scene & images)
 ├── frontend/                     # Next.js 15 frontend
 │   ├── app/                     # App router pages
 │   │   ├── media/               # Media workflow

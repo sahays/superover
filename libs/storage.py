@@ -142,6 +142,34 @@ class GCSStorage:
         logger.info(f"Uploaded {local_path} to {gcs_path}")
         return gcs_path
 
+    def upload_bytes(
+        self,
+        data: bytes,
+        gcs_path: str,
+        content_type: Optional[str] = None
+    ) -> str:
+        """
+        Upload binary data directly to GCS.
+
+        Args:
+            data: Binary data to upload
+            gcs_path: Destination GCS path (gs://bucket/path/to/file)
+            content_type: Optional MIME type
+
+        Returns:
+            GCS path of uploaded file
+        """
+        bucket_name, blob_name = self._parse_gcs_path(gcs_path)
+        bucket = self.client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+
+        if content_type:
+            blob.content_type = content_type
+
+        blob.upload_from_string(data, content_type=content_type)
+        logger.info(f"Uploaded {len(data)} bytes to {gcs_path}")
+        return gcs_path
+
     def download_file(
         self,
         gcs_path: str,

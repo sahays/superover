@@ -25,7 +25,7 @@ class SceneAnalyzer:
             base_delay: Base delay in seconds for exponential backoff
         """
         genai.configure(api_key=settings.gemini_api_key)
-        self.model = genai.GenerativeModel(settings.gemini_model)
+        self.model = genai.GenerativeModel(settings.gemini_default_model)
         self.max_retries = max_retries
         self.base_delay = base_delay
 
@@ -92,7 +92,7 @@ class SceneAnalyzer:
         candidates_tokens = usage_metadata.candidates_token_count
         total_tokens = usage_metadata.total_token_count
         
-        model_name = settings.gemini_model.lower()
+        model_name = settings.gemini_default_model.lower()
         input_rate = 0.0
         output_rate = 0.0
 
@@ -185,8 +185,8 @@ class SceneAnalyzer:
             # Use max output tokens from config (model-specific)
             # Gemini 2.0 Flash: 8192 tokens
             # Gemini 2.5 Pro: 65536 tokens
-            max_tokens = settings.gemini_max_output_tokens
-            logger.info(f"Using max_output_tokens={max_tokens} for model {settings.gemini_model}")
+            max_tokens = settings.gemini_default_output_tokens
+            logger.info(f"Using max_output_tokens={max_tokens} for model {settings.gemini_default_model}")
 
             # Build content parts: prompt + context (if any) + media
             content_parts = []

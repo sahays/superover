@@ -23,8 +23,10 @@ class Settings(BaseSettings):
 
     # Gemini API
     gemini_api_key: str
-    gemini_model: str = "models/gemini-2.0-flash-exp"
-    gemini_max_output_tokens: int = 8192  # Default for Gemini 2.0 Flash (65536 for Gemini 2.5 Pro)
+    gemini_default_model: str = "models/gemini-3-pro-preview"
+    gemini_default_output_tokens: int = 65536
+    gemini_image_model: str = "models/gemini-3-pro-image-preview"
+    gemini_image_output_tokens: int = 32768
 
     # Firestore
     firestore_database: str = "(default)"
