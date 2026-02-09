@@ -123,24 +123,29 @@ class AIWorker:
             total_usage = {"input_tokens": 0, "output_tokens": 0}
             last_stop_reason = "completed"
 
-            # Process each requested aspect ratio
-            for ratio in target_ratios:
-                logger.info(f"[IMAGE] Generating {ratio} adapt for {job_id}")
-                
-                # Call Gemini Image-to-Image (Stubbed in libs/gemini/image_analyzer.py)
-                gen_result = self.image_analyzer.generate_adapt(
-                    image_bytes=image_bytes,
-                    target_ratio=ratio,
-                    target_resolution=resolution,
-                    prompt_text=prompt_text
-                )
+            # Process requested aspect ratios in parallel
+            logger.info(f"[IMAGE] Generating {len(target_ratios)} adapts in parallel for {job_id}")
+            
+            gen_results = self.image_analyzer.generate_multiple_adapts(
+                image_bytes=image_bytes,
+                target_ratios=target_ratios,
+                target_resolution=resolution,
+                prompt_text=prompt_text
+            )
+
+            for result in gen_results:
+                if "error" in result:
+                    logger.error(f"[IMAGE] Failed to generate {result.get('ratio')}: {result['error']}")
+                    continue
+
+                ratio = result["ratio"]
                 
                 # Save binary result to GCS
                 safe_ratio = ratio.replace(":", "_")
                 gcs_path = f"gs://{settings.results_bucket}/adapts/{job_id}/{safe_ratio}.jpg"
                 
                 self.storage.upload_bytes(
-                    gen_result["image_bytes"],
+                    result["image_bytes"],
                     gcs_path,
                     "image/jpeg"
                 )
@@ -153,15 +158,16 @@ class AIWorker:
                     gcs_path=gcs_path,
                     metadata={
                         "resolution": resolution,
-                        "usage": gen_result["usage"],
-                        "stop_reason": gen_result["stop_reason"]
+                        "usage": result.get("usage", {}),
+                        "stop_reason": result.get("stop_reason")
                     }
                 )
                 
                 # Aggregate usage
-                total_usage["input_tokens"] += gen_result["usage"].get("input_tokens", 0)
-                total_usage["output_tokens"] += gen_result["usage"].get("output_tokens", 0)
-                last_stop_reason = gen_result["stop_reason"]
+                usage = result.get("usage", {})
+                total_usage["input_tokens"] += usage.get("input_tokens", 0)
+                total_usage["output_tokens"] += usage.get("output_tokens", 0)
+                last_stop_reason = result.get("stop_reason", last_stop_reason)
 
             # Update job to completed
             self.db.update_image_job_status(
