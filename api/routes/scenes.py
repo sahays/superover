@@ -1,4 +1,5 @@
 """Scene management API routes."""
+
 import uuid
 import logging
 from typing import List
@@ -10,8 +11,6 @@ from api.models.schemas import (
     VideoResponse,
     ProcessVideoRequest,
     ProcessingJobResponse,
-    SceneAnalysisRequest,
-    SceneAnalysisJobResponse,
     SceneJobResponse,
     ManifestResponse,
     ResultResponse,
@@ -41,20 +40,16 @@ async def get_signed_upload_url(request: SignedUrlRequest):
         signed_url, gcs_path = storage.generate_signed_upload_url(
             filename=unique_filename,
             content_type=request.content_type,
-            bucket_type="uploads"
+            bucket_type="uploads",
         )
 
-        return SignedUrlResponse(
-            signed_url=signed_url,
-            gcs_path=gcs_path,
-            expires_in_minutes=15
-        )
+        return SignedUrlResponse(signed_url=signed_url, gcs_path=gcs_path, expires_in_minutes=15)
 
     except Exception as e:
         logger.error(f"Failed to generate signed URL: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate signed URL: {str(e)}"
+            detail=f"Failed to generate signed URL: {str(e)}",
         )
 
 
@@ -76,20 +71,16 @@ async def get_context_signed_upload_url(request: SignedUrlRequest):
         signed_url, gcs_path = storage.generate_signed_upload_url(
             filename=unique_filename,
             content_type=request.content_type,
-            bucket_type="processed"  # Store in processed bucket
+            bucket_type="processed",  # Store in processed bucket
         )
 
-        return SignedUrlResponse(
-            signed_url=signed_url,
-            gcs_path=gcs_path,
-            expires_in_minutes=15
-        )
+        return SignedUrlResponse(signed_url=signed_url, gcs_path=gcs_path, expires_in_minutes=15)
 
     except Exception as e:
         logger.error(f"Failed to generate context signed URL: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate context signed URL: {str(e)}"
+            detail=f"Failed to generate context signed URL: {str(e)}",
         )
 
 
@@ -112,7 +103,7 @@ async def create_video(request: CreateVideoRequest):
             gcs_path=request.gcs_path,
             content_type=request.content_type,
             size_bytes=request.size_bytes,
-            metadata=request.metadata
+            metadata=request.metadata,
         )
 
         return VideoResponse(**video_data)
@@ -121,56 +112,7 @@ async def create_video(request: CreateVideoRequest):
         logger.error(f"Failed to create video: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create video: {str(e)}"
-        )
-
-
-@router.get("/jobs", response_model=List[SceneJobResponse])
-async def list_scene_jobs(limit: int = 50, status_filter: SceneJobStatus = None):
-    """List all scene jobs."""
-    try:
-        db = get_db()
-
-        if status_filter:
-            query = db.scene_jobs.where("status", "==", status_filter.value)
-        else:
-            query = db.scene_jobs
-
-        query = query.order_by("created_at", direction="DESCENDING").limit(limit)
-        jobs = [doc.to_dict() for doc in query.stream()]
-
-        return [SceneJobResponse(**job) for job in jobs]
-
-    except Exception as e:
-        logger.error(f"Failed to list scene jobs: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list scene jobs: {str(e)}"
-        )
-
-
-@router.get("/jobs/{job_id}", response_model=SceneJobResponse)
-async def get_scene_job(job_id: str):
-    """Get scene job by ID."""
-    try:
-        db = get_db()
-        job = db.get_scene_job(job_id)
-
-        if not job:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Scene job not found: {job_id}"
-            )
-
-        return SceneJobResponse(**job)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get scene job: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get scene job: {str(e)}"
+            detail=f"Failed to create video: {str(e)}",
         )
 
 
@@ -185,7 +127,7 @@ async def get_results_for_job(job_id: str, result_type: str = None):
         if not job:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Scene job not found: {job_id}"
+                detail=f"Scene job not found: {job_id}",
             )
 
         results = db.get_results_for_job(job_id, result_type=result_type)
@@ -197,7 +139,7 @@ async def get_results_for_job(job_id: str, result_type: str = None):
                 result_type=r["result_type"],
                 result_data=r["result_data"],
                 gcs_path=r.get("gcs_path"),
-                created_at=r.get("created_at")
+                created_at=r.get("created_at"),
             )
             for i, r in enumerate(results)
         ]
@@ -208,7 +150,7 @@ async def get_results_for_job(job_id: str, result_type: str = None):
         logger.error(f"Failed to get results for job: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get results for job: {str(e)}"
+            detail=f"Failed to get results for job: {str(e)}",
         )
 
 
@@ -222,7 +164,7 @@ async def delete_scene_job_endpoint(job_id: str):
         if not job:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Scene job not found: {job_id}"
+                detail=f"Scene job not found: {job_id}",
             )
 
         video_id = job["video_id"]
@@ -245,7 +187,7 @@ async def delete_scene_job_endpoint(job_id: str):
         logger.error(f"Failed to delete scene job: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete scene job: {str(e)}"
+            detail=f"Failed to delete scene job: {str(e)}",
         )
 
 
@@ -259,7 +201,7 @@ async def get_video(video_id: str):
         if not video:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Video not found: {video_id}"
+                detail=f"Video not found: {video_id}",
             )
 
         return VideoResponse(**video)
@@ -270,15 +212,12 @@ async def get_video(video_id: str):
         logger.error(f"Failed to get video: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get video: {str(e)}"
+            detail=f"Failed to get video: {str(e)}",
         )
 
 
 @router.get("", response_model=List[VideoResponse])
-async def list_videos(
-    limit: int = 50,
-    status_filter: SceneJobStatus = None
-):
+async def list_videos(limit: int = 50, status_filter: SceneJobStatus = None):
     """
     List scene jobs with their associated video information.
     """
@@ -320,7 +259,7 @@ async def list_videos(
         logger.error(f"Failed to list videos: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list videos: {str(e)}"
+            detail=f"Failed to list videos: {str(e)}",
         )
 
 
@@ -334,7 +273,7 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
     try:
         db = get_db()
 
-        logger.info(f"=== process_video API called ===")
+        logger.info("=== process_video API called ===")
         logger.info(f"video_id: {video_id}")
         logger.info(f"request.chunk_duration: {request.chunk_duration} (type: {type(request.chunk_duration).__name__})")
         logger.info(f"request.chunk: {request.chunk}")
@@ -346,7 +285,7 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
         if not video:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Video not found: {video_id}"
+                detail=f"Video not found: {video_id}",
             )
 
         # Get the specified prompt (REQUIRED)
@@ -373,7 +312,7 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
 
         logger.info(f"Creating job with config: {config}")
 
-        job_data = db.create_scene_job(
+        db.create_scene_job(
             job_id=job_id,
             video_id=video_id,
             config=config,
@@ -386,7 +325,7 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
         return ProcessingJobResponse(
             video_id=video_id,
             status="pending",
-            message=f"Scene processing job created. Job ID: {job_id}"
+            message=f"Scene processing job created. Job ID: {job_id}",
         )
 
     except HTTPException:
@@ -395,7 +334,7 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
         logger.error(f"Failed to start processing: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to start processing: {str(e)}"
+            detail=f"Failed to start processing: {str(e)}",
         )
 
 
@@ -421,7 +360,7 @@ async def list_scene_jobs(limit: int = 50, status_filter: SceneJobStatus = None)
         logger.error(f"Failed to list scene jobs: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list scene jobs: {str(e)}"
+            detail=f"Failed to list scene jobs: {str(e)}",
         )
 
 
@@ -435,7 +374,7 @@ async def get_scene_job(job_id: str):
         if not job:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Scene job not found: {job_id}"
+                detail=f"Scene job not found: {job_id}",
             )
 
         return SceneJobResponse(**job)
@@ -446,10 +385,8 @@ async def get_scene_job(job_id: str):
         logger.error(f"Failed to get scene job: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get scene job: {str(e)}"
+            detail=f"Failed to get scene job: {str(e)}",
         )
-
-
 
 
 @router.get("/{video_id}/manifest", response_model=ManifestResponse)
@@ -462,7 +399,7 @@ async def get_manifest(video_id: str):
         if not manifest:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Manifest not found for video: {video_id}"
+                detail=f"Manifest not found for video: {video_id}",
             )
 
         # Ensure required fields exist with defaults
@@ -485,7 +422,7 @@ async def get_manifest(video_id: str):
         logger.error(f"Manifest data: {manifest if 'manifest' in locals() else 'not loaded'}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get manifest: {str(e)}"
+            detail=f"Failed to get manifest: {str(e)}",
         )
 
 
@@ -503,7 +440,7 @@ async def get_results(video_id: str, result_type: str = None):
                 result_type=r["result_type"],
                 result_data=r["result_data"],
                 gcs_path=r.get("gcs_path"),
-                created_at=r.get("created_at")
+                created_at=r.get("created_at"),
             )
             for i, r in enumerate(results)
         ]
@@ -512,7 +449,7 @@ async def get_results(video_id: str, result_type: str = None):
         logger.error(f"Failed to get results: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get results: {str(e)}"
+            detail=f"Failed to get results: {str(e)}",
         )
 
 
@@ -532,7 +469,7 @@ async def delete_scene(video_id: str):
         if not video:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Scene not found: {video_id}"
+                detail=f"Scene not found: {video_id}",
             )
 
         # Delete manifest and scene-processed files (NOT the original source video)
@@ -601,5 +538,5 @@ async def delete_scene(video_id: str):
         logger.error(f"Failed to delete scene: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete scene: {str(e)}"
+            detail=f"Failed to delete scene: {str(e)}",
         )

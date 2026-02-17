@@ -1,4 +1,5 @@
 """Prompt management API routes."""
+
 import logging
 from typing import List
 from fastapi import APIRouter, HTTPException, status
@@ -92,18 +93,20 @@ async def update_prompt(prompt_id: str, request: UpdatePromptRequest):
         db = get_db()
 
         # Validate at least one field is provided
-        if all([
-            request.name is None,
-            request.type is None,
-            request.prompt_text is None,
-            request.supports_context is None,
-            request.context_description is None,
-            request.required_context_types is None,
-            request.max_context_items is None
-        ]):
+        if all(
+            [
+                request.name is None,
+                request.type is None,
+                request.prompt_text is None,
+                request.supports_context is None,
+                request.context_description is None,
+                request.required_context_types is None,
+                request.max_context_items is None,
+            ]
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="At least one field must be provided for update"
+                detail="At least one field must be provided for update",
             )
 
         updated_prompt = db.update_prompt(
@@ -129,10 +132,7 @@ async def update_prompt(prompt_id: str, request: UpdatePromptRequest):
     except HTTPException:
         raise
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to update prompt {prompt_id}: {e}")
         raise HTTPException(
@@ -160,7 +160,7 @@ async def delete_prompt(prompt_id: str):
         if jobs_count > 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot delete prompt: {jobs_count} job(s) are using it"
+                detail=f"Cannot delete prompt: {jobs_count} job(s) are using it",
             )
 
         # Delete the prompt

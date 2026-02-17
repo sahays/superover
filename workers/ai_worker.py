@@ -2,6 +2,7 @@
 AI Processing Worker
 Polls Firestore for pending scene processing and image adaptation tasks and executes them.
 """
+
 import sys
 from pathlib import Path
 
@@ -12,7 +13,6 @@ sys.path.insert(0, str(project_root))
 import logging
 import time
 import traceback
-import uuid
 from config import settings
 from libs.database import get_db, SceneJobStatus, ImageJobStatus
 from libs.storage import get_storage
@@ -20,12 +20,8 @@ from libs.video_processing import chunk_video
 from libs.gemini import get_scene_analyzer
 from libs.gemini.image_analyzer import get_image_analyzer
 from libs.scene_processing import get_scene_processor
-from google.api_core import exceptions as google_exceptions
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -46,7 +42,7 @@ class AIWorker:
             db=self.db,
             storage=self.storage,
             analyzer=self.scene_analyzer,
-            temp_dir=self.temp_dir
+            temp_dir=self.temp_dir,
         )
 
     def start(self):
@@ -98,9 +94,9 @@ class AIWorker:
         job_id = job["job_id"]
         video_id = job["video_id"]
         config = job.get("config", {})
-        
+
         logger.info(f"[IMAGE] Processing job {job_id} for asset {video_id}")
-        
+
         try:
             self.db.update_image_job_status(job_id, ImageJobStatus.PROCESSING)
 
@@ -112,25 +108,25 @@ class AIWorker:
             # Download source image
             local_source_path = self.temp_dir / f"{video_id}_source_image"
             self.storage.download_file(asset["gcs_path"], local_source_path)
-            
+
             with open(local_source_path, "rb") as f:
                 image_bytes = f.read()
 
             target_ratios = config.get("aspect_ratios", [])
             resolution = config.get("resolution", "HD")
             prompt_text = job.get("prompt_text")
-            
+
             total_usage = {"input_tokens": 0, "output_tokens": 0}
             last_stop_reason = "completed"
 
             # Process requested aspect ratios in parallel
             logger.info(f"[IMAGE] Generating {len(target_ratios)} adapts in parallel for {job_id}")
-            
+
             gen_results = self.image_analyzer.generate_multiple_adapts(
                 image_bytes=image_bytes,
                 target_ratios=target_ratios,
                 target_resolution=resolution,
-                prompt_text=prompt_text
+                prompt_text=prompt_text,
             )
 
             for result in gen_results:
@@ -139,17 +135,13 @@ class AIWorker:
                     continue
 
                 ratio = result["ratio"]
-                
+
                 # Save binary result to GCS
                 safe_ratio = ratio.replace(":", "_")
                 gcs_path = f"gs://{settings.results_bucket}/adapts/{job_id}/{safe_ratio}.jpg"
-                
-                self.storage.upload_bytes(
-                    result["image_bytes"],
-                    gcs_path,
-                    "image/jpeg"
-                )
-                
+
+                self.storage.upload_bytes(result["image_bytes"], gcs_path, "image/jpeg")
+
                 # Save individual result record
                 self.db.save_image_result(
                     job_id=job_id,
@@ -159,10 +151,10 @@ class AIWorker:
                     metadata={
                         "resolution": resolution,
                         "usage": result.get("usage", {}),
-                        "stop_reason": result.get("stop_reason")
-                    }
+                        "stop_reason": result.get("stop_reason"),
+                    },
                 )
-                
+
                 # Aggregate usage
                 usage = result.get("usage", {})
                 total_usage["input_tokens"] += usage.get("input_tokens", 0)
@@ -174,20 +166,16 @@ class AIWorker:
                 job_id,
                 ImageJobStatus.COMPLETED,
                 usage=total_usage,
-                stop_reason=last_stop_reason
+                stop_reason=last_stop_reason,
             )
-            
+
             # Clean up
             if local_source_path.exists():
                 local_source_path.unlink()
 
         except Exception as e:
             logger.error(f"[IMAGE] Job {job_id} failed: {e}")
-            self.db.update_image_job_status(
-                job_id,
-                ImageJobStatus.FAILED,
-                error_message=str(e)
-            )
+            self.db.update_image_job_status(job_id, ImageJobStatus.FAILED, error_message=str(e))
 
     def _process_scene_job(self, job: dict):
         """Process a single scene job with top-level exception handler."""
@@ -210,11 +198,7 @@ class AIWorker:
             logger.error(traceback.format_exc())
 
             try:
-                self.db.update_scene_job_status(
-                    job_id,
-                    SceneJobStatus.FAILED,
-                    error_message=error_msg
-                )
+                self.db.update_scene_job_status(job_id, SceneJobStatus.FAILED, error_message=error_msg)
             except Exception as db_error:
                 logger.error(f"Failed to update job status to FAILED: {db_error}")
 
@@ -255,12 +239,12 @@ class AIWorker:
                 self.db.update_scene_job_status(job_id, SceneJobStatus.PROCESSING, results={"step": "chunking"})
                 chunks_dir = self.temp_dir / f"{video_id}_chunks"
                 expected_duration = video.get("metadata", {}).get("duration")
-                
+
                 chunks = chunk_video(
                     input_path=local_video_path,
                     output_dir=chunks_dir,
                     chunk_duration=chunk_duration,
-                    expected_duration=expected_duration
+                    expected_duration=expected_duration,
                 )
 
                 for chunk in chunks:
@@ -272,13 +256,15 @@ class AIWorker:
 
                 manifest_data["chunks"] = chunks
             else:
-                chunks = [{
-                    "index": 0,
-                    "filename": local_video_path.name,
-                    "gcs_path": video_path_to_process,
-                    "local_path": str(local_video_path),
-                    "duration": video.get("metadata", {}).get("duration", 0)
-                }]
+                chunks = [
+                    {
+                        "index": 0,
+                        "filename": local_video_path.name,
+                        "gcs_path": video_path_to_process,
+                        "local_path": str(local_video_path),
+                        "duration": video.get("metadata", {}).get("duration", 0),
+                    }
+                ]
                 manifest_data["chunks"] = chunks
 
             self.db.create_manifest(video_id, manifest_data)
@@ -291,7 +277,7 @@ class AIWorker:
                 video_id=video_id,
                 prompt_text=prompt_text,
                 prompt_type=prompt_type,
-                context_items=context_items
+                context_items=context_items,
             )
 
             # Finalize
@@ -316,10 +302,10 @@ class AIWorker:
                     "step": "completed",
                     "token_usage": {
                         "total_tokens": total_tokens,
-                        "estimated_cost_usd": round(total_cost, 6)
-                    }
+                        "estimated_cost_usd": round(total_cost, 6),
+                    },
                 },
-                stop_reason=last_stop_reason
+                stop_reason=last_stop_reason,
             )
 
         finally:
@@ -330,6 +316,10 @@ class AIWorker:
 
 def main():
     """Main entry point."""
+    from workers.health import start_health_server
+
+    start_health_server()
+
     worker = AIWorker()
     worker.start()
 

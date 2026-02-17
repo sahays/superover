@@ -2,6 +2,7 @@
 Super Over Alchemy - Main API Application
 FastAPI server for video analysis and scene recognition.
 """
+
 import sys
 from pathlib import Path
 
@@ -19,10 +20,7 @@ from api.routes import scenes, media, prompts, images
 from api.models.schemas import HealthResponse
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -47,6 +45,7 @@ async def lifespan(app: FastAPI):
 
     # Seed default prompts
     from libs.database import get_db
+
     get_db().seed_default_prompts()
 
     yield
@@ -60,7 +59,7 @@ app = FastAPI(
     title="Super Over Alchemy API",
     description="Scene analysis and recognition using Gemini AI",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # CORS middleware
@@ -90,18 +89,14 @@ async def root():
         "service": "Super Over Alchemy API",
         "version": "1.0.0",
         "status": "running",
-        "environment": settings.environment
+        "environment": settings.environment,
     }
 
 
 @app.get("/health", response_model=HealthResponse)
 async def health():
     """Health check endpoint."""
-    return HealthResponse(
-        status="healthy",
-        environment=settings.environment,
-        timestamp=datetime.utcnow()
-    )
+    return HealthResponse(status="healthy", environment=settings.environment, timestamp=datetime.utcnow())
 
 
 if __name__ == "__main__":
@@ -112,5 +107,5 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=settings.port,
         reload=settings.is_local(),
-        log_level="info"
+        log_level="info",
     )

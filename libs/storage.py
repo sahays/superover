@@ -2,13 +2,12 @@
 GCS Storage module for upload/download operations.
 Works both locally and on Cloud Run.
 """
+
 import datetime
 import logging
 from pathlib import Path
 from typing import Optional
 from google.cloud import storage
-from google.auth import compute_engine
-from google.auth.transport import requests as google_requests
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -29,7 +28,7 @@ class GCSStorage:
         filename: str,
         content_type: str,
         bucket_type: str = "uploads",
-        expiration_minutes: int = 15
+        expiration_minutes: int = 15,
     ) -> tuple[str, str]:
         """
         Generate a signed URL for direct browser uploads.
@@ -58,18 +57,16 @@ class GCSStorage:
             # If that fails, use the impersonated service account with IAM signBlob
             logger.info(f"Using IAM signBlob API for signing: {e}")
             from google.auth import default
-            from google.auth import impersonated_credentials
-            from google.auth.transport import requests as google_auth_requests
 
             # Get the default credentials
             source_credentials, project = default()
 
             # Check if we're using impersonated credentials
-            if hasattr(source_credentials, 'service_account_email'):
+            if hasattr(source_credentials, "service_account_email"):
                 service_account_email = source_credentials.service_account_email
             else:
                 # Extract from the credentials file (for impersonated service account)
-                service_account_email = 'secshare-service-account@search-and-reco.iam.gserviceaccount.com'
+                service_account_email = "secshare-service-account@search-and-reco.iam.gserviceaccount.com"
 
             logger.info(f"Using service account: {service_account_email}")
 
@@ -86,11 +83,7 @@ class GCSStorage:
         logger.info(f"Generated signed URL for: {gcs_path}")
         return url, gcs_path
 
-    def generate_signed_download_url(
-        self,
-        gcs_path: str,
-        expiration_minutes: int = 60
-    ) -> str:
+    def generate_signed_download_url(self, gcs_path: str, expiration_minutes: int = 60) -> str:
         """
         Generate a signed URL for downloading a file.
 
@@ -114,12 +107,7 @@ class GCSStorage:
         logger.info(f"Generated signed download URL for: {gcs_path}")
         return url
 
-    def upload_file(
-        self,
-        local_path: Path,
-        gcs_path: str,
-        content_type: Optional[str] = None
-    ) -> str:
+    def upload_file(self, local_path: Path, gcs_path: str, content_type: Optional[str] = None) -> str:
         """
         Upload a file from local storage to GCS.
 
@@ -142,12 +130,7 @@ class GCSStorage:
         logger.info(f"Uploaded {local_path} to {gcs_path}")
         return gcs_path
 
-    def upload_bytes(
-        self,
-        data: bytes,
-        gcs_path: str,
-        content_type: Optional[str] = None
-    ) -> str:
+    def upload_bytes(self, data: bytes, gcs_path: str, content_type: Optional[str] = None) -> str:
         """
         Upload binary data directly to GCS.
 
@@ -170,11 +153,7 @@ class GCSStorage:
         logger.info(f"Uploaded {len(data)} bytes to {gcs_path}")
         return gcs_path
 
-    def download_file(
-        self,
-        gcs_path: str,
-        local_path: Path
-    ) -> Path:
+    def download_file(self, gcs_path: str, local_path: Path) -> Path:
         """
         Download a file from GCS to local storage.
 

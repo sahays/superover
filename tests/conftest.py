@@ -1,9 +1,9 @@
 """Pytest configuration and fixtures."""
+
 import pytest
-import os
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock
 from google.cloud import firestore
 from google.cloud import storage
 
@@ -40,7 +40,7 @@ def sample_video_file(temp_dir):
     # Create a minimal valid MP4 file (just the header)
     with open(video_path, "wb") as f:
         # MP4 file signature
-        f.write(b'\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom')
+        f.write(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom")
     return video_path
 
 
@@ -56,12 +56,7 @@ def sample_video_metadata():
         "status": "uploaded",
         "created_at": "2025-01-01T00:00:00Z",
         "updated_at": "2025-01-01T00:00:00Z",
-        "metadata": {
-            "duration": 60.0,
-            "width": 1920,
-            "height": 1080,
-            "fps": 30.0
-        }
+        "metadata": {"duration": 60.0, "width": 1920, "height": 1080, "fps": 30.0},
     }
 
 
@@ -73,13 +68,9 @@ def sample_task():
         "video_id": "test-video-123",
         "task_type": "video_processing",
         "status": "pending",
-        "input_data": {
-            "compress": True,
-            "chunk": True,
-            "extract_audio": True
-        },
+        "input_data": {"compress": True, "chunk": True, "extract_audio": True},
         "created_at": "2025-01-01T00:00:00Z",
-        "updated_at": "2025-01-01T00:00:00Z"
+        "updated_at": "2025-01-01T00:00:00Z",
     }
 
 
@@ -95,7 +86,7 @@ def mock_gemini_response():
                 "timestamp_start": "00:00:05",
                 "timestamp_end": "00:00:15",
                 "confidence": 0.95,
-                "description": "Person walking"
+                "description": "Person walking",
             }
         ],
         "camera_movement": [
@@ -103,7 +94,7 @@ def mock_gemini_response():
                 "type": "static",
                 "timestamp_start": "00:00:00",
                 "timestamp_end": "00:00:30",
-                "description": "Static camera"
+                "description": "Static camera",
             }
         ],
         "characters": [],
@@ -111,19 +102,19 @@ def mock_gemini_response():
         "audio_description": {
             "background_music": "None",
             "sound_effects": [],
-            "ambient_sounds": "None"
+            "ambient_sounds": "None",
         },
         "moderation": {
             "violence": {"detected": False, "severity": "none"},
             "adult_content": {"detected": False, "severity": "none"},
             "profanity": {"detected": False},
-            "sensitive_content": {"detected": False}
+            "sensitive_content": {"detected": False},
         },
         "scene_changes": [],
         "visual_style": {
             "lighting": "natural",
             "color_palette": "neutral tones",
-            "composition": "centered"
+            "composition": "centered",
         },
-        "context_tags": ["test", "sample"]
+        "context_tags": ["test", "sample"],
     }

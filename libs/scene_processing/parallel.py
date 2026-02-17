@@ -3,6 +3,7 @@ Hybrid Parallel Scene Processor
 - Sequential: File downloads and chunking (safe, predictable)
 - Parallel: Gemini API calls only (isolated processes for speed and SSL safety)
 """
+
 import logging
 import multiprocessing
 from pathlib import Path
@@ -37,26 +38,25 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
 
     from libs.database import get_db
     from libs.gemini import get_scene_analyzer
-    from google.api_core import exceptions as google_exceptions
     import logging
 
     # Configure logging for this process
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - [Process-%(process)d] - %(name)s - %(levelname)s - %(message)s'
+        format="%(asctime)s - [Process-%(process)d] - %(name)s - %(levelname)s - %(message)s",
     )
     logger = logging.getLogger(__name__)
 
     # Extract data
-    chunk_index = chunk_data['chunk_index']
-    local_chunk_path = Path(chunk_data['local_chunk_path'])
-    chunk_duration = chunk_data['chunk_duration']
-    prompt_text = chunk_data['prompt_text']
-    prompt_type = chunk_data.get('prompt_type', 'scene_analysis')
-    context_text = chunk_data.get('context_text')  # Pre-loaded context text
-    job_id = chunk_data['job_id']
-    video_id = chunk_data['video_id']
-    total_chunks = chunk_data['total_chunks']
+    chunk_index = chunk_data["chunk_index"]
+    local_chunk_path = Path(chunk_data["local_chunk_path"])
+    chunk_duration = chunk_data["chunk_duration"]
+    prompt_text = chunk_data["prompt_text"]
+    prompt_type = chunk_data.get("prompt_type", "scene_analysis")
+    context_text = chunk_data.get("context_text")  # Pre-loaded context text
+    job_id = chunk_data["job_id"]
+    video_id = chunk_data["video_id"]
+    total_chunks = chunk_data["total_chunks"]
     process_id = multiprocessing.current_process().pid
 
     # Initialize clients in THIS process (isolated SSL context)
@@ -82,7 +82,7 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
             video_id=video_id,
             result_type="scene_analysis",
             result_data=result,
-            scene_job_id=job_id
+            scene_job_id=job_id,
         )
 
         logger.info(f"[Process-{process_id}] Saved analysis result {result_id} for chunk {chunk_index}")
@@ -91,7 +91,7 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
             "chunk_index": chunk_index,
             "result_id": result_id,
             "success": True,
-            "error": None
+            "error": None,
         }
 
     except google_exceptions.DeadlineExceeded as e:
@@ -106,7 +106,7 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
             "chunk_index": chunk_index,
             "result_id": None,
             "success": False,
-            "error": error_msg
+            "error": error_msg,
         }
 
     except google_exceptions.ServiceUnavailable as e:
@@ -120,7 +120,7 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
             "chunk_index": chunk_index,
             "result_id": None,
             "success": False,
-            "error": error_msg
+            "error": error_msg,
         }
 
     except Exception as e:
@@ -130,7 +130,7 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
             "chunk_index": chunk_index,
             "result_id": None,
             "success": False,
-            "error": error_msg
+            "error": error_msg,
         }
 
 
@@ -165,7 +165,7 @@ class ParallelSceneProcessor(SceneProcessor):
             "cpu_count": self.cpu_count,
             "max_workers": self.max_workers,
             "process_based": True,
-            "description": f"Hybrid: sequential I/O, parallel Gemini ({self.max_workers} processes)"
+            "description": f"Hybrid: sequential I/O, parallel Gemini ({self.max_workers} processes)",
         }
 
     def _update_progress(self, job_id: str, completed: int, total: int):
@@ -183,11 +183,8 @@ class ParallelSceneProcessor(SceneProcessor):
                 SceneJobStatus.PROCESSING,
                 results={
                     "step": "analyzing",
-                    "progress": {
-                        "completed_chunks": completed,
-                        "total_chunks": total
-                    }
-                }
+                    "progress": {"completed_chunks": completed, "total_chunks": total},
+                },
             )
         except Exception as e:
             logger.warning(f"Failed to update progress: {e}")
@@ -199,7 +196,7 @@ class ParallelSceneProcessor(SceneProcessor):
         video_id: str,
         prompt_text: str,
         prompt_type: str = "scene_analysis",
-        context_items: List[Dict[str, Any]] = None
+        context_items: List[Dict[str, Any]] = None,
     ) -> None:
         """
         Hybrid processing: Sequential I/O, Parallel Gemini API calls.
@@ -235,12 +232,12 @@ class ParallelSceneProcessor(SceneProcessor):
             # Use local_path if available (no-chunking case)
             if "local_path" in chunk:
                 local_chunk_path = Path(chunk["local_path"])
-                logger.info(f"[HYBRID] Chunk {i+1}/{total_chunks}: Using already-downloaded file")
+                logger.info(f"[HYBRID] Chunk {i + 1}/{total_chunks}: Using already-downloaded file")
             else:
                 # Download chunk from GCS
                 local_chunk_path = self.temp_dir / f"{video_id}_{chunk['filename']}"
                 self.storage.download_file(chunk["gcs_path"], local_chunk_path)
-                logger.info(f"[HYBRID] Chunk {i+1}/{total_chunks}: Downloaded from GCS")
+                logger.info(f"[HYBRID] Chunk {i + 1}/{total_chunks}: Downloaded from GCS")
 
             local_chunk_paths.append(local_chunk_path)
 
@@ -274,8 +271,7 @@ class ParallelSceneProcessor(SceneProcessor):
         with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
             # Submit all Gemini analysis tasks
             future_to_index = {
-                executor.submit(_analyze_chunk_worker, task): task["chunk_index"]
-                for task in gemini_tasks
+                executor.submit(_analyze_chunk_worker, task): task["chunk_index"] for task in gemini_tasks
             }
 
             # Process results as they complete
@@ -299,7 +295,7 @@ class ParallelSceneProcessor(SceneProcessor):
                         # Worker reported failure
                         error_info = {
                             "chunk_index": chunk_index,
-                            "error": result["error"]
+                            "error": result["error"],
                         }
                         errors.append(error_info)
                         logger.error(f"[HYBRID] Chunk {chunk_index} failed: {result['error']}")
@@ -308,7 +304,7 @@ class ParallelSceneProcessor(SceneProcessor):
                     # Process itself crashed
                     error_info = {
                         "chunk_index": chunk_index,
-                        "error": f"Process crash: {type(e).__name__}: {e}"
+                        "error": f"Process crash: {type(e).__name__}: {e}",
                     }
                     errors.append(error_info)
                     logger.error(f"[HYBRID] Process for chunk {chunk_index} crashed: {e}")

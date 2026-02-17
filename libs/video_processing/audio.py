@@ -1,4 +1,5 @@
 """Audio extraction using ffmpeg."""
+
 import logging
 import ffmpeg
 from pathlib import Path
@@ -11,7 +12,7 @@ def extract_audio(
     input_path: Path,
     output_path: Path,
     audio_format: str = "mp3",
-    audio_bitrate: str = "128k"
+    audio_bitrate: str = "128k",
 ) -> Optional[Path]:
     """
     Extract audio from video file.
@@ -30,7 +31,7 @@ def extract_audio(
 
         # Check if video has audio stream
         probe = ffmpeg.probe(str(input_path))
-        audio_streams = [s for s in probe.get('streams', []) if s.get('codec_type') == 'audio']
+        audio_streams = [s for s in probe.get("streams", []) if s.get("codec_type") == "audio"]
 
         if not audio_streams:
             logger.info(f"Video {input_path.name} has no audio stream, skipping audio extraction")
@@ -50,16 +51,13 @@ def extract_audio(
             str(output_path),
             acodec=codec,
             audio_bitrate=audio_bitrate,
-            vn=None  # No video
+            vn=None,  # No video
         )
 
         ffmpeg.run(stream, overwrite_output=True, quiet=True)
 
         output_size = output_path.stat().st_size
-        logger.info(
-            f"Extracted audio from {input_path.name}: "
-            f"{output_size / 1024 / 1024:.2f}MB ({audio_format})"
-        )
+        logger.info(f"Extracted audio from {input_path.name}: {output_size / 1024 / 1024:.2f}MB ({audio_format})")
 
         return output_path
 

@@ -3,6 +3,7 @@ Sequential Scene Processor
 Processes video chunks one at a time (current implementation).
 Exact copy of existing logic - ensures zero regression.
 """
+
 import logging
 from pathlib import Path
 from typing import List, Dict, Any
@@ -22,7 +23,7 @@ class SequentialSceneProcessor(SceneProcessor):
             "mode": "sequential",
             "cpu_count": 1,
             "thread_count": 1,
-            "description": "Sequential single-threaded processing"
+            "description": "Sequential single-threaded processing",
         }
 
     def process_chunks(
@@ -32,7 +33,7 @@ class SequentialSceneProcessor(SceneProcessor):
         video_id: str,
         prompt_text: str,
         prompt_type: str = "scene_analysis",
-        context_items: List[Dict[str, Any]] = None
+        context_items: List[Dict[str, Any]] = None,
     ) -> None:
         """
         Process video chunks sequentially.
@@ -69,9 +70,9 @@ class SequentialSceneProcessor(SceneProcessor):
                     "step": "analyzing",
                     "progress": {
                         "completed_chunks": chunk_index,
-                        "total_chunks": len(chunks)
-                    }
-                }
+                        "total_chunks": len(chunks),
+                    },
+                },
             )
 
             # Use local_path if available (no-chunking case), otherwise download from GCS
@@ -99,7 +100,7 @@ class SequentialSceneProcessor(SceneProcessor):
                     video_id=video_id,
                     result_type="scene_analysis",
                     result_data=result,
-                    scene_job_id=job_id
+                    scene_job_id=job_id,
                 )
                 logger.info(f"Saved analysis result {result_id} for chunk {chunk_index}")
 
@@ -111,9 +112,9 @@ class SequentialSceneProcessor(SceneProcessor):
                         "step": "analyzing",
                         "progress": {
                             "completed_chunks": chunk_index + 1,
-                            "total_chunks": len(chunks)
-                        }
-                    }
+                            "total_chunks": len(chunks),
+                        },
+                    },
                 )
 
             except google_exceptions.DeadlineExceeded as e:

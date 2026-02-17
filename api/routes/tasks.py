@@ -1,4 +1,5 @@
 """Task management API routes."""
+
 import logging
 from typing import List
 from fastapi import APIRouter, HTTPException, status
@@ -19,7 +20,7 @@ async def get_task(task_id: str):
         if not task:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Task not found: {task_id}"
+                detail=f"Task not found: {task_id}",
             )
 
         return TaskResponse(**task)
@@ -30,15 +31,12 @@ async def get_task(task_id: str):
         logger.error(f"Failed to get task: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get task: {str(e)}"
+            detail=f"Failed to get task: {str(e)}",
         )
 
 
 @router.get("/video/{video_id}", response_model=List[TaskResponse])
-async def list_tasks_for_video(
-    video_id: str,
-    status_filter: TaskStatus = None
-):
+async def list_tasks_for_video(video_id: str, status_filter: TaskStatus = None):
     """List all tasks for a specific video."""
     try:
         db = get_db()
@@ -49,7 +47,7 @@ async def list_tasks_for_video(
         logger.error(f"Failed to list tasks: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list tasks: {str(e)}"
+            detail=f"Failed to list tasks: {str(e)}",
         )
 
 
@@ -65,5 +63,5 @@ async def list_pending_tasks(limit: int = 10):
         logger.error(f"Failed to list pending tasks: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list pending tasks: {str(e)}"
+            detail=f"Failed to list pending tasks: {str(e)}",
         )

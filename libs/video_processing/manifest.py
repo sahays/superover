@@ -1,7 +1,7 @@
 """Manifest creation for processed video assets."""
+
 import logging
 from typing import Dict, Any, List, Optional
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ def create_manifest(
     compressed_path: Optional[str] = None,
     chunks: Optional[List[Dict[str, Any]]] = None,
     audio_path: Optional[str] = None,
-    processing_metadata: Optional[Dict[str, Any]] = None
+    processing_metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Create a processing manifest for a video.

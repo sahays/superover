@@ -1,4 +1,5 @@
 """Media processing API routes."""
+
 import uuid
 import logging
 from typing import List, Optional
@@ -7,8 +8,6 @@ from api.models.schemas import (
     CreateMediaJobRequest,
     MediaJobResponse,
     MediaPresetResponse,
-    MediaProcessingConfigRequest,
-    MediaJobResultsResponse,
 )
 from libs.database import get_db, MediaJobStatus
 
@@ -31,16 +30,12 @@ async def create_media_job(request: CreateMediaJobRequest):
         if not video:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Video not found: {request.video_id}"
+                detail=f"Video not found: {request.video_id}",
             )
 
         # Create job
         job_id = str(uuid.uuid4())
-        job_data = db.create_media_job(
-            job_id=job_id,
-            video_id=request.video_id,
-            config=request.config.model_dump()
-        )
+        job_data = db.create_media_job(job_id=job_id, video_id=request.video_id, config=request.config.model_dump())
 
         return MediaJobResponse(**job_data)
 
@@ -50,7 +45,7 @@ async def create_media_job(request: CreateMediaJobRequest):
         logger.error(f"Failed to create media job: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create media job: {str(e)}"
+            detail=f"Failed to create media job: {str(e)}",
         )
 
 
@@ -64,7 +59,7 @@ async def get_media_job(job_id: str):
         if not job:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Media job not found: {job_id}"
+                detail=f"Media job not found: {job_id}",
             )
 
         return MediaJobResponse(**job)
@@ -75,15 +70,12 @@ async def get_media_job(job_id: str):
         logger.error(f"Failed to get media job: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get media job: {str(e)}"
+            detail=f"Failed to get media job: {str(e)}",
         )
 
 
 @router.get("/jobs/video/{video_id}", response_model=List[MediaJobResponse])
-async def list_media_jobs_for_video(
-    video_id: str,
-    status_filter: Optional[MediaJobStatus] = None
-):
+async def list_media_jobs_for_video(video_id: str, status_filter: Optional[MediaJobStatus] = None):
     """List all media processing jobs for a video."""
     try:
         db = get_db()
@@ -93,7 +85,7 @@ async def list_media_jobs_for_video(
         if not video:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Video not found: {video_id}"
+                detail=f"Video not found: {video_id}",
             )
 
         jobs = db.list_media_jobs_for_video(video_id, status=status_filter)
@@ -105,7 +97,7 @@ async def list_media_jobs_for_video(
         logger.error(f"Failed to list media jobs: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list media jobs: {str(e)}"
+            detail=f"Failed to list media jobs: {str(e)}",
         )
 
 
@@ -123,14 +115,14 @@ async def delete_media_job(job_id: str):
         if not job:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Media job not found: {job_id}"
+                detail=f"Media job not found: {job_id}",
             )
 
         # Don't allow deleting jobs that are currently processing
         if job["status"] == MediaJobStatus.PROCESSING:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete job that is currently processing"
+                detail="Cannot delete job that is currently processing",
             )
 
         # Delete generated files from GCS (NOT the original video)
@@ -172,7 +164,7 @@ async def delete_media_job(job_id: str):
         logger.error(f"Failed to delete media job: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete media job: {str(e)}"
+            detail=f"Failed to delete media job: {str(e)}",
         )
 
 
@@ -193,7 +185,7 @@ async def list_all_videos(limit: int = 50):
         logger.error(f"Failed to list videos: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list videos: {str(e)}"
+            detail=f"Failed to list videos: {str(e)}",
         )
 
 
@@ -205,7 +197,7 @@ async def get_media_presets():
         audio_formats=["mp3", "aac", "wav"],
         audio_bitrates=["128k", "192k", "256k", "320k"],
         presets=["ultrafast", "fast", "medium", "slow", "veryslow"],
-        crf_range={"min": 0, "max": 51, "default": 23}
+        crf_range={"min": 0, "max": 51, "default": 23},
     )
 
 
@@ -228,21 +220,22 @@ async def get_all_videos_with_jobs():
 
             # Check if video has completed compressed versions
             has_compressed = any(
-                job.get("status") == MediaJobStatus.COMPLETED and
-                job.get("results", {}).get("compressed_video_path")
+                job.get("status") == MediaJobStatus.COMPLETED and job.get("results", {}).get("compressed_video_path")
                 for job in jobs
             )
 
-            videos_with_jobs.append({
-                "video_id": video_id,
-                "filename": video.get("filename"),
-                "gcs_path": video.get("gcs_path"),
-                "size_bytes": video.get("size_bytes"),
-                "metadata": video.get("metadata"),
-                "status": video.get("status"),  # Include the video's top-level status
-                "jobs": [MediaJobResponse(**job) for job in jobs],
-                "hasCompressed": has_compressed
-            })
+            videos_with_jobs.append(
+                {
+                    "video_id": video_id,
+                    "filename": video.get("filename"),
+                    "gcs_path": video.get("gcs_path"),
+                    "size_bytes": video.get("size_bytes"),
+                    "metadata": video.get("metadata"),
+                    "status": video.get("status"),  # Include the video's top-level status
+                    "jobs": [MediaJobResponse(**job) for job in jobs],
+                    "hasCompressed": has_compressed,
+                }
+            )
 
         return videos_with_jobs
 
@@ -250,5 +243,5 @@ async def get_all_videos_with_jobs():
         logger.error(f"Failed to get videos with jobs: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get videos with jobs: {str(e)}"
+            detail=f"Failed to get videos with jobs: {str(e)}",
         )

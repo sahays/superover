@@ -12,6 +12,9 @@ from functools import lru_cache
 class Settings(BaseSettings):
     """Application settings with environment variable support."""
 
+    # Service Naming
+    service_name: str = "super-over"
+
     # GCP Configuration
     gcp_project_id: str
     gcp_region: str = "asia-south1"
@@ -22,7 +25,7 @@ class Settings(BaseSettings):
     results_bucket: str
 
     # Gemini API
-    gemini_api_key: str
+    gemini_api_key: str = ""
     gemini_default_model: str = "models/gemini-3-pro-preview"
     gemini_default_output_tokens: int = 65536
     gemini_image_model: str = "models/gemini-3-pro-image-preview"

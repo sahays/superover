@@ -2,8 +2,8 @@
 Firestore database module.
 Works both locally and on Cloud Run.
 """
+
 import logging
-from datetime import datetime
 from typing import Optional, Dict, Any, List
 from enum import Enum
 from google.cloud import firestore
@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 class MediaJobStatus(str, Enum):
     """Media processing job status."""
+
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -22,6 +23,7 @@ class MediaJobStatus(str, Enum):
 
 class SceneJobStatus(str, Enum):
     """Scene analysis job status."""
+
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -30,6 +32,7 @@ class SceneJobStatus(str, Enum):
 
 class ImageJobStatus(str, Enum):
     """Image adaptation job status."""
+
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -41,28 +44,28 @@ class FirestoreDB:
 
     def __init__(self):
         """Initialize Firestore client."""
-        self.client = firestore.Client(
-            project=settings.gcp_project_id,
-            database=settings.firestore_database
-        )
+        self.client = firestore.Client(project=settings.gcp_project_id, database=settings.firestore_database)
+        # Collection prefix from service_name setting
+        prefix = f"{settings.service_name}_"
+
         # Core collections
-        self.videos = self.client.collection("videos")
+        self.videos = self.client.collection(f"{prefix}videos")
 
         # Scene workflow collections
-        self.scene_manifests = self.client.collection("scene_manifests")
-        self.scene_jobs = self.client.collection("scene_jobs")
-        self.scene_results = self.client.collection("scene_results")
-        self.scene_prompts = self.client.collection("scene_prompts")
+        self.scene_manifests = self.client.collection(f"{prefix}scene_manifests")
+        self.scene_jobs = self.client.collection(f"{prefix}scene_jobs")
+        self.scene_results = self.client.collection(f"{prefix}scene_results")
+        self.scene_prompts = self.client.collection(f"{prefix}scene_prompts")
 
         # Media workflow collections
-        self.media_jobs = self.client.collection("media_jobs")
+        self.media_jobs = self.client.collection(f"{prefix}media_jobs")
 
         # Image workflow collections
-        self.image_jobs = self.client.collection("image_jobs")
-        self.image_results = self.client.collection("image_results")
+        self.image_jobs = self.client.collection(f"{prefix}image_jobs")
+        self.image_results = self.client.collection(f"{prefix}image_results")
 
         # Prompt management collection
-        self.prompts = self.client.collection("prompts")
+        self.prompts = self.client.collection(f"{prefix}prompts")
 
     def seed_default_prompts(self):
         """Seed default prompts if they don't exist."""
@@ -73,14 +76,21 @@ class FirestoreDB:
             self.create_prompt(
                 name="Cinematic Vertical Adapt",
                 type="image_adaptation",
-                prompt_text="Generate a cinematic 9:16 vertical version of this image. Extend the background intelligently using outpainting. Maintain the focal point and lighting style.",
-                supports_context=False
+                prompt_text=(
+                    "Generate a cinematic 9:16 vertical version of this image. "
+                    "Extend the background intelligently using outpainting. "
+                    "Maintain the focal point and lighting style."
+                ),
+                supports_context=False,
             )
             self.create_prompt(
                 name="Social Media Square",
                 type="image_adaptation",
-                prompt_text="Generate a balanced 1:1 square version of this image suitable for Instagram. Ensure the main subject is centered.",
-                supports_context=False
+                prompt_text=(
+                    "Generate a balanced 1:1 square version of this image suitable for Instagram. "
+                    "Ensure the main subject is centered."
+                ),
+                supports_context=False,
             )
 
     # === Video Operations ===
@@ -92,7 +102,7 @@ class FirestoreDB:
         gcs_path: str,
         content_type: str,
         size_bytes: int,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Create a new video document.
@@ -109,7 +119,7 @@ class FirestoreDB:
             Created video document
         """
         # Auto-detect source_type from content_type
-        source_type = 'audio' if content_type.startswith('audio/') else 'video'
+        source_type = "audio" if content_type.startswith("audio/") else "video"
 
         video_data = {
             "video_id": video_id,
@@ -136,12 +146,7 @@ class FirestoreDB:
             return doc.to_dict()
         return None
 
-    def update_video_metadata(
-        self,
-        video_id: str,
-        metadata: Dict[str, Any],
-        merge: bool = True
-    ) -> None:
+    def update_video_metadata(self, video_id: str, metadata: Dict[str, Any], merge: bool = True) -> None:
         """
         Update video metadata.
 
@@ -171,11 +176,7 @@ class FirestoreDB:
         self.videos.document(video_id).update(update_data)
         logger.info(f"Updated metadata for video {video_id}")
 
-    def update_video_audio_info(
-        self,
-        video_id: str,
-        audio_info: Dict[str, Any]
-    ) -> None:
+    def update_video_audio_info(self, video_id: str, audio_info: Dict[str, Any]) -> None:
         """Update video audio information."""
         update_data = {
             "audio_info": audio_info,
@@ -184,21 +185,14 @@ class FirestoreDB:
         self.videos.document(video_id).update(update_data)
         logger.info(f"Updated audio info for video {video_id}")
 
-    def list_videos(
-        self,
-        limit: int = 50
-    ) -> List[Dict[str, Any]]:
+    def list_videos(self, limit: int = 50) -> List[Dict[str, Any]]:
         """List all videos."""
         query = self.videos.order_by("created_at", direction=firestore.Query.DESCENDING).limit(limit)
         return [doc.to_dict() for doc in query.stream()]
 
     # === Scene Manifest Operations ===
 
-    def create_manifest(
-        self,
-        video_id: str,
-        manifest_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def create_manifest(self, video_id: str, manifest_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create scene processing manifest for a video.
 
@@ -212,7 +206,7 @@ class FirestoreDB:
         manifest = {
             "video_id": video_id,
             "created_at": firestore.SERVER_TIMESTAMP,
-            **manifest_data
+            **manifest_data,
         }
 
         self.scene_manifests.document(video_id).set(manifest)
@@ -234,7 +228,7 @@ class FirestoreDB:
         result_type: str,
         result_data: Dict[str, Any],
         scene_job_id: Optional[str] = None,
-        gcs_path: Optional[str] = None
+        gcs_path: Optional[str] = None,
     ) -> str:
         """
         Save scene analysis result.
@@ -264,11 +258,7 @@ class FirestoreDB:
         logger.info(f"Saved scene result for video: {video_id}, type: {result_type}")
         return doc_ref[1].id
 
-    def get_results_for_video(
-        self,
-        video_id: str,
-        result_type: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    def get_results_for_video(self, video_id: str, result_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get all scene results for a video, optionally filtered by type."""
         query = self.scene_results.where("video_id", "==", video_id)
 
@@ -277,11 +267,7 @@ class FirestoreDB:
 
         return [doc.to_dict() for doc in query.stream()]
 
-    def get_results_for_job(
-        self,
-        scene_job_id: str,
-        result_type: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    def get_results_for_job(self, scene_job_id: str, result_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get all scene results for a specific job, optionally filtered by type."""
         query = self.scene_results.where("scene_job_id", "==", scene_job_id)
 
@@ -297,7 +283,7 @@ class FirestoreDB:
         video_id: str,
         chunk_index: int,
         prompt_text: str,
-        prompt_type: str = "scene_analysis"
+        prompt_type: str = "scene_analysis",
     ) -> str:
         """
         Save a prompt used for scene analysis.
@@ -382,7 +368,7 @@ class FirestoreDB:
         status: SceneJobStatus,
         results: Optional[Dict[str, Any]] = None,
         stop_reason: Optional[str] = None,
-        error_message: Optional[str] = None
+        error_message: Optional[str] = None,
     ) -> None:
         """Update scene job status and optionally store results."""
         update_data = {
@@ -402,12 +388,7 @@ class FirestoreDB:
         self.scene_jobs.document(job_id).update(update_data)
         logger.info(f"Updated scene job {job_id} status to {status}")
 
-
-    def list_scene_jobs_for_video(
-        self,
-        video_id: str,
-        status: Optional[SceneJobStatus] = None
-    ) -> List[Dict[str, Any]]:
+    def list_scene_jobs_for_video(self, video_id: str, status: Optional[SceneJobStatus] = None) -> List[Dict[str, Any]]:
         """List all scene jobs for a video."""
         query = self.scene_jobs.where("video_id", "==", video_id)
 
@@ -418,11 +399,7 @@ class FirestoreDB:
 
     def get_pending_scene_jobs(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get pending scene jobs for worker processing."""
-        query = (
-            self.scene_jobs
-            .where("status", "==", SceneJobStatus.PENDING)
-            .limit(limit)
-        )
+        query = self.scene_jobs.where("status", "==", SceneJobStatus.PENDING).limit(limit)
         jobs = [doc.to_dict() for doc in query.stream()]
         # Sort by created_at in memory to avoid needing a composite index
         return sorted(jobs, key=lambda x: x.get("created_at", 0))
@@ -434,12 +411,7 @@ class FirestoreDB:
 
     # === Media Job Operations ===
 
-    def create_media_job(
-        self,
-        job_id: str,
-        video_id: str,
-        config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def create_media_job(self, job_id: str, video_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create a media processing job.
 
@@ -477,7 +449,7 @@ class FirestoreDB:
         status: MediaJobStatus,
         results: Optional[Dict[str, Any]] = None,
         progress: Optional[Dict[str, Any]] = None,
-        error_message: Optional[str] = None
+        error_message: Optional[str] = None,
     ) -> None:
         """Update media job status and optionally store results."""
         update_data = {
@@ -497,11 +469,7 @@ class FirestoreDB:
         self.media_jobs.document(job_id).update(update_data)
         logger.info(f"Updated media job {job_id} status to {status}")
 
-    def list_media_jobs_for_video(
-        self,
-        video_id: str,
-        status: Optional[MediaJobStatus] = None
-    ) -> List[Dict[str, Any]]:
+    def list_media_jobs_for_video(self, video_id: str, status: Optional[MediaJobStatus] = None) -> List[Dict[str, Any]]:
         """List all media jobs for a video."""
         query = self.media_jobs.where("video_id", "==", video_id)
 
@@ -512,11 +480,7 @@ class FirestoreDB:
 
     def get_pending_media_jobs(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get pending media jobs for worker processing."""
-        query = (
-            self.media_jobs
-            .where("status", "==", MediaJobStatus.PENDING)
-            .limit(limit)
-        )
+        query = self.media_jobs.where("status", "==", MediaJobStatus.PENDING).limit(limit)
         jobs = [doc.to_dict() for doc in query.stream()]
         # Sort by created_at in memory to avoid needing a composite index
         return sorted(jobs, key=lambda x: x.get("created_at", 0))
@@ -564,7 +528,7 @@ class FirestoreDB:
             "created_at": firestore.SERVER_TIMESTAMP,
             "updated_at": firestore.SERVER_TIMESTAMP,
             "usage": {"input_tokens": 0, "output_tokens": 0},
-            "stop_reason": None
+            "stop_reason": None,
         }
 
         if prompt_name:
@@ -588,7 +552,7 @@ class FirestoreDB:
         results: Optional[Dict[str, Any]] = None,
         usage: Optional[Dict[str, Any]] = None,
         stop_reason: Optional[str] = None,
-        error_message: Optional[str] = None
+        error_message: Optional[str] = None,
     ) -> None:
         """Update image job status and metadata."""
         update_data = {
@@ -610,11 +574,7 @@ class FirestoreDB:
 
     def get_pending_image_jobs(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get pending image jobs for worker processing."""
-        query = (
-            self.image_jobs
-            .where("status", "==", ImageJobStatus.PENDING)
-            .limit(limit)
-        )
+        query = self.image_jobs.where("status", "==", ImageJobStatus.PENDING).limit(limit)
         jobs = [doc.to_dict() for doc in query.stream()]
         return sorted(jobs, key=lambda x: x.get("created_at", 0))
 
@@ -626,7 +586,7 @@ class FirestoreDB:
         video_id: str,
         aspect_ratio: str,
         gcs_path: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Save an individual image adaptation result.
@@ -661,7 +621,9 @@ class FirestoreDB:
 
     def list_image_jobs_for_video(self, video_id: str) -> List[Dict[str, Any]]:
         """List all image jobs for a specific video/image asset."""
-        query = self.image_jobs.where("video_id", "==", video_id).order_by("created_at", direction=firestore.Query.DESCENDING)
+        query = self.image_jobs.where("video_id", "==", video_id).order_by(
+            "created_at", direction=firestore.Query.DESCENDING
+        )
         return [doc.to_dict() for doc in query.stream()]
 
     def get_image_result(self, result_id: str) -> Optional[Dict[str, Any]]:
@@ -730,17 +692,17 @@ class FirestoreDB:
         if doc.exists:
             data = doc.to_dict()
             # Backward compatibility: default to 'custom' if type is missing
-            if 'type' not in data:
-                data['type'] = 'custom'
+            if "type" not in data:
+                data["type"] = "custom"
             # Backward compatibility: use prompt_name if name is missing (old schema)
-            if 'name' not in data and 'prompt_name' in data:
-                data['name'] = data['prompt_name']
+            if "name" not in data and "prompt_name" in data:
+                data["name"] = data["prompt_name"]
             # Backward compatibility: set a default name if still missing
-            if 'name' not in data:
-                data['name'] = f"Prompt {data.get('prompt_id', 'unknown')[:8]}"
+            if "name" not in data:
+                data["name"] = f"Prompt {data.get('prompt_id', 'unknown')[:8]}"
             # Backward compatibility: default supports_context to False for old prompts
-            if 'supports_context' not in data:
-                data['supports_context'] = False
+            if "supports_context" not in data:
+                data["supports_context"] = False
             return data
         return None
 
@@ -751,17 +713,17 @@ class FirestoreDB:
         for doc in query.stream():
             data = doc.to_dict()
             # Backward compatibility: default to 'custom' if type is missing
-            if 'type' not in data:
-                data['type'] = 'custom'
+            if "type" not in data:
+                data["type"] = "custom"
             # Backward compatibility: use prompt_name if name is missing (old schema)
-            if 'name' not in data and 'prompt_name' in data:
-                data['name'] = data['prompt_name']
+            if "name" not in data and "prompt_name" in data:
+                data["name"] = data["prompt_name"]
             # Backward compatibility: set a default name if still missing
-            if 'name' not in data:
-                data['name'] = f"Prompt {data.get('prompt_id', 'unknown')[:8]}"
+            if "name" not in data:
+                data["name"] = f"Prompt {data.get('prompt_id', 'unknown')[:8]}"
             # Backward compatibility: default supports_context to False for old prompts
-            if 'supports_context' not in data:
-                data['supports_context'] = False
+            if "supports_context" not in data:
+                data["supports_context"] = False
             prompts.append(data)
         return prompts
 
@@ -829,8 +791,6 @@ class FirestoreDB:
         """Count how many scene jobs are using this prompt."""
         query = self.scene_jobs.where("prompt_id", "==", prompt_id)
         return len(list(query.stream()))
-
-
 
 
 # Singleton instance

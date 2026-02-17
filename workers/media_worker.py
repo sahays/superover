@@ -2,6 +2,7 @@
 Media Processing Worker
 Polls Firestore for pending media processing jobs and executes them.
 """
+
 import sys
 from pathlib import Path
 
@@ -17,10 +18,7 @@ from libs.database import get_db, MediaJobStatus
 from libs.storage import get_storage
 from libs.media_processor import MediaProcessor, MediaProcessingConfig
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -73,11 +71,7 @@ class MediaWorker:
                 except Exception as e:
                     logger.error(f"Error processing job {job['job_id']}: {e}")
                     logger.error(traceback.format_exc())
-                    self.db.update_media_job_status(
-                        job["job_id"],
-                        MediaJobStatus.FAILED,
-                        error_message=str(e)
-                    )
+                    self.db.update_media_job_status(job["job_id"], MediaJobStatus.FAILED, error_message=str(e))
 
         except Exception as e:
             logger.error(f"Error polling jobs: {e}")
@@ -116,7 +110,7 @@ class MediaWorker:
                 audio_sample_rate=config_dict.get("audio_sample_rate", "22050"),
                 audio_channels=config_dict.get("audio_channels", 1),  # Mono for speech
                 crf=config_dict.get("crf", 23),
-                preset=config_dict.get("preset", "medium")
+                preset=config_dict.get("preset", "medium"),
             )
 
             # Progress callback
@@ -125,7 +119,7 @@ class MediaWorker:
                 self.db.update_media_job_status(
                     job_id,
                     MediaJobStatus.PROCESSING,
-                    progress={"step": step, "percent": progress}
+                    progress={"step": step, "percent": progress},
                 )
 
             # Process the video
@@ -133,7 +127,7 @@ class MediaWorker:
                 input_path=local_video_path,
                 video_id=video_id,
                 config=config,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
             )
 
             if result.error:
@@ -151,11 +145,7 @@ class MediaWorker:
             # Upload compressed video
             if result.compressed_video_path and result.compressed_video_path.exists():
                 compressed_gcs = f"gs://{settings.processed_bucket}/{video_id}/media_compressed.mp4"
-                self.storage.upload_file(
-                    result.compressed_video_path,
-                    compressed_gcs,
-                    "video/mp4"
-                )
+                self.storage.upload_file(result.compressed_video_path, compressed_gcs, "video/mp4")
                 results_data["compressed_video_path"] = compressed_gcs
                 processed_files.append(result.compressed_video_path)
                 logger.info(f"Uploaded compressed video to {compressed_gcs}")
@@ -167,24 +157,16 @@ class MediaWorker:
                 content_type = {
                     "mp3": "audio/mpeg",
                     "aac": "audio/aac",
-                    "wav": "audio/wav"
+                    "wav": "audio/wav",
                 }.get(audio_ext, "audio/mpeg")
 
-                self.storage.upload_file(
-                    result.audio_path,
-                    audio_gcs,
-                    content_type
-                )
+                self.storage.upload_file(result.audio_path, audio_gcs, content_type)
                 results_data["audio_path"] = audio_gcs
                 processed_files.append(result.audio_path)
                 logger.info(f"Uploaded audio to {audio_gcs}")
 
             # Update job status to completed
-            self.db.update_media_job_status(
-                job_id,
-                MediaJobStatus.COMPLETED,
-                results=results_data
-            )
+            self.db.update_media_job_status(job_id, MediaJobStatus.COMPLETED, results=results_data)
 
             logger.info(f"Successfully processed media job {job_id}")
 
@@ -198,6 +180,10 @@ class MediaWorker:
 
 def main():
     """Main entry point."""
+    from workers.health import start_health_server
+
+    start_health_server()
+
     worker = MediaWorker()
     worker.start()
 

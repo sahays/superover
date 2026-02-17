@@ -1,9 +1,9 @@
 """Media processor for extracting metadata, compressing video, and extracting audio."""
+
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, Callable
 from dataclasses import dataclass
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from libs.video_processing.metadata import extract_metadata
 from libs.video_processing.compressor import compress_video
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class MediaProcessingConfig:
     """Configuration for media processing."""
+
     compress: bool = True
     compress_resolution: str = "480p"
     extract_audio: bool = True
@@ -29,6 +30,7 @@ class MediaProcessingConfig:
 @dataclass
 class MediaProcessingResult:
     """Result of media processing."""
+
     metadata: Dict[str, Any]
     compressed_video_path: Optional[Path] = None
     audio_path: Optional[Path] = None
@@ -65,31 +67,31 @@ class MediaProcessor:
         try:
             metadata = extract_metadata(input_path)
             # If video stream exists, check if it's a still image or actual video
-            if metadata.get('video'):
+            if metadata.get("video"):
                 # Some images are detected as having a single frame video stream
-                format_name = metadata.get('format', {}).get('format_name', '').lower()
-                if any(img_fmt in format_name for img_fmt in ['image2', 'png', 'jpeg', 'webp']):
-                    return 'image'
-                return 'video'
+                format_name = metadata.get("format", {}).get("format_name", "").lower()
+                if any(img_fmt in format_name for img_fmt in ["image2", "png", "jpeg", "webp"]):
+                    return "image"
+                return "video"
             # If only audio stream exists, it's audio
-            elif metadata.get('audio'):
-                return 'audio'
+            elif metadata.get("audio"):
+                return "audio"
             else:
                 # Fallback based on extension
                 ext = input_path.suffix.lower()
-                if ext in ['.jpg', '.jpeg', '.png', '.webp', '.tiff']:
-                    return 'image'
-                return 'video'
+                if ext in [".jpg", ".jpeg", ".png", ".webp", ".tiff"]:
+                    return "image"
+                return "video"
         except Exception as e:
             logger.warning(f"Could not detect media type: {e}, assuming video")
-            return 'video'
+            return "video"
 
     def process(
         self,
         input_path: Path,
         video_id: str,
         config: MediaProcessingConfig,
-        progress_callback: Optional[Callable[[str, int], None]] = None
+        progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> MediaProcessingResult:
         """
         Process media file (video, audio, or image) with appropriate operations.
@@ -108,9 +110,9 @@ class MediaProcessor:
         logger.info(f"Detected media type: {media_type}")
 
         # Route to appropriate processor
-        if media_type == 'audio':
+        if media_type == "audio":
             return self._process_audio(input_path, video_id, config, progress_callback)
-        elif media_type == 'image':
+        elif media_type == "image":
             return self._process_image(input_path, video_id, config, progress_callback)
         else:
             return self._process_video(input_path, video_id, config, progress_callback)
@@ -120,7 +122,7 @@ class MediaProcessor:
         input_path: Path,
         video_id: str,
         config: MediaProcessingConfig,
-        progress_callback: Optional[Callable[[str, int], None]] = None
+        progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> MediaProcessingResult:
         """
         Process image file with metadata extraction and optional optimization.
@@ -129,13 +131,13 @@ class MediaProcessor:
         try:
             if progress_callback:
                 progress_callback("extracting_metadata", 20)
-            
+
             result.metadata = extract_metadata(input_path)
             result.original_size_bytes = input_path.stat().st_size
-            
+
             if progress_callback:
                 progress_callback("completed", 100)
-            
+
             return result
         except Exception as e:
             logger.error(f"Image processing failed: {e}")
@@ -147,7 +149,7 @@ class MediaProcessor:
         input_path: Path,
         video_id: str,
         config: MediaProcessingConfig,
-        progress_callback: Optional[Callable[[str, int], None]] = None
+        progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> MediaProcessingResult:
         """
         Process video file with metadata extraction, compression, and audio extraction.
@@ -190,17 +192,15 @@ class MediaProcessor:
 
                 compressed_path = self.temp_dir / f"{video_id}_compressed.mp4"
                 try:
-                    compress_result = self._compress_video_task(
-                        input_path,
-                        compressed_path,
-                        config
-                    )
+                    compress_result = self._compress_video_task(input_path, compressed_path, config)
                     if compress_result:
                         result.compressed_video_path = compress_result
                         result.compressed_size_bytes = compress_result.stat().st_size
                         result.compression_ratio = (
-                            1 - result.compressed_size_bytes / result.original_size_bytes
-                        ) * 100 if result.original_size_bytes > 0 else 0
+                            (1 - result.compressed_size_bytes / result.original_size_bytes) * 100
+                            if result.original_size_bytes > 0
+                            else 0
+                        )
 
                         logger.info(
                             f"Compression complete: "
@@ -217,18 +217,14 @@ class MediaProcessor:
 
             # Step 3: Audio extraction
             if config.extract_audio:
-                logger.info(f"[3/3] Starting audio extraction")
+                logger.info("[3/3] Starting audio extraction")
                 if progress_callback:
                     progress_callback("extracting_audio", 70)
 
                 audio_ext = config.audio_format
                 audio_path = self.temp_dir / f"{video_id}_audio.{audio_ext}"
                 try:
-                    audio_result = self._extract_audio_task(
-                        input_path,
-                        audio_path,
-                        config
-                    )
+                    audio_result = self._extract_audio_task(input_path, audio_path, config)
                     if audio_result:
                         result.audio_path = audio_result
                         result.audio_size_bytes = audio_result.stat().st_size
@@ -259,7 +255,7 @@ class MediaProcessor:
         input_path: Path,
         video_id: str,
         config: MediaProcessingConfig,
-        progress_callback: Optional[Callable[[str, int], None]] = None
+        progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> MediaProcessingResult:
         """
         Process audio file with metadata extraction and optional format conversion.
@@ -301,17 +297,15 @@ class MediaProcessor:
             audio_path = self.temp_dir / f"{video_id}_audio.{audio_ext}"
 
             try:
-                audio_result = self._extract_audio_task(
-                    input_path,
-                    audio_path,
-                    config
-                )
+                audio_result = self._extract_audio_task(input_path, audio_path, config)
                 if audio_result:
                     result.audio_path = audio_result
                     result.audio_size_bytes = audio_result.stat().st_size
                     result.compression_ratio = (
-                        1 - result.audio_size_bytes / result.original_size_bytes
-                    ) * 100 if result.original_size_bytes > 0 else 0
+                        (1 - result.audio_size_bytes / result.original_size_bytes) * 100
+                        if result.original_size_bytes > 0
+                        else 0
+                    )
 
                     logger.info(
                         f"Audio conversion complete: "
@@ -346,10 +340,7 @@ class MediaProcessor:
             return result
 
     def _compress_video_task(
-        self,
-        input_path: Path,
-        output_path: Path,
-        config: MediaProcessingConfig
+        self, input_path: Path, output_path: Path, config: MediaProcessingConfig
     ) -> Optional[Path]:
         """
         Compression task (runs in thread).
@@ -368,19 +359,14 @@ class MediaProcessor:
                 output_path=output_path,
                 resolution=config.compress_resolution,
                 crf=config.crf,
-                preset=config.preset
+                preset=config.preset,
             )
             return output_path
         except Exception as e:
             logger.error(f"Compression failed: {e}")
             return None
 
-    def _extract_audio_task(
-        self,
-        input_path: Path,
-        output_path: Path,
-        config: MediaProcessingConfig
-    ) -> Optional[Path]:
+    def _extract_audio_task(self, input_path: Path, output_path: Path, config: MediaProcessingConfig) -> Optional[Path]:
         """
         Audio extraction task (runs in thread).
 
@@ -397,7 +383,7 @@ class MediaProcessor:
                 input_path=input_path,
                 output_path=output_path,
                 audio_format=config.audio_format,
-                audio_bitrate=config.audio_bitrate
+                audio_bitrate=config.audio_bitrate,
             )
         except Exception as e:
             logger.error(f"Audio extraction failed: {e}")

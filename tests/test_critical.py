@@ -7,6 +7,7 @@ These tests focus on the actual bugs we encountered:
 3. Job-based architecture (jobs have unique URLs)
 4. No legacy VideoStatus usage
 """
+
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
@@ -28,7 +29,7 @@ def client():
 @pytest.fixture
 def mock_db():
     """Mock database."""
-    with patch('api.routes.scenes.get_db') as mock:
+    with patch("api.routes.scenes.get_db") as mock:
         db = MagicMock()
         mock.return_value = db
         yield db
@@ -56,7 +57,10 @@ class TestCriticalRouting:
         CRITICAL: /api/scenes/jobs/{job_id}/results must exist for job-specific results.
         This was added to fix multiple jobs showing same results.
         """
-        mock_db.get_scene_job.return_value = {"job_id": "job-123", "video_id": "video-123"}
+        mock_db.get_scene_job.return_value = {
+            "job_id": "job-123",
+            "video_id": "video-123",
+        }
         mock_db.get_results_for_job.return_value = []
 
         response = client.get("/api/scenes/jobs/job-123/results")
@@ -74,8 +78,20 @@ class TestJobBasedArchitecture:
         Multiple jobs for same video must be distinguishable.
         """
         jobs = [
-            {"job_id": "job-1", "video_id": "video-123", "status": "completed", "config": {"chunk_duration": 0}, "prompt_text": "Analyze..."},
-            {"job_id": "job-2", "video_id": "video-123", "status": "completed", "config": {"chunk_duration": 30}, "prompt_text": "Analyze..."},
+            {
+                "job_id": "job-1",
+                "video_id": "video-123",
+                "status": "completed",
+                "config": {"chunk_duration": 0},
+                "prompt_text": "Analyze...",
+            },
+            {
+                "job_id": "job-2",
+                "video_id": "video-123",
+                "status": "completed",
+                "config": {"chunk_duration": 30},
+                "prompt_text": "Analyze...",
+            },
         ]
 
         # Mock the query chain
@@ -83,7 +99,7 @@ class TestJobBasedArchitecture:
         mock_db.scene_jobs = mock_query
         mock_query.order_by.return_value.limit.return_value.stream.return_value = [
             MagicMock(to_dict=lambda j=jobs[0]: j),
-            MagicMock(to_dict=lambda j=jobs[1]: j)
+            MagicMock(to_dict=lambda j=jobs[1]: j),
         ]
 
         response = client.get("/api/scenes/jobs")
@@ -101,9 +117,17 @@ class TestJobBasedArchitecture:
         CRITICAL: Results must be filtered by scene_job_id, not just video_id.
         This was a real bug - all jobs for same video showed same results.
         """
-        mock_db.get_scene_job.return_value = {"job_id": "job-1", "video_id": "video-123"}
+        mock_db.get_scene_job.return_value = {
+            "job_id": "job-1",
+            "video_id": "video-123",
+        }
         job1_results = [
-            {"video_id": "video-123", "scene_job_id": "job-1", "result_type": "scene_analysis", "result_data": {"chunk": 0}}
+            {
+                "video_id": "video-123",
+                "scene_job_id": "job-1",
+                "result_type": "scene_analysis",
+                "result_data": {"chunk": 0},
+            }
         ]
         mock_db.get_results_for_job.return_value = job1_results
 
@@ -131,12 +155,15 @@ class TestNoLegacyCode:
             # Note: no "status" field!
         }
 
-        response = client.post("/api/scenes", json={
-            "filename": "test.mp4",
-            "gcs_path": "gs://bucket/test.mp4",
-            "content_type": "video/mp4",
-            "size_bytes": 1000000
-        })
+        response = client.post(
+            "/api/scenes",
+            json={
+                "filename": "test.mp4",
+                "gcs_path": "gs://bucket/test.mp4",
+                "content_type": "video/mp4",
+                "size_bytes": 1000000,
+            },
+        )
 
         assert response.status_code == 201
         # Video should not have status - that's in jobs
@@ -148,22 +175,23 @@ class TestNoLegacyCode:
         CRITICAL: Creating a scene job should NOT update video.status.
         Video status is legacy - only jobs have status.
         """
-        mock_db.get_video.return_value = {"video_id": "video-123", "filename": "test.mp4"}
+        mock_db.get_video.return_value = {
+            "video_id": "video-123",
+            "filename": "test.mp4",
+        }
         mock_db.get_prompt.return_value = {"prompt_text": "Analyze..."}
         mock_db.create_scene_job.return_value = {
             "job_id": "job-123",
             "video_id": "video-123",
             "status": "pending",
-            "config": {}
+            "config": {},
         }
 
-        response = client.post("/api/scenes/video-123/process", json={
-            "chunk_duration": 30
-        })
+        response = client.post("/api/scenes/video-123/process", json={"chunk_duration": 30})
 
         assert response.status_code == 200
         # Should NOT have called update_video_status (method removed)
-        assert not hasattr(mock_db, 'update_video_status') or not mock_db.update_video_status.called
+        assert not hasattr(mock_db, "update_video_status") or not mock_db.update_video_status.called
 
 
 class TestWorkflowSeparation:
@@ -179,13 +207,16 @@ class TestWorkflowSeparation:
         mock_db.create_scene_job.return_value = {
             "job_id": "job-123",
             "status": "pending",
-            "config": {"compressed_video_path": "gs://bucket/compressed.mp4"}
+            "config": {"compressed_video_path": "gs://bucket/compressed.mp4"},
         }
 
-        response = client.post("/api/scenes/video-123/process", json={
-            "compressed_video_path": "gs://bucket/compressed.mp4",
-            "chunk_duration": 30
-        })
+        response = client.post(
+            "/api/scenes/video-123/process",
+            json={
+                "compressed_video_path": "gs://bucket/compressed.mp4",
+                "chunk_duration": 30,
+            },
+        )
 
         assert response.status_code == 200
         # Verify compressed_video_path was passed to job config

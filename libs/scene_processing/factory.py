@@ -2,6 +2,7 @@
 Factory pattern for creating scene processors.
 Selects implementation based on configuration.
 """
+
 import logging
 from pathlib import Path
 from config import settings
@@ -33,29 +34,23 @@ def get_scene_processor(db, storage, analyzer, temp_dir: Path) -> SceneProcessor
             storage=storage,
             analyzer=analyzer,
             temp_dir=temp_dir,
-            max_workers=settings.max_gemini_workers
+            max_workers=settings.max_gemini_workers,
         )
-        logger.info(f"Scene processor initialized: PARALLEL mode")
+        logger.info("Scene processor initialized: PARALLEL mode")
     elif mode == "sequential":
-        processor = SequentialSceneProcessor(
-            db=db,
-            storage=storage,
-            analyzer=analyzer,
-            temp_dir=temp_dir
-        )
-        logger.info(f"Scene processor initialized: SEQUENTIAL mode")
+        processor = SequentialSceneProcessor(db=db, storage=storage, analyzer=analyzer, temp_dir=temp_dir)
+        logger.info("Scene processor initialized: SEQUENTIAL mode")
     else:
         # Default to parallel if invalid mode specified
         logger.warning(
-            f"Invalid scene_processing_mode '{mode}'. Defaulting to 'parallel'. "
-            f"Valid options: 'sequential', 'parallel'"
+            f"Invalid scene_processing_mode '{mode}'. Defaulting to 'parallel'. Valid options: 'sequential', 'parallel'"
         )
         processor = ParallelSceneProcessor(
             db=db,
             storage=storage,
             analyzer=analyzer,
             temp_dir=temp_dir,
-            max_workers=settings.max_gemini_workers
+            max_workers=settings.max_gemini_workers,
         )
 
     # Log processor info

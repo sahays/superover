@@ -2,6 +2,7 @@
 Gemini Scene Analyzer
 Provides detailed video analysis including objects, emotions, dialogues, moderation, etc.
 """
+
 import logging
 import json
 import time
@@ -14,28 +15,32 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class SceneAnalysisResponse(BaseModel):
     """Schema for scene analysis results."""
+
     summary: str = Field(description="High-level summary of the scene")
     objects: List[str] = Field(description="List of significant objects detected")
     emotions: List[str] = Field(description="List of emotions detected in the scene")
     transcription: Optional[str] = Field(None, description="Transcription of any spoken dialogue")
     moderation_tags: List[str] = Field(description="Safety or moderation tags")
 
+
 class SceneAnalyzer:
     """Analyzes video scenes using Gemini with detailed prompts."""
 
     def __init__(self, max_retries: int = 3, base_delay: float = 2.0):
         """Initialize Gemini API."""
-        genai.configure(api_key=settings.gemini_api_key)
-        
+        if settings.gemini_api_key:
+            genai.configure(api_key=settings.gemini_api_key)
+
         # Configure model with structured output schema
         self.model = genai.GenerativeModel(
             model_name=settings.gemini_default_model,
             generation_config={
                 "response_mime_type": "application/json",
                 "response_schema": SceneAnalysisResponse,
-            }
+            },
         )
         self.max_retries = max_retries
         self.base_delay = base_delay
@@ -59,11 +64,14 @@ class SceneAnalyzer:
         for attempt in range(self.max_retries):
             try:
                 return func(*args, **kwargs)
-            except (google_exceptions.DeadlineExceeded, google_exceptions.ServiceUnavailable) as e:
+            except (
+                google_exceptions.DeadlineExceeded,
+                google_exceptions.ServiceUnavailable,
+            ) as e:
                 last_exception = e
                 if attempt < self.max_retries - 1:
                     # Calculate delay with exponential backoff
-                    delay = self.base_delay * (2 ** attempt)
+                    delay = self.base_delay * (2**attempt)
                     logger.warning(
                         f"Attempt {attempt + 1}/{self.max_retries} failed with {type(e).__name__}: {e}. "
                         f"Retrying in {delay:.1f}s..."
@@ -82,12 +90,12 @@ class SceneAnalyzer:
     def _calculate_cost(self, usage_metadata) -> Dict[str, Any]:
         """
         Calculate cost based on token usage and model pricing.
-        
+
         Pricing (as of Nov 2025):
         Gemini 3.0 Pro Preview:
           Input: $2.00/1M (<=200k), $4.00/1M (>200k)
           Output: $12.00/1M (<=200k), $18.00/1M (>200k)
-        
+
         Gemini 2.5 Pro:
           Input: $1.25/1M (<=128k), $2.50/1M (>128k)
           Output: $5.00/1M (<=128k), $10.00/1M (>128k)
@@ -102,38 +110,38 @@ class SceneAnalyzer:
         prompt_tokens = usage_metadata.prompt_token_count
         candidates_tokens = usage_metadata.candidates_token_count
         total_tokens = usage_metadata.total_token_count
-        
+
         model_name = settings.gemini_default_model.lower()
         input_rate = 0.0
         output_rate = 0.0
 
-        if "gemini-3" in model_name: # Gemini 3.0 Pro Preview
+        if "gemini-3" in model_name:  # Gemini 3.0 Pro Preview
             # Input cost
             if prompt_tokens <= 200000:
                 input_rate = 2.00
             else:
                 input_rate = 4.00
-            
+
             # Output cost
             if prompt_tokens <= 200000:
                 output_rate = 12.00
             else:
                 output_rate = 18.00
-                
-        elif "gemini-2.5" in model_name or "gemini-pro" in model_name: # Gemini 2.5 Pro
+
+        elif "gemini-2.5" in model_name or "gemini-pro" in model_name:  # Gemini 2.5 Pro
             # Input cost
             if prompt_tokens <= 128000:
                 input_rate = 1.25
             else:
                 input_rate = 2.50
-            
+
             # Output cost
             if prompt_tokens <= 128000:
                 output_rate = 5.00
             else:
                 output_rate = 10.00
 
-        elif "flash" in model_name: # Flash models (cheap)
+        elif "flash" in model_name:  # Flash models (cheap)
             input_rate = 0.10
             output_rate = 0.40
 
@@ -149,7 +157,7 @@ class SceneAnalyzer:
             "applied_output_rate": output_rate,
             "input_cost_usd": round(input_cost, 6),
             "output_cost_usd": round(output_cost, 6),
-            "estimated_cost_usd": round(cost, 6)
+            "estimated_cost_usd": round(cost, 6),
         }
 
     def analyze_chunk(
@@ -185,6 +193,7 @@ class SceneAnalyzer:
             logger.info(f"Waiting for Gemini to process chunk {chunk_index}")
             while media_file.state.name == "PROCESSING":
                 import time
+
                 time.sleep(2)
                 media_file = genai.get_file(media_file.name)
 
@@ -222,22 +231,22 @@ class SceneAnalyzer:
                     temperature=0.1,
                     max_output_tokens=max_tokens,
                     response_mime_type="application/json",
-                    response_schema=SceneAnalysisResponse
+                    response_schema=SceneAnalysisResponse,
                 ),
-                request_options={"timeout": 600}
+                request_options={"timeout": 600},
             )
 
             # Check if response was blocked
             if not response.candidates or not response.candidates[0].content.parts:
                 finish_reason = response.candidates[0].finish_reason if response.candidates else "UNKNOWN"
                 logger.warning(f"Gemini response blocked for chunk {chunk_index}. Finish reason: {finish_reason}")
-                
+
                 return {
                     "summary": f"Analysis blocked (reason: {finish_reason})",
                     "blocked": True,
                     "finish_reason": str(finish_reason),
                     "chunk_index": chunk_index,
-                    "chunk_duration": chunk_duration
+                    "chunk_duration": chunk_duration,
                 }
 
             # Parse response
@@ -248,9 +257,9 @@ class SceneAnalyzer:
             except Exception as e:
                 logger.warning(f"Failed to parse structured output: {e}")
                 result = {
-                    "raw_response": response.text, 
+                    "raw_response": response.text,
                     "parse_error": str(e),
-                    "finish_reason": str(response.candidates[0].finish_reason)
+                    "finish_reason": str(response.candidates[0].finish_reason),
                 }
 
             # Calculate cost and usage
@@ -282,4 +291,3 @@ class SceneAnalyzer:
         except Exception as e:
             logger.error(f"Error analyzing chunk {chunk_index}: {e}")
             raise
-

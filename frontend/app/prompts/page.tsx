@@ -418,7 +418,7 @@ export default function PromptsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Prompt?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{deletingPrompt?.name}"?
+              Are you sure you want to delete &ldquo;{deletingPrompt?.name}&rdquo;?
               {deletingPrompt && deletingPrompt.jobs_count && deletingPrompt.jobs_count > 0 ? (
                 <span className="mt-2 block font-semibold text-red-600">
                   Warning: {deletingPrompt.jobs_count} job(s) are using this prompt. Deletion will be blocked.

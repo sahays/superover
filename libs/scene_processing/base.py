@@ -2,6 +2,7 @@
 Base abstract class for scene processors.
 Defines the interface that both sequential and parallel implementations must follow.
 """
+
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
 from pathlib import Path
@@ -54,18 +55,18 @@ class SceneProcessor(ABC):
                 try:
                     # Download context file from GCS
                     temp_dir = PathLib(tempfile.gettempdir())
-                    context_filename = item.get('filename', f"context_{item['context_id']}.txt")
+                    context_filename = item.get("filename", f"context_{item['context_id']}.txt")
                     local_context_path = temp_dir / f"context_{item['context_id']}_{context_filename}"
 
-                    self.storage.download_file(item['gcs_path'], local_context_path)
+                    self.storage.download_file(item["gcs_path"], local_context_path)
                     temp_files.append(local_context_path)
 
                     # Read text content
-                    with open(local_context_path, 'r', encoding='utf-8') as f:
+                    with open(local_context_path, "r", encoding="utf-8") as f:
                         file_content = f.read()
 
                     # Add context with label
-                    context_label = item.get('description') or f"Context file: {context_filename}"
+                    context_label = item.get("description") or f"Context file: {context_filename}"
                     context_parts.append(f"=== {context_label} ===\n{file_content}")
 
                     logger.info(f"Loaded context file: {context_filename} ({len(file_content)} chars)")
@@ -92,7 +93,7 @@ class SceneProcessor(ABC):
         video_id: str,
         prompt_text: str,
         prompt_type: str = "scene_analysis",
-        context_items: List[Dict[str, Any]] = None
+        context_items: List[Dict[str, Any]] = None,
     ) -> None:
         """
         Process video chunks with scene analysis.

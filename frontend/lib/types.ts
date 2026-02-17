@@ -123,15 +123,21 @@ export type ImageResult = z.infer<typeof imageResultSchema>
 export type Manifest = z.infer<typeof manifestSchema>
 export type Result = z.infer<typeof resultSchema>
 
-// Upload form schema
+// Upload form schema — z.instanceof(File) must be lazy to avoid
+// ReferenceError during SSR where the browser File API doesn't exist.
 export const uploadFormSchema = z.object({
-  file: z.instanceof(File).refine((file) => file.size <= 500 * 1024 * 1024, {
-    message: 'File size must be less than 500MB',
-  }).refine((file) => {
-    return file.type.startsWith('video/') || file.type.startsWith('audio/') || file.type.startsWith('image/')
-  }, {
-    message: 'File must be video, audio, or image',
-  }),
+  file: z.any()
+    .refine((file) => typeof File !== 'undefined' && file instanceof File, {
+      message: 'Please select a file',
+    })
+    .refine((file) => file?.size <= 500 * 1024 * 1024, {
+      message: 'File size must be less than 500MB',
+    })
+    .refine((file) => {
+      return file?.type?.startsWith('video/') || file?.type?.startsWith('audio/') || file?.type?.startsWith('image/')
+    }, {
+      message: 'File must be video, audio, or image',
+    }),
 })
 
 export type UploadFormData = z.infer<typeof uploadFormSchema>

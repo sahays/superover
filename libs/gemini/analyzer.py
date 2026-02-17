@@ -2,6 +2,7 @@
 Gemini API analyzer for video content.
 Supports scene analysis, object detection, transcription, and moderation.
 """
+
 import logging
 import json
 from typing import Dict, Any, List, Optional
@@ -17,14 +18,11 @@ class GeminiAnalyzer:
 
     def __init__(self):
         """Initialize Gemini API client."""
-        genai.configure(api_key=settings.gemini_api_key)
+        if settings.gemini_api_key:
+            genai.configure(api_key=settings.gemini_api_key)
         self.model = genai.GenerativeModel(settings.gemini_model)
 
-    def analyze_video_file(
-        self,
-        video_path: Path,
-        analysis_types: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+    def analyze_video_file(self, video_path: Path, analysis_types: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Analyze a video file using Gemini.
 
@@ -63,11 +61,7 @@ class GeminiAnalyzer:
 
         return results
 
-    def analyze_video_from_gcs(
-        self,
-        gcs_uri: str,
-        analysis_types: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+    def analyze_video_from_gcs(self, gcs_uri: str, analysis_types: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Analyze a video from GCS URI directly.
 

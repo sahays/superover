@@ -1,4 +1,5 @@
 """Gemini API integration."""
+
 from functools import lru_cache
 from .analyzer import GeminiAnalyzer
 from .scene_analyzer import SceneAnalyzer

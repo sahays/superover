@@ -1,4 +1,5 @@
 """Video chunking using ffmpeg."""
+
 import logging
 import ffmpeg
 from pathlib import Path
@@ -13,7 +14,7 @@ def chunk_video(
     output_dir: Path,
     chunk_duration: Optional[int] = None,
     prefix: str = "chunk",
-    expected_duration: Optional[float] = None
+    expected_duration: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
     """
     Split video or audio file into chunks of specified duration.
@@ -38,7 +39,7 @@ def chunk_video(
 
         # Get media duration and detect if it's audio or video
         probe = ffmpeg.probe(str(input_path))
-        probed_duration = float(probe['format']['duration'])
+        probed_duration = float(probe["format"]["duration"])
 
         # Use expected duration if provided, otherwise use probed duration
         duration = expected_duration if expected_duration is not None else probed_duration
@@ -51,20 +52,20 @@ def chunk_video(
             )
 
         # Detect if input is audio-only or video
-        has_video = any(stream['codec_type'] == 'video' for stream in probe['streams'])
+        has_video = any(stream["codec_type"] == "video" for stream in probe["streams"])
         input_extension = input_path.suffix.lower()
 
         # Determine output format
-        if has_video or input_extension in ['.mp4', '.mov', '.avi', '.mkv']:
-            output_extension = '.mp4'
-            codec_args = {'vcodec': 'copy', 'acodec': 'copy'}
+        if has_video or input_extension in [".mp4", ".mov", ".avi", ".mkv"]:
+            output_extension = ".mp4"
+            codec_args = {"vcodec": "copy", "acodec": "copy"}
         else:
             # Audio-only file - keep original format or use a common one
-            if input_extension in ['.mp3', '.m4a', '.aac', '.wav', '.ogg']:
+            if input_extension in [".mp3", ".m4a", ".aac", ".wav", ".ogg"]:
                 output_extension = input_extension
             else:
-                output_extension = '.aac'  # Default for unknown audio formats
-            codec_args = {'acodec': 'copy'}
+                output_extension = ".aac"  # Default for unknown audio formats
+            codec_args = {"acodec": "copy"}
 
         chunks = []
         start_time = 0
@@ -77,12 +78,7 @@ def chunk_video(
 
             # Extract chunk
             stream = ffmpeg.input(str(input_path), ss=start_time, t=chunk_duration)
-            stream = ffmpeg.output(
-                stream,
-                str(chunk_path),
-                avoid_negative_ts='make_zero',
-                **codec_args
-            )
+            stream = ffmpeg.output(stream, str(chunk_path), avoid_negative_ts="make_zero", **codec_args)
             ffmpeg.run(stream, overwrite_output=True, quiet=True)
 
             chunk_info = {
@@ -92,7 +88,7 @@ def chunk_video(
                 "start_time": start_time,
                 "end_time": end_time,
                 "duration": end_time - start_time,
-                "size_bytes": chunk_path.stat().st_size
+                "size_bytes": chunk_path.stat().st_size,
             }
             chunks.append(chunk_info)
 

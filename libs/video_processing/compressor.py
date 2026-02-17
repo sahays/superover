@@ -1,4 +1,5 @@
 """Video compression using ffmpeg."""
+
 import logging
 import ffmpeg
 from pathlib import Path
@@ -13,7 +14,7 @@ def compress_video(
     output_path: Path,
     resolution: Optional[str] = None,
     crf: int = 23,
-    preset: str = "medium"
+    preset: str = "medium",
 ) -> Path:
     """
     Compress video using H.264 codec.
@@ -49,17 +50,17 @@ def compress_video(
         stream = ffmpeg.input(str(input_path))
 
         # Scale video maintaining aspect ratio
-        stream = ffmpeg.filter(stream, 'scale', -2, target_height)
+        stream = ffmpeg.filter(stream, "scale", -2, target_height)
 
         # Output with H.264 codec
         stream = ffmpeg.output(
             stream,
             str(output_path),
-            vcodec='libx264',
+            vcodec="libx264",
             crf=crf,
             preset=preset,
-            acodec='aac',
-            audio_bitrate='128k'
+            acodec="aac",
+            audio_bitrate="128k",
         )
 
         # Run ffmpeg

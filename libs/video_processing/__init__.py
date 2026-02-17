@@ -1,4 +1,5 @@
 """Video processing modules."""
+
 from .metadata import extract_metadata
 from .compressor import compress_video
 from .chunker import chunk_video
