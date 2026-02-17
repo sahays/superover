@@ -191,6 +191,58 @@ async def delete_scene_job_endpoint(job_id: str):
         )
 
 
+# IMPORTANT: Static path routes (/jobs, /jobs/{job_id}) MUST come before
+# parameterized routes (/{video_id}) — otherwise FastAPI matches "jobs" as a video_id.
+
+@router.get("/jobs", response_model=List[SceneJobResponse])
+async def list_scene_jobs(limit: int = 50, status_filter: SceneJobStatus = None):
+    """List all scene jobs."""
+    try:
+        db = get_db()
+
+        if status_filter:
+            query = db.scene_jobs.where("status", "==", status_filter.value)
+        else:
+            query = db.scene_jobs
+
+        query = query.order_by("created_at", direction="DESCENDING").limit(limit)
+        jobs = [doc.to_dict() for doc in query.stream()]
+
+        return [SceneJobResponse(**job) for job in jobs]
+
+    except Exception as e:
+        logger.error(f"Failed to list scene jobs: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list scene jobs: {str(e)}",
+        )
+
+
+@router.get("/jobs/{job_id}", response_model=SceneJobResponse)
+async def get_scene_job(job_id: str):
+    """Get scene job by ID."""
+    try:
+        db = get_db()
+        job = db.get_scene_job(job_id)
+
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Scene job not found: {job_id}",
+            )
+
+        return SceneJobResponse(**job)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get scene job: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get scene job: {str(e)}",
+        )
+
+
 @router.get("/{video_id}", response_model=VideoResponse)
 async def get_video(video_id: str):
     """Get video information by ID."""
@@ -335,57 +387,6 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to start processing: {str(e)}",
-        )
-
-
-@router.get("/jobs", response_model=List[SceneJobResponse])
-async def list_scene_jobs(limit: int = 50, status_filter: SceneJobStatus = None):
-    """List all scene jobs."""
-    try:
-        db = get_db()
-
-        if status_filter:
-            jobs = [j for j in db.list_scene_jobs_for_video("", status=status_filter) if True]
-            # Need to query all jobs - let's use a different approach
-            query = db.scene_jobs.where("status", "==", status_filter.value)
-        else:
-            query = db.scene_jobs
-
-        query = query.order_by("created_at", direction="DESCENDING").limit(limit)
-        jobs = [doc.to_dict() for doc in query.stream()]
-
-        return [SceneJobResponse(**job) for job in jobs]
-
-    except Exception as e:
-        logger.error(f"Failed to list scene jobs: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list scene jobs: {str(e)}",
-        )
-
-
-@router.get("/jobs/{job_id}", response_model=SceneJobResponse)
-async def get_scene_job(job_id: str):
-    """Get scene job by ID."""
-    try:
-        db = get_db()
-        job = db.get_scene_job(job_id)
-
-        if not job:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Scene job not found: {job_id}",
-            )
-
-        return SceneJobResponse(**job)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get scene job: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get scene job: {str(e)}",
         )
 
 

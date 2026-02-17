@@ -8,7 +8,7 @@ python-multipart==0.0.20
 # GCP Libraries
 google-cloud-storage==2.19.0
 google-cloud-firestore==2.20.0
-google-generativeai==0.8.3
+google-genai>=1.47.0
 
 # Video Processing
 ffmpeg-python==0.2.0

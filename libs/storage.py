@@ -7,6 +7,9 @@ import datetime
 import logging
 from pathlib import Path
 from typing import Optional
+
+import google.auth
+from google.auth.transport import requests as auth_requests
 from google.cloud import storage
 from config import settings
 
@@ -22,6 +25,23 @@ class GCSStorage:
         self.uploads_bucket = self.client.bucket(settings.uploads_bucket)
         self.processed_bucket = self.client.bucket(settings.processed_bucket)
         self.results_bucket = self.client.bucket(settings.results_bucket)
+        # For signed URLs on Cloud Run (Compute Engine credentials have no
+        # private key — we use IAM signBlob via service_account_email + access_token).
+        self.credentials, _ = google.auth.default()
+
+    def _sign(self, blob, expiration, method, content_type=None):
+        """Generate a v4 signed URL, works both locally and on Cloud Run."""
+        self.credentials.refresh(auth_requests.Request())
+        kwargs = {
+            "version": "v4",
+            "expiration": expiration,
+            "method": method,
+            "service_account_email": self.credentials.service_account_email,
+            "access_token": self.credentials.token,
+        }
+        if content_type:
+            kwargs["content_type"] = content_type
+        return blob.generate_signed_url(**kwargs)
 
     def generate_signed_upload_url(
         self,
@@ -30,80 +50,20 @@ class GCSStorage:
         bucket_type: str = "uploads",
         expiration_minutes: int = 15,
     ) -> tuple[str, str]:
-        """
-        Generate a signed URL for direct browser uploads.
-
-        Args:
-            filename: Name of the file to upload
-            content_type: MIME type of the file
-            bucket_type: Which bucket to use ('uploads', 'processed', 'results')
-            expiration_minutes: URL expiration time in minutes
-
-        Returns:
-            Tuple of (signed_url, gcs_path)
-        """
+        """Generate a signed URL for direct browser uploads."""
         bucket = self._get_bucket(bucket_type)
         blob = bucket.blob(filename)
-
-        try:
-            # Try to generate signed URL with service account credentials
-            url = blob.generate_signed_url(
-                version="v4",
-                expiration=datetime.timedelta(minutes=expiration_minutes),
-                method="PUT",
-                content_type=content_type,
-            )
-        except Exception as e:
-            # If that fails, use the impersonated service account with IAM signBlob
-            logger.info(f"Using IAM signBlob API for signing: {e}")
-            from google.auth import default
-
-            # Get the default credentials
-            source_credentials, project = default()
-
-            # Check if we're using impersonated credentials
-            if hasattr(source_credentials, "service_account_email"):
-                service_account_email = source_credentials.service_account_email
-            else:
-                # Extract from the credentials file (for impersonated service account)
-                service_account_email = "secshare-service-account@search-and-reco.iam.gserviceaccount.com"
-
-            logger.info(f"Using service account: {service_account_email}")
-
-            # Generate signed URL using the service account email for IAM signing
-            url = blob.generate_signed_url(
-                version="v4",
-                expiration=datetime.timedelta(minutes=expiration_minutes),
-                method="PUT",
-                content_type=content_type,
-                service_account_email=service_account_email,
-            )
-
+        url = self._sign(blob, datetime.timedelta(minutes=expiration_minutes), "PUT", content_type)
         gcs_path = f"gs://{bucket.name}/{filename}"
-        logger.info(f"Generated signed URL for: {gcs_path}")
+        logger.info(f"Generated signed upload URL for: {gcs_path}")
         return url, gcs_path
 
     def generate_signed_download_url(self, gcs_path: str, expiration_minutes: int = 60) -> str:
-        """
-        Generate a signed URL for downloading a file.
-
-        Args:
-            gcs_path: Full GCS path (gs://bucket/path/to/file)
-            expiration_minutes: URL expiration time in minutes
-
-        Returns:
-            Signed download URL
-        """
+        """Generate a signed URL for downloading a file."""
         bucket_name, blob_name = self._parse_gcs_path(gcs_path)
         bucket = self.client.bucket(bucket_name)
         blob = bucket.blob(blob_name)
-
-        url = blob.generate_signed_url(
-            version="v4",
-            expiration=datetime.timedelta(minutes=expiration_minutes),
-            method="GET",
-        )
-
+        url = self._sign(blob, datetime.timedelta(minutes=expiration_minutes), "GET")
         logger.info(f"Generated signed download URL for: {gcs_path}")
         return url
 

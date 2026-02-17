@@ -1,27 +1,37 @@
 """
 Gemini Image Analyzer
-Provides generative image adaptation using Gemini 3 Pro Image Preview.
+Provides generative image adaptation using the google-genai SDK with Vertex AI.
+Authentication via ADC — no API key needed on Cloud Run.
 """
 
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, List
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from google.api_core import exceptions as google_exceptions
 from config import settings
 
 logger = logging.getLogger(__name__)
 
 
+def _model_name(name: str) -> str:
+    """Strip 'models/' prefix if present."""
+    return name.removeprefix("models/")
+
+
 class ImageAnalyzer:
-    """Generates image adaptations using Gemini 3 Pro."""
+    """Generates image adaptations using Gemini via the google-genai SDK."""
 
     def __init__(self, max_retries: int = 3, base_delay: float = 2.0):
-        """Initialize Gemini API."""
-        if settings.gemini_api_key:
-            genai.configure(api_key=settings.gemini_api_key)
-        self.model = genai.GenerativeModel(settings.gemini_image_model)
+        """Initialize google-genai client with Vertex AI backend."""
+        self.client = genai.Client(
+            vertexai=True,
+            project=settings.gcp_project_id,
+            location=settings.gemini_region,
+        )
+        self.model_name = _model_name(settings.gemini_image_model)
         self.max_retries = max_retries
         self.base_delay = base_delay
 
@@ -55,10 +65,8 @@ class ImageAnalyzer:
         prompt_tokens = usage_metadata.prompt_token_count
         candidates_tokens = usage_metadata.candidates_token_count
 
-        # Approximate pricing for Gemini 3 Pro Image Preview (Preview - subject to change)
-        # Using placeholder rates similar to Pro Vision for now
-        input_rate = 0.0025  # per 1k tokens (example)
-        output_rate = 0.0050  # per 1k tokens (example)
+        input_rate = 0.0025  # per 1k tokens (placeholder)
+        output_rate = 0.0050
 
         input_cost = (prompt_tokens / 1000) * input_rate
         output_cost = (candidates_tokens / 1000) * output_rate
@@ -77,13 +85,10 @@ class ImageAnalyzer:
         target_resolution: str,
         prompt_text: str,
     ) -> Dict[str, Any]:
-        """
-        Generate a single adapted image.
-        """
+        """Generate a single adapted image."""
         try:
             logger.info(f"Generating {target_ratio} adapt at {target_resolution}")
 
-            # Construct the full prompt
             full_prompt = (
                 f"Generate a high-quality image with aspect ratio {target_ratio} "
                 f"and resolution {target_resolution}. "
@@ -91,37 +96,31 @@ class ImageAnalyzer:
                 "Ensure professional composition and maintain the primary subject."
             )
 
-            # Create image part from bytes
-            image_part = {"mime_type": "image/jpeg", "data": image_bytes}
+            image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
 
-            # Call Gemini
             response = self._retry_with_backoff(
-                self.model.generate_content,
-                [full_prompt, image_part],
-                generation_config=genai.GenerationConfig(
+                self.client.models.generate_content,
+                model=self.model_name,
+                contents=[full_prompt, image_part],
+                config=types.GenerateContentConfig(
                     max_output_tokens=settings.gemini_image_output_tokens,
-                    temperature=0.7,  # Creativity for generation
+                    temperature=0.7,
                 ),
             )
 
-            if not response.parts:
+            if not response.candidates or not response.candidates[0].content.parts:
                 return {
                     "error": "Blocked or empty response",
                     "stop_reason": str(response.candidates[0].finish_reason if response.candidates else "UNKNOWN"),
                 }
 
             generated_image_bytes = None
-            for part in response.parts:
+            for part in response.candidates[0].content.parts:
                 if hasattr(part, "inline_data") and part.inline_data:
                     generated_image_bytes = part.inline_data.data
                     break
-                # Fallback check if the SDK exposes it differently
-                if hasattr(part, "blob"):
-                    generated_image_bytes = part.blob
-                    break
 
             if not generated_image_bytes:
-                # If no inline data, check for text (maybe it refused?)
                 text_response = response.text if hasattr(response, "text") else "No text"
                 logger.warning(f"No image data found in response. Text: {text_response}")
                 return {
@@ -131,7 +130,7 @@ class ImageAnalyzer:
                 }
 
             usage_stats = {}
-            if hasattr(response, "usage_metadata"):
+            if response.usage_metadata:
                 usage_stats = self._calculate_cost(response.usage_metadata)
 
             return {
@@ -152,9 +151,7 @@ class ImageAnalyzer:
         target_resolution: str,
         prompt_text: str,
     ) -> List[Dict[str, Any]]:
-        """
-        Generate multiple adapts in parallel.
-        """
+        """Generate multiple adapts in parallel."""
         results = []
         with ThreadPoolExecutor(max_workers=len(target_ratios)) as executor:
             future_to_ratio = {

@@ -26,9 +26,10 @@ class Settings(BaseSettings):
 
     # Gemini API
     gemini_api_key: str = ""
-    gemini_default_model: str = "models/gemini-3-pro-preview"
+    gemini_region: str = "global"  # Gemini endpoint region (separate from gcp_region)
+    gemini_default_model: str = "gemini-3-pro-preview"
     gemini_default_output_tokens: int = 65536
-    gemini_image_model: str = "models/gemini-3-pro-image-preview"
+    gemini_image_model: str = "gemini-3-pro-image-preview"
     gemini_image_output_tokens: int = 32768
 
     # Firestore

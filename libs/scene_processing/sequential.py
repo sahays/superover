@@ -93,6 +93,7 @@ class SequentialSceneProcessor(SceneProcessor):
                     prompt_text=prompt_text,
                     prompt_type=prompt_type,
                     context_text=context_text,
+                    gcs_path=chunk_gcs,
                 )
 
                 # Save result to database

@@ -1,6 +1,7 @@
 """
 Gemini Scene Analyzer
-Provides detailed video analysis including objects, emotions, dialogues, moderation, etc.
+Provides detailed video analysis using the google-genai SDK with Vertex AI.
+Authentication via ADC — no API key needed on Cloud Run.
 """
 
 import logging
@@ -8,7 +9,8 @@ import json
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional, List
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from google.api_core import exceptions as google_exceptions
 from pydantic import BaseModel, Field
 from config import settings
@@ -26,39 +28,69 @@ class SceneAnalysisResponse(BaseModel):
     moderation_tags: List[str] = Field(description="Safety or moderation tags")
 
 
+# Hand-built schema dict for structured output.
+_scene_analysis_schema = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string", "description": "High-level summary of the scene"},
+        "objects": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "List of significant objects detected",
+        },
+        "emotions": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "List of emotions detected in the scene",
+        },
+        "transcription": {
+            "type": "string",
+            "description": "Transcription of any spoken dialogue",
+            "nullable": True,
+        },
+        "moderation_tags": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Safety or moderation tags",
+        },
+    },
+    "required": ["summary", "objects", "emotions", "moderation_tags"],
+}
+
+
+def _model_name(name: str) -> str:
+    """Strip 'models/' prefix if present."""
+    return name.removeprefix("models/")
+
+
+def _guess_mime_type(path: str) -> str:
+    """Guess MIME type from file extension."""
+    p = path.lower()
+    if p.endswith(".mp3"):
+        return "audio/mpeg"
+    if p.endswith(".wav"):
+        return "audio/wav"
+    if p.endswith(".webm"):
+        return "video/webm"
+    return "video/mp4"
+
+
 class SceneAnalyzer:
-    """Analyzes video scenes using Gemini with detailed prompts."""
+    """Analyzes video scenes using Gemini via the google-genai SDK."""
 
     def __init__(self, max_retries: int = 3, base_delay: float = 2.0):
-        """Initialize Gemini API."""
-        if settings.gemini_api_key:
-            genai.configure(api_key=settings.gemini_api_key)
-
-        # Configure model with structured output schema
-        self.model = genai.GenerativeModel(
-            model_name=settings.gemini_default_model,
-            generation_config={
-                "response_mime_type": "application/json",
-                "response_schema": SceneAnalysisResponse,
-            },
+        """Initialize google-genai client with Vertex AI backend."""
+        self.client = genai.Client(
+            vertexai=True,
+            project=settings.gcp_project_id,
+            location=settings.gemini_region,
         )
+        self.model_name = _model_name(settings.gemini_default_model)
         self.max_retries = max_retries
         self.base_delay = base_delay
 
     def _retry_with_backoff(self, func, *args, **kwargs):
-        """Execute a function with exponential backoff retry logic.
-
-        Args:
-            func: Function to execute
-            *args: Positional arguments for the function
-            **kwargs: Keyword arguments for the function
-
-        Returns:
-            Result from the function
-
-        Raises:
-            Exception: The last exception if all retries fail
-        """
+        """Execute a function with exponential backoff retry logic."""
         last_exception = None
 
         for attempt in range(self.max_retries):
@@ -70,7 +102,6 @@ class SceneAnalyzer:
             ) as e:
                 last_exception = e
                 if attempt < self.max_retries - 1:
-                    # Calculate delay with exponential backoff
                     delay = self.base_delay * (2**attempt)
                     logger.warning(
                         f"Attempt {attempt + 1}/{self.max_retries} failed with {type(e).__name__}: {e}. "
@@ -80,30 +111,13 @@ class SceneAnalyzer:
                 else:
                     logger.error(f"All {self.max_retries} retry attempts failed")
             except Exception as e:
-                # For non-retryable errors, fail immediately
                 logger.error(f"Non-retryable error: {type(e).__name__}: {e}")
                 raise
 
-        # If we get here, all retries failed
         raise last_exception
 
     def _calculate_cost(self, usage_metadata) -> Dict[str, Any]:
-        """
-        Calculate cost based on token usage and model pricing.
-
-        Pricing (as of Nov 2025):
-        Gemini 3.0 Pro Preview:
-          Input: $2.00/1M (<=200k), $4.00/1M (>200k)
-          Output: $12.00/1M (<=200k), $18.00/1M (>200k)
-
-        Gemini 2.5 Pro:
-          Input: $1.25/1M (<=128k), $2.50/1M (>128k)
-          Output: $5.00/1M (<=128k), $10.00/1M (>128k)
-
-        Gemini 2.0 Flash:
-          Input: $0.10/1M
-          Output: $0.40/1M
-        """
+        """Calculate cost based on token usage and model pricing."""
         if not usage_metadata:
             return {}
 
@@ -115,33 +129,13 @@ class SceneAnalyzer:
         input_rate = 0.0
         output_rate = 0.0
 
-        if "gemini-3" in model_name:  # Gemini 3.0 Pro Preview
-            # Input cost
-            if prompt_tokens <= 200000:
-                input_rate = 2.00
-            else:
-                input_rate = 4.00
-
-            # Output cost
-            if prompt_tokens <= 200000:
-                output_rate = 12.00
-            else:
-                output_rate = 18.00
-
-        elif "gemini-2.5" in model_name or "gemini-pro" in model_name:  # Gemini 2.5 Pro
-            # Input cost
-            if prompt_tokens <= 128000:
-                input_rate = 1.25
-            else:
-                input_rate = 2.50
-
-            # Output cost
-            if prompt_tokens <= 128000:
-                output_rate = 5.00
-            else:
-                output_rate = 10.00
-
-        elif "flash" in model_name:  # Flash models (cheap)
+        if "gemini-3" in model_name:
+            input_rate = 2.00 if prompt_tokens <= 200000 else 4.00
+            output_rate = 12.00 if prompt_tokens <= 200000 else 18.00
+        elif "gemini-2.5" in model_name or "gemini-pro" in model_name:
+            input_rate = 1.25 if prompt_tokens <= 128000 else 2.50
+            output_rate = 5.00 if prompt_tokens <= 128000 else 10.00
+        elif "flash" in model_name:
             input_rate = 0.10
             output_rate = 0.40
 
@@ -168,79 +162,65 @@ class SceneAnalyzer:
         prompt_text: str,
         prompt_type: str = "scene_analysis",
         context_text: Optional[str] = None,
+        gcs_path: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Analyze a media chunk (video or audio) with comprehensive analysis.
+        Analyze a media chunk (video or audio).
 
         Args:
-            media_path: Path to the media chunk file
+            media_path: Path to the media chunk file (fallback if no gcs_path)
             chunk_index: Index of this chunk in the full file
             chunk_duration: Duration of the chunk in seconds
-            prompt_text: The full prompt text to use for the analysis.
-            prompt_type: Type of analysis (scene_analysis, subtitling, etc.)
-            context_text: Optional pre-loaded context text to append to prompt
+            prompt_text: The full prompt text to use for the analysis
+            prompt_type: Type of analysis
+            context_text: Optional context text to append to prompt
+            gcs_path: Optional GCS URI — Vertex AI reads directly, no upload needed
 
         Returns:
-            Comprehensive analysis results as a dictionary
+            Analysis results as a dictionary
         """
         try:
-            logger.info(f"Uploading chunk {chunk_index} to Gemini: {media_path.name}")
+            # Build content parts
+            contents = []
 
-            # Upload media file to Gemini
-            media_file = genai.upload_file(str(media_path))
-
-            # Wait for processing
-            logger.info(f"Waiting for Gemini to process chunk {chunk_index}")
-            while media_file.state.name == "PROCESSING":
-                import time
-
-                time.sleep(2)
-                media_file = genai.get_file(media_file.name)
-
-            if media_file.state.name == "FAILED":
-                raise ValueError(f"Gemini processing failed for chunk {chunk_index}")
-
-            logger.info(f"Analyzing chunk {chunk_index} with Gemini")
-
-            # Use max output tokens from config (model-specific)
-            # Gemini 2.0 Flash: 8192 tokens
-            # Gemini 2.5 Pro: 65536 tokens
-            max_tokens = settings.gemini_default_output_tokens
-            logger.info(f"Using max_output_tokens={max_tokens} for model {settings.gemini_default_model}")
-
-            # Build content parts: prompt + context (if any) + media
-            content_parts = []
-
-            # Add prompt text (with context appended if provided)
+            # Prompt (with context if provided)
             if context_text:
-                # Append pre-loaded context to prompt
-                full_prompt = prompt_text + "\n\n" + context_text
-                content_parts.append(full_prompt)
+                contents.append(prompt_text + "\n\n" + context_text)
                 logger.info(f"Including context ({len(context_text)} chars) in analysis")
             else:
-                content_parts.append(prompt_text)
+                contents.append(prompt_text)
 
-            # Add media file
-            content_parts.append(media_file)
+            # Media part — prefer GCS URI (no file upload needed)
+            if gcs_path:
+                mime_type = _guess_mime_type(gcs_path)
+                contents.append(types.Part.from_uri(file_uri=gcs_path, mime_type=mime_type))
+                logger.info(f"Using GCS URI for chunk {chunk_index}: {gcs_path}")
+            else:
+                mime_type = _guess_mime_type(str(media_path))
+                data = media_path.read_bytes()
+                contents.append(types.Part.from_bytes(data=data, mime_type=mime_type))
+                logger.info(f"Using local file for chunk {chunk_index}: {media_path.name}")
 
-            # Generate analysis with extended timeout for media processing
+            max_tokens = settings.gemini_default_output_tokens
+            logger.info(f"Analyzing chunk {chunk_index} with {self.model_name}, max_output_tokens={max_tokens}")
+
+            # Generate analysis
             response = self._retry_with_backoff(
-                self.model.generate_content,
-                content_parts,
-                generation_config=genai.GenerationConfig(
+                self.client.models.generate_content,
+                model=self.model_name,
+                contents=contents,
+                config=types.GenerateContentConfig(
                     temperature=0.1,
                     max_output_tokens=max_tokens,
                     response_mime_type="application/json",
-                    response_schema=SceneAnalysisResponse,
+                    response_schema=_scene_analysis_schema,
                 ),
-                request_options={"timeout": 600},
             )
 
             # Check if response was blocked
             if not response.candidates or not response.candidates[0].content.parts:
                 finish_reason = response.candidates[0].finish_reason if response.candidates else "UNKNOWN"
                 logger.warning(f"Gemini response blocked for chunk {chunk_index}. Finish reason: {finish_reason}")
-
                 return {
                     "summary": f"Analysis blocked (reason: {finish_reason})",
                     "blocked": True,
@@ -263,7 +243,7 @@ class SceneAnalyzer:
                 }
 
             # Calculate cost and usage
-            if hasattr(response, "usage_metadata"):
+            if response.usage_metadata:
                 usage_stats = self._calculate_cost(response.usage_metadata)
                 result["token_usage"] = usage_stats
                 logger.info(
@@ -277,14 +257,8 @@ class SceneAnalyzer:
             # Add metadata
             result["chunk_index"] = chunk_index
             result["chunk_duration"] = chunk_duration
-            result["gemini_file_uri"] = media_file.uri
-
-            # Clean up uploaded file
-            try:
-                genai.delete_file(media_file.name)
-                logger.info(f"Deleted uploaded file for chunk {chunk_index}")
-            except Exception as e:
-                logger.warning(f"Failed to delete uploaded file: {e}")
+            if gcs_path:
+                result["gcs_path"] = gcs_path
 
             return result
 

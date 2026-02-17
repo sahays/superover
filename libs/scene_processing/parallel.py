@@ -75,6 +75,7 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
             prompt_text=prompt_text,
             prompt_type=prompt_type,
             context_text=context_text,
+            gcs_path=chunk_data.get("gcs_path"),
         )
 
         # Save result to database
@@ -264,6 +265,7 @@ class ParallelSceneProcessor(SceneProcessor):
                 "job_id": job_id,
                 "video_id": video_id,
                 "total_chunks": total_chunks,
+                "gcs_path": chunk.get("gcs_path"),
             }
             for i, chunk in enumerate(chunks)
         ]

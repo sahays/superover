@@ -63,13 +63,25 @@ app = FastAPI(
 )
 
 # CORS middleware
+# Cloud Run services have two URL formats:
+#   - https://SERVICE-PROJECTNUM.REGION.run.app  (new)
+#   - https://SERVICE-HASH.REGION.run.app         (legacy)
+# Allow both so CORS works regardless of which URL the browser uses.
+cors_origins = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+]
+if settings.frontend_url:
+    cors_origins.append(settings.frontend_url)
+    # If the URL is legacy format (no region), also allow the new format and vice versa
+    # Simplest: allow any *.run.app origin for this service name
+    sn = settings.service_name
+    cors_origins.append(f"https://{sn}-frontend-*.run.app")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        settings.frontend_url,
-        "http://localhost:3000",
-        "http://localhost:3001",
-    ],
+    allow_origins=cors_origins,
+    allow_origin_regex=r"https://{sn}-frontend.*\.run\.app".format(sn=settings.service_name.replace("-", r"\-")),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
