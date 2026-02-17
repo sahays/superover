@@ -7,6 +7,8 @@ from api.models.schemas import (
     PromptResponse,
     CreatePromptRequest,
     UpdatePromptRequest,
+    CategorySchemaResponse,
+    SetCategorySchemaRequest,
 )
 from libs.database import get_db
 
@@ -58,6 +60,67 @@ async def create_prompt(request: CreatePromptRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create prompt: {str(e)}",
+        )
+
+
+# === Category Schema Endpoints ===
+# IMPORTANT: These must be registered before /{prompt_id} to avoid
+# FastAPI matching "schemas" as a prompt_id.
+
+
+@router.get("/schemas", response_model=List[CategorySchemaResponse])
+async def list_category_schemas():
+    """List all category response schemas."""
+    try:
+        db = get_db()
+        schemas = db.list_category_schemas()
+        return [CategorySchemaResponse(**s) for s in schemas]
+    except Exception as e:
+        logger.error(f"Failed to list category schemas: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list category schemas: {str(e)}",
+        )
+
+
+@router.put("/schemas/{category}", response_model=CategorySchemaResponse)
+async def set_category_schema(category: str, request: SetCategorySchemaRequest):
+    """Set or update the JSON response schema for a prompt category.
+
+    Pass response_schema=null to make the category free text (no structured output).
+    """
+    try:
+        db = get_db()
+        schema_doc = db.set_category_schema(category, request.response_schema)
+        return CategorySchemaResponse(**schema_doc)
+    except Exception as e:
+        logger.error(f"Failed to set category schema for '{category}': {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to set category schema: {str(e)}",
+        )
+
+
+@router.delete("/schemas/{category}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_category_schema(category: str):
+    """Delete the response schema for a prompt category (reverts to free text)."""
+    try:
+        db = get_db()
+        existing = db.get_category_schema(category)
+        if not existing:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No schema found for category: {category}",
+            )
+        db.delete_category_schema(category)
+        return None
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete category schema for '{category}': {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete category schema: {str(e)}",
         )
 
 

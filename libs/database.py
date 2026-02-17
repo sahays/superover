@@ -67,6 +67,9 @@ class FirestoreDB:
         # Prompt management collection
         self.prompts = self.client.collection(f"{prefix}prompts")
 
+        # Category schema collection (per-category JSON response schemas)
+        self.category_schemas = self.client.collection(f"{prefix}category_schemas")
+
     def seed_default_prompts(self):
         """Seed default prompts if they don't exist."""
         # Check if any image adaptation prompt exists
@@ -320,6 +323,7 @@ class FirestoreDB:
         prompt_text: str,
         prompt_type: str = "custom",
         prompt_name: Optional[str] = None,
+        response_schema: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Create a scene analysis job.
@@ -332,6 +336,7 @@ class FirestoreDB:
             prompt_text: The exact prompt text to be used for this job (embedded for reliability)
             prompt_type: Type of the prompt (embedded for display)
             prompt_name: Name of the prompt (embedded for display)
+            response_schema: Optional JSON response schema for structured Gemini output
 
         Returns:
             Created job document
@@ -350,6 +355,9 @@ class FirestoreDB:
 
         if prompt_name:
             job_data["prompt_name"] = prompt_name
+
+        if response_schema is not None:
+            job_data["response_schema"] = response_schema
 
         self.scene_jobs.document(job_id).set(job_data)
         logger.info(f"Created scene job: {job_id} for video: {video_id} with prompt: {prompt_id}")
@@ -786,6 +794,47 @@ class FirestoreDB:
         """Delete a prompt document."""
         self.prompts.document(prompt_id).delete()
         logger.info(f"Deleted prompt: {prompt_id}")
+
+    # === Category Schema Operations ===
+
+    def get_category_schema(self, category: str) -> Optional[Dict[str, Any]]:
+        """Get the response schema for a prompt category.
+
+        Returns None if no schema doc exists (meaning free text).
+        """
+        doc = self.category_schemas.document(category).get()
+        if doc.exists:
+            return doc.to_dict()
+        return None
+
+    def set_category_schema(self, category: str, response_schema: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Set or update the response schema for a prompt category.
+
+        Args:
+            category: The prompt category name (e.g., 'scene_analysis')
+            response_schema: JSON schema dict, or None for free text
+
+        Returns:
+            The saved schema document
+        """
+        schema_data = {
+            "category": category,
+            "response_schema": response_schema,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }
+        self.category_schemas.document(category).set(schema_data)
+        logger.info(f"Set category schema for '{category}': {'structured' if response_schema else 'free text'}")
+        # Fetch to get server timestamp
+        return self.get_category_schema(category)
+
+    def delete_category_schema(self, category: str) -> None:
+        """Delete the response schema for a prompt category."""
+        self.category_schemas.document(category).delete()
+        logger.info(f"Deleted category schema for '{category}'")
+
+    def list_category_schemas(self) -> List[Dict[str, Any]]:
+        """List all category schemas."""
+        return [doc.to_dict() for doc in self.category_schemas.stream()]
 
     def count_jobs_using_prompt(self, prompt_id: str) -> int:
         """Count how many scene jobs are using this prompt."""

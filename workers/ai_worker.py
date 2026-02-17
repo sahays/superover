@@ -232,6 +232,7 @@ class AIWorker:
 
         prompt_text = job.get("prompt_text")
         prompt_type = job.get("prompt_type", "scene_analysis")
+        response_schema = job.get("response_schema")  # None if free text
 
         try:
             # Chunking
@@ -278,6 +279,7 @@ class AIWorker:
                 prompt_text=prompt_text,
                 prompt_type=prompt_type,
                 context_items=context_items,
+                response_schema=response_schema,
             )
 
             # Finalize

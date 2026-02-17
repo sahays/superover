@@ -347,3 +347,22 @@ class UpdatePromptRequest(BaseModel):
         if v is not None and v not in PROMPT_TYPES:
             raise ValueError(f"Type must be one of: {', '.join(PROMPT_TYPES)}")
         return v
+
+
+# === Category Schema Models ===
+
+
+class CategorySchemaResponse(BaseModel):
+    """Response model for a category's JSON response schema."""
+
+    category: str
+    response_schema: Optional[Dict[str, Any]] = None
+    updated_at: Optional[datetime] = None
+
+
+class SetCategorySchemaRequest(BaseModel):
+    """Request model for setting a category's JSON response schema."""
+
+    response_schema: Optional[Dict[str, Any]] = Field(
+        None, description="JSON schema for structured Gemini responses. null = free text."
+    )

@@ -7,7 +7,7 @@ Hybrid Parallel Scene Processor
 import logging
 import multiprocessing
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from google.api_core import exceptions as google_exceptions
 from libs.database import SceneJobStatus
@@ -68,6 +68,7 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
     try:
         # Analyze with Gemini (isolated SSL context per process)
         # Context text is already loaded and passed as string
+        response_schema = chunk_data.get("response_schema")
         result = analyzer.analyze_chunk(
             media_path=local_chunk_path,
             chunk_index=chunk_index,
@@ -76,6 +77,7 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
             prompt_type=prompt_type,
             context_text=context_text,
             gcs_path=chunk_data.get("gcs_path"),
+            response_schema=response_schema,
         )
 
         # Save result to database
@@ -198,6 +200,7 @@ class ParallelSceneProcessor(SceneProcessor):
         prompt_text: str,
         prompt_type: str = "scene_analysis",
         context_items: List[Dict[str, Any]] = None,
+        response_schema: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Hybrid processing: Sequential I/O, Parallel Gemini API calls.
@@ -213,6 +216,7 @@ class ParallelSceneProcessor(SceneProcessor):
             prompt_text: Analysis prompt text
             prompt_type: Type of analysis (scene_analysis, subtitling, etc.)
             context_items: Optional list of context items to include in analysis
+            response_schema: Optional JSON schema for structured Gemini output
 
         Raises:
             Exception: If processing fails
@@ -262,6 +266,7 @@ class ParallelSceneProcessor(SceneProcessor):
                 "prompt_text": prompt_text,
                 "prompt_type": prompt_type,
                 "context_text": context_text,  # Pre-loaded context text (not items)
+                "response_schema": response_schema,  # Category response schema
                 "job_id": job_id,
                 "video_id": video_id,
                 "total_chunks": total_chunks,

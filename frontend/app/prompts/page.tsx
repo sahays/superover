@@ -2,10 +2,11 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { FileText, Plus, Edit2, Trash2, ArrowLeft, Loader2, Paperclip } from 'lucide-react'
+import { FileText, Plus, Edit2, Trash2, ArrowLeft, Loader2, Paperclip, Braces, X } from 'lucide-react'
 import Link from 'next/link'
 import { promptApi } from '@/lib/api-client'
-import { Prompt } from '@/lib/types'
+import { Prompt, CategorySchema } from '@/lib/types'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -46,6 +47,7 @@ const PROMPT_TYPE_OPTIONS = [
   { value: 'subtitling', label: 'Subtitling' },
   { value: 'key_moments', label: 'Key Moments' },
   { value: 'cliffhanger_analysis', label: 'Cliffhanger Analysis' },
+  { value: 'image_adaptation', label: 'Image Adaptation' },
   { value: 'custom', label: 'Custom' },
 ]
 
@@ -60,6 +62,11 @@ export default function PromptsPage() {
     prompt_text: '',
   })
   const [formErrors, setFormErrors] = useState<Partial<PromptFormData>>({})
+
+  // Category schema state
+  const [editingSchemaCategory, setEditingSchemaCategory] = useState<string | null>(null)
+  const [schemaText, setSchemaText] = useState('')
+  const [schemaError, setSchemaError] = useState<string | null>(null)
 
   const { data: prompts, isLoading } = useQuery<Prompt[]>({
     queryKey: ['prompts'],
@@ -97,6 +104,63 @@ export default function PromptsPage() {
       setDeletingPrompt(null)
     },
   })
+
+  // Category schema queries
+  const { data: categorySchemas } = useQuery<CategorySchema[]>({
+    queryKey: ['categorySchemas'],
+    queryFn: () => promptApi.listSchemas(),
+  })
+
+  const setSchemaMutation = useMutation({
+    mutationFn: ({ category, response_schema }: { category: string; response_schema: Record<string, unknown> | null }) =>
+      promptApi.setSchema(category, { response_schema }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['categorySchemas'] })
+      setEditingSchemaCategory(null)
+      setSchemaText('')
+      setSchemaError(null)
+    },
+  })
+
+  const deleteSchemaMutation = useMutation({
+    mutationFn: (category: string) => promptApi.deleteSchema(category),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['categorySchemas'] })
+    },
+  })
+
+  const handleEditSchema = (category: string) => {
+    const existing = categorySchemas?.find(s => s.category === category)
+    setEditingSchemaCategory(category)
+    setSchemaText(existing?.response_schema ? JSON.stringify(existing.response_schema, null, 2) : '')
+    setSchemaError(null)
+  }
+
+  const handleSaveSchema = () => {
+    if (!editingSchemaCategory) return
+
+    if (!schemaText.trim()) {
+      // Empty = set to null (free text)
+      setSchemaMutation.mutate({ category: editingSchemaCategory, response_schema: null })
+      return
+    }
+
+    try {
+      const parsed = JSON.parse(schemaText)
+      setSchemaMutation.mutate({ category: editingSchemaCategory, response_schema: parsed })
+    } catch {
+      setSchemaError('Invalid JSON. Please check your schema syntax.')
+    }
+  }
+
+  const handleClearSchema = () => {
+    if (!editingSchemaCategory) return
+    setSchemaMutation.mutate({ category: editingSchemaCategory, response_schema: null })
+  }
+
+  const getSchemaForCategory = (category: string): CategorySchema | undefined => {
+    return categorySchemas?.find(s => s.category === category)
+  }
 
   const resetForm = () => {
     setFormData({
@@ -279,6 +343,120 @@ export default function PromptsPage() {
             </CardContent>
           </Card>
         )}
+
+      {/* Category Schemas Section */}
+      <div className="mt-12">
+        <h2 className="text-2xl font-bold mb-2">Category Schemas</h2>
+        <p className="text-muted-foreground mb-6">
+          Define JSON response schemas per prompt category. Categories with a schema get structured Gemini output; others get free text.
+        </p>
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {PROMPT_TYPE_OPTIONS.map((option) => {
+            const schema = getSchemaForCategory(option.value)
+            const hasSchema = schema?.response_schema != null
+            return (
+              <Card key={option.value} className="flex flex-col">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">{option.label}</CardTitle>
+                    <Badge variant={hasSchema ? 'default' : 'secondary'}>
+                      {hasSchema ? 'Structured' : 'Free Text'}
+                    </Badge>
+                  </div>
+                  <CardDescription className="text-xs">{option.value}</CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-end gap-2 pt-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleEditSchema(option.value)}
+                  >
+                    <Braces className="mr-2 h-4 w-4" />
+                    Edit Schema
+                  </Button>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Edit Schema Dialog */}
+      <Dialog open={editingSchemaCategory !== null} onOpenChange={(open) => {
+        if (!open) {
+          setEditingSchemaCategory(null)
+          setSchemaText('')
+          setSchemaError(null)
+        }
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Response Schema</DialogTitle>
+            <DialogDescription>
+              Define the JSON response schema for <strong>{PROMPT_TYPE_OPTIONS.find(o => o.value === editingSchemaCategory)?.label || editingSchemaCategory}</strong> prompts.
+              Leave empty or clear to use free text (no structured output).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Input value={editingSchemaCategory || ''} disabled />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="schema_json">JSON Schema</Label>
+              <Textarea
+                id="schema_json"
+                placeholder='{"type": "object", "properties": { ... }}'
+                value={schemaText}
+                onChange={(e) => {
+                  setSchemaText(e.target.value)
+                  setSchemaError(null)
+                }}
+                rows={14}
+                className={`font-mono text-sm ${schemaError ? 'border-red-500' : ''}`}
+              />
+              {schemaError && (
+                <p className="text-sm text-red-500">{schemaError}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Paste a JSON schema object. Gemini will return responses matching this structure.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="flex justify-between sm:justify-between">
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleClearSchema}
+              disabled={setSchemaMutation.isPending}
+            >
+              <X className="mr-2 h-4 w-4" />
+              Clear Schema
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditingSchemaCategory(null)
+                  setSchemaText('')
+                  setSchemaError(null)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveSchema}
+                disabled={setSchemaMutation.isPending}
+              >
+                {setSchemaMutation.isPending && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                Save Schema
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create/Edit Dialog */}
       <Dialog open={showCreateDialog || editingPrompt !== null} onOpenChange={(open) => {

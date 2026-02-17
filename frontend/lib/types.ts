@@ -220,3 +220,12 @@ export const contextItemSchema = z.object({
 })
 
 export type ContextItem = z.infer<typeof contextItemSchema>
+
+// Category Schema Types
+export const categorySchemaSchema = z.object({
+  category: z.string(),
+  response_schema: z.record(z.any()).nullable(),
+  updated_at: z.string().optional(),
+})
+
+export type CategorySchema = z.infer<typeof categorySchemaSchema>

@@ -194,6 +194,7 @@ async def delete_scene_job_endpoint(job_id: str):
 # IMPORTANT: Static path routes (/jobs, /jobs/{job_id}) MUST come before
 # parameterized routes (/{video_id}) — otherwise FastAPI matches "jobs" as a video_id.
 
+
 @router.get("/jobs", response_model=List[SceneJobResponse])
 async def list_scene_jobs(limit: int = 50, status_filter: SceneJobStatus = None):
     """List all scene jobs."""
@@ -348,6 +349,11 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
                 detail=f"Prompt not found: {request.prompt_id}. Please select a valid prompt.",
             )
 
+        # Look up the category schema for this prompt's type (snapshot at job creation)
+        prompt_category = prompt.get("type", "custom")
+        category_schema_doc = db.get_category_schema(prompt_category)
+        response_schema = category_schema_doc.get("response_schema") if category_schema_doc else None
+
         # Create scene job with prompt_id, embedded prompt_text, prompt_type, and prompt_name
         job_id = str(uuid.uuid4())
 
@@ -372,6 +378,7 @@ async def process_video(video_id: str, request: ProcessVideoRequest):
             prompt_text=prompt["prompt_text"],  # Embed for reliability
             prompt_type=prompt.get("type", "custom"),  # Embed prompt type for display
             prompt_name=prompt.get("name"),  # Embed prompt name for display
+            response_schema=response_schema,  # Embed category schema snapshot
         )
 
         return ProcessingJobResponse(

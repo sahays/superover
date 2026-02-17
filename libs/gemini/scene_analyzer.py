@@ -8,54 +8,13 @@ import logging
 import json
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from google import genai
 from google.genai import types
 from google.api_core import exceptions as google_exceptions
-from pydantic import BaseModel, Field
 from config import settings
 
 logger = logging.getLogger(__name__)
-
-
-class SceneAnalysisResponse(BaseModel):
-    """Schema for scene analysis results."""
-
-    summary: str = Field(description="High-level summary of the scene")
-    objects: List[str] = Field(description="List of significant objects detected")
-    emotions: List[str] = Field(description="List of emotions detected in the scene")
-    transcription: Optional[str] = Field(None, description="Transcription of any spoken dialogue")
-    moderation_tags: List[str] = Field(description="Safety or moderation tags")
-
-
-# Hand-built schema dict for structured output.
-_scene_analysis_schema = {
-    "type": "object",
-    "properties": {
-        "summary": {"type": "string", "description": "High-level summary of the scene"},
-        "objects": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "List of significant objects detected",
-        },
-        "emotions": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "List of emotions detected in the scene",
-        },
-        "transcription": {
-            "type": "string",
-            "description": "Transcription of any spoken dialogue",
-            "nullable": True,
-        },
-        "moderation_tags": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Safety or moderation tags",
-        },
-    },
-    "required": ["summary", "objects", "emotions", "moderation_tags"],
-}
 
 
 def _model_name(name: str) -> str:
@@ -163,6 +122,7 @@ class SceneAnalyzer:
         prompt_type: str = "scene_analysis",
         context_text: Optional[str] = None,
         gcs_path: Optional[str] = None,
+        response_schema: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Analyze a media chunk (video or audio).
@@ -175,6 +135,9 @@ class SceneAnalyzer:
             prompt_type: Type of analysis
             context_text: Optional context text to append to prompt
             gcs_path: Optional GCS URI — Vertex AI reads directly, no upload needed
+            response_schema: Optional JSON schema for structured output.
+                If provided, Gemini returns structured JSON matching this schema.
+                If None, Gemini returns free text (no constraints).
 
         Returns:
             Analysis results as a dictionary
@@ -202,19 +165,30 @@ class SceneAnalyzer:
                 logger.info(f"Using local file for chunk {chunk_index}: {media_path.name}")
 
             max_tokens = settings.gemini_default_output_tokens
-            logger.info(f"Analyzing chunk {chunk_index} with {self.model_name}, max_output_tokens={max_tokens}")
+
+            # Build generation config — structured output if schema provided, free text otherwise
+            gen_config_kwargs = {
+                "temperature": 0.1,
+                "max_output_tokens": max_tokens,
+            }
+            if response_schema is not None:
+                gen_config_kwargs["response_mime_type"] = "application/json"
+                gen_config_kwargs["response_schema"] = response_schema
+                logger.info(
+                    f"Analyzing chunk {chunk_index} with {self.model_name} "
+                    f"(structured output), max_output_tokens={max_tokens}"
+                )
+            else:
+                logger.info(
+                    f"Analyzing chunk {chunk_index} with {self.model_name} (free text), max_output_tokens={max_tokens}"
+                )
 
             # Generate analysis
             response = self._retry_with_backoff(
                 self.client.models.generate_content,
                 model=self.model_name,
                 contents=contents,
-                config=types.GenerateContentConfig(
-                    temperature=0.1,
-                    max_output_tokens=max_tokens,
-                    response_mime_type="application/json",
-                    response_schema=_scene_analysis_schema,
-                ),
+                config=types.GenerateContentConfig(**gen_config_kwargs),
             )
 
             # Check if response was blocked
@@ -229,18 +203,25 @@ class SceneAnalyzer:
                     "chunk_duration": chunk_duration,
                 }
 
-            # Parse response
-            try:
-                result = json.loads(response.text)
-                result["finish_reason"] = str(response.candidates[0].finish_reason)
-                logger.info(f"Successfully analyzed chunk {chunk_index}")
-            except Exception as e:
-                logger.warning(f"Failed to parse structured output: {e}")
+            # Parse response — structured JSON if schema was provided, free text otherwise
+            if response_schema is not None:
+                try:
+                    result = json.loads(response.text)
+                    result["finish_reason"] = str(response.candidates[0].finish_reason)
+                    logger.info(f"Successfully analyzed chunk {chunk_index} (structured)")
+                except Exception as e:
+                    logger.warning(f"Failed to parse structured output: {e}")
+                    result = {
+                        "raw_response": response.text,
+                        "parse_error": str(e),
+                        "finish_reason": str(response.candidates[0].finish_reason),
+                    }
+            else:
                 result = {
-                    "raw_response": response.text,
-                    "parse_error": str(e),
+                    "raw_text": response.text,
                     "finish_reason": str(response.candidates[0].finish_reason),
                 }
+                logger.info(f"Successfully analyzed chunk {chunk_index} (free text)")
 
             # Calculate cost and usage
             if response.usage_metadata:

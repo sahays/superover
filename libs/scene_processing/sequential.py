@@ -6,7 +6,7 @@ Exact copy of existing logic - ensures zero regression.
 
 import logging
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from google.api_core import exceptions as google_exceptions
 from libs.database import SceneJobStatus
 from .base import SceneProcessor
@@ -34,6 +34,7 @@ class SequentialSceneProcessor(SceneProcessor):
         prompt_text: str,
         prompt_type: str = "scene_analysis",
         context_items: List[Dict[str, Any]] = None,
+        response_schema: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Process video chunks sequentially.
@@ -45,6 +46,7 @@ class SequentialSceneProcessor(SceneProcessor):
             prompt_text: Analysis prompt text
             prompt_type: Type of analysis (scene_analysis, subtitling, etc.)
             context_items: Optional list of context items to include in analysis
+            response_schema: Optional JSON schema for structured Gemini output
 
         Raises:
             Exception: If processing fails
@@ -94,6 +96,7 @@ class SequentialSceneProcessor(SceneProcessor):
                     prompt_type=prompt_type,
                     context_text=context_text,
                     gcs_path=chunk_gcs,
+                    response_schema=response_schema,
                 )
 
                 # Save result to database

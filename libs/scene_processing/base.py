@@ -4,7 +4,7 @@ Defines the interface that both sequential and parallel implementations must fol
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pathlib import Path
 
 
@@ -94,6 +94,7 @@ class SceneProcessor(ABC):
         prompt_text: str,
         prompt_type: str = "scene_analysis",
         context_items: List[Dict[str, Any]] = None,
+        response_schema: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Process video chunks with scene analysis.
@@ -105,6 +106,7 @@ class SceneProcessor(ABC):
             prompt_text: Analysis prompt text
             prompt_type: Type of analysis (scene_analysis, subtitling, etc.)
             context_items: Optional list of context items to include in analysis
+            response_schema: Optional JSON schema for structured Gemini output
 
         Raises:
             Exception: If processing fails

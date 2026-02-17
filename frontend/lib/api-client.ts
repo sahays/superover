@@ -265,6 +265,21 @@ export const promptApi = {
     const response = await apiClient.delete(`/api/prompts/${promptId}`)
     return response.data
   },
+
+  listSchemas: async () => {
+    const response = await apiClient.get('/api/prompts/schemas')
+    return response.data
+  },
+
+  setSchema: async (category: string, data: { response_schema: Record<string, unknown> | null }) => {
+    const response = await apiClient.put(`/api/prompts/schemas/${category}`, data)
+    return response.data
+  },
+
+  deleteSchema: async (category: string) => {
+    const response = await apiClient.delete(`/api/prompts/schemas/${category}`)
+    return response.data
+  },
 }
 
 // Upload file to GCS using signed URL
