@@ -63,8 +63,22 @@ async def list_image_jobs_for_asset(asset_id: str):
 @router.get("/results/{result_id}/download")
 async def get_image_download_url(result_id: str):
     """Generate a signed URL for an image result."""
-    # TODO: implement signed URL generation from GCS path
-    pass
+    db = get_db()
+    from libs.storage import get_storage
+
+    # Find the result record to get its GCS path
+    results = db.get_results_for_image_job(result_id)
+    if not results:
+        raise HTTPException(status_code=404, detail="Result not found")
+
+    result = results[0] if isinstance(results, list) else results
+    gcs_path = result.get("gcs_path")
+    if not gcs_path:
+        raise HTTPException(status_code=404, detail="No file associated with this result")
+
+    storage = get_storage()
+    url = storage.generate_signed_download_url(gcs_path)
+    return {"url": url}
 
 
 @router.post("/signed-url")

@@ -34,17 +34,6 @@ def temp_dir():
 
 
 @pytest.fixture
-def sample_video_file(temp_dir):
-    """Create a sample video file for testing."""
-    video_path = temp_dir / "test_video.mp4"
-    # Create a minimal valid MP4 file (just the header)
-    with open(video_path, "wb") as f:
-        # MP4 file signature
-        f.write(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom")
-    return video_path
-
-
-@pytest.fixture
 def sample_video_metadata():
     """Sample video metadata."""
     return {
@@ -53,24 +42,9 @@ def sample_video_metadata():
         "gcs_path": "gs://test-bucket/test_video.mp4",
         "content_type": "video/mp4",
         "size_bytes": 1024000,
-        "status": "uploaded",
         "created_at": "2025-01-01T00:00:00Z",
         "updated_at": "2025-01-01T00:00:00Z",
         "metadata": {"duration": 60.0, "width": 1920, "height": 1080, "fps": 30.0},
-    }
-
-
-@pytest.fixture
-def sample_task():
-    """Sample task data."""
-    return {
-        "task_id": "task-123",
-        "video_id": "test-video-123",
-        "task_type": "video_processing",
-        "status": "pending",
-        "input_data": {"compress": True, "chunk": True, "extract_audio": True},
-        "created_at": "2025-01-01T00:00:00Z",
-        "updated_at": "2025-01-01T00:00:00Z",
     }
 
 

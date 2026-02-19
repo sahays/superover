@@ -1,11 +1,10 @@
 """
 Sequential Scene Processor
-Processes video chunks one at a time (current implementation).
-Exact copy of existing logic - ensures zero regression.
+Processes video chunks one at a time.
+Chunks are in GCS — Gemini reads them directly via GCS URI (no local download).
 """
 
 import logging
-from pathlib import Path
 from typing import List, Dict, Any, Optional
 from google.api_core import exceptions as google_exceptions
 from libs.database import SceneJobStatus
@@ -37,10 +36,10 @@ class SequentialSceneProcessor(SceneProcessor):
         response_schema: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
-        Process video chunks sequentially.
+        Process video chunks sequentially. Chunks are read directly from GCS by Gemini.
 
         Args:
-            chunks: List of chunk metadata dictionaries
+            chunks: List of chunk metadata dictionaries (must have gcs_path)
             job_id: Scene job ID for progress tracking
             video_id: Video ID
             prompt_text: Analysis prompt text
@@ -62,7 +61,7 @@ class SequentialSceneProcessor(SceneProcessor):
             chunk_index = chunk["index"]
             chunk_gcs = chunk["gcs_path"]
 
-            logger.info(f"Analyzing chunk {chunk_index + 1}/{len(chunks)}")
+            logger.info(f"Analyzing chunk {chunk_index + 1}/{len(chunks)} from {chunk_gcs}")
 
             # Update progress
             self.db.update_scene_job_status(
@@ -77,19 +76,10 @@ class SequentialSceneProcessor(SceneProcessor):
                 },
             )
 
-            # Use local_path if available (no-chunking case), otherwise download from GCS
-            if "local_path" in chunk:
-                local_chunk_path = Path(chunk["local_path"])
-                logger.info(f"Using already-downloaded video file: {local_chunk_path}")
-            else:
-                # Download chunk from GCS
-                local_chunk_path = self.temp_dir / f"{video_id}_{chunk['filename']}"
-                self.storage.download_file(chunk_gcs, local_chunk_path)
-
             try:
-                # Analyze with Gemini (context already loaded and passed as text)
+                # Analyze with Gemini — pass GCS URI directly, no local file needed
                 result = self.analyzer.analyze_chunk(
-                    media_path=local_chunk_path,
+                    media_path=None,
                     chunk_index=chunk_index,
                     chunk_duration=chunk["duration"],
                     prompt_text=prompt_text,
@@ -139,10 +129,5 @@ class SequentialSceneProcessor(SceneProcessor):
                 )
                 logger.error(error_msg)
                 raise ValueError(error_msg) from e
-
-            finally:
-                # Clean up chunk file (but not if it's the original downloaded file)
-                if "local_path" not in chunk and local_chunk_path.exists():
-                    local_chunk_path.unlink()
 
         logger.info(f"[SEQUENTIAL] Completed all {len(chunks)} chunks for job {job_id}")

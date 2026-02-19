@@ -1,6 +1,7 @@
 """
 Super Over Alchemy - Main API Application
 FastAPI server for video analysis and scene recognition.
+Serves the Vite SPA in production (same-origin, no CORS needed).
 """
 
 import sys
@@ -13,8 +14,10 @@ sys.path.insert(0, str(project_root))
 import logging
 from datetime import datetime
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from config import settings
 from api.routes import scenes, media, prompts, images
 from api.models.schemas import HealthResponse
@@ -22,6 +25,9 @@ from api.models.schemas import HealthResponse
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+# Resolve frontend dist directory (built by Vite)
+FRONTEND_DIST = project_root / "frontend" / "dist"
 
 
 @asynccontextmanager
@@ -38,6 +44,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Processed Bucket: {settings.processed_bucket}")
     logger.info(f"Results Bucket: {settings.results_bucket}")
     logger.info(f"Is Cloud Run: {settings.is_cloud_run()}")
+    logger.info(f"Frontend dist: {FRONTEND_DIST} (exists={FRONTEND_DIST.exists()})")
     logger.info("=" * 60)
 
     # Ensure temp directory exists
@@ -62,30 +69,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
-# Cloud Run services have two URL formats:
-#   - https://SERVICE-PROJECTNUM.REGION.run.app  (new)
-#   - https://SERVICE-HASH.REGION.run.app         (legacy)
-# Allow both so CORS works regardless of which URL the browser uses.
-cors_origins = [
-    "http://localhost:3000",
-    "http://localhost:3001",
-]
-if settings.frontend_url:
-    cors_origins.append(settings.frontend_url)
-    # If the URL is legacy format (no region), also allow the new format and vice versa
-    # Simplest: allow any *.run.app origin for this service name
-    sn = settings.service_name
-    cors_origins.append(f"https://{sn}-frontend-*.run.app")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_origin_regex=r"https://{sn}-frontend.*\.run\.app".format(sn=settings.service_name.replace("-", r"\-")),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS — only needed for local dev (Vite on :3000 → API on :8000).
+# In production the SPA is served same-origin, so no CORS required.
+if settings.is_local():
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000", "http://localhost:3001"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Include routers
 app.include_router(scenes.router, prefix="/api")
@@ -94,21 +87,48 @@ app.include_router(prompts.router, prefix="/api")
 app.include_router(images.router, prefix="/api")
 
 
-@app.get("/")
-async def root():
-    """Root endpoint."""
+@app.get("/health", response_model=HealthResponse)
+async def health():
+    """Health check endpoint."""
+    return HealthResponse(status="healthy", environment=settings.environment, timestamp=datetime.utcnow())
+
+
+# --- SPA static file serving ---
+# Mount Vite's assets directory (JS/CSS bundles with content hashes)
+if FRONTEND_DIST.exists() and (FRONTEND_DIST / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="static-assets")
+
+
+@app.get("/{path:path}")
+async def serve_spa(request: Request, path: str):
+    """
+    Catch-all: serve the SPA's index.html for client-side routing.
+    API and health paths are matched by their own routes first; this guard
+    catches any unmatched /api/* or /health sub-paths that would otherwise
+    silently return index.html.
+    """
+    if path.startswith("api/") or path == "health":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    # Try to serve a static file from dist/ first
+    if FRONTEND_DIST.exists():
+        file_path = FRONTEND_DIST / path
+        if file_path.is_file():
+            return FileResponse(str(file_path))
+
+        # Fall back to index.html for SPA routing
+        index_path = FRONTEND_DIST / "index.html"
+        if index_path.exists():
+            return FileResponse(str(index_path))
+
+    # No frontend build available — return API info
     return {
         "service": "Super Over Alchemy API",
         "version": "1.0.0",
         "status": "running",
         "environment": settings.environment,
+        "note": "Frontend not built. Run 'cd frontend && npm run build' first.",
     }
-
-
-@app.get("/health", response_model=HealthResponse)
-async def health():
-    """Health check endpoint."""
-    return HealthResponse(status="healthy", environment=settings.environment, timestamp=datetime.utcnow())
 
 
 if __name__ == "__main__":

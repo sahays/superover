@@ -1,7 +1,7 @@
 """
-Hybrid Parallel Scene Processor
-- Sequential: File downloads and chunking (safe, predictable)
-- Parallel: Gemini API calls only (isolated processes for speed and SSL safety)
+Parallel Scene Processor
+Analyzes chunks in parallel using multiple processes.
+Chunks are in GCS — Gemini reads them directly via GCS URI (no local download).
 """
 
 import logging
@@ -20,11 +20,10 @@ logger = logging.getLogger(__name__)
 def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Worker function for analyzing a single chunk with Gemini in a separate process.
-    File is already downloaded - this only does Gemini API call.
-    Runs in isolated process with its own SSL context.
+    Gemini reads the chunk directly from GCS — no local file needed.
 
     Args:
-        chunk_data: Dictionary containing chunk info and local file path
+        chunk_data: Dictionary containing chunk info and GCS path
 
     Returns:
         Result dictionary with chunk_index, result_id, and success status
@@ -49,11 +48,12 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
 
     # Extract data
     chunk_index = chunk_data["chunk_index"]
-    local_chunk_path = Path(chunk_data["local_chunk_path"])
     chunk_duration = chunk_data["chunk_duration"]
+    chunk_gcs_path = chunk_data["gcs_path"]
     prompt_text = chunk_data["prompt_text"]
     prompt_type = chunk_data.get("prompt_type", "scene_analysis")
-    context_text = chunk_data.get("context_text")  # Pre-loaded context text
+    context_text = chunk_data.get("context_text")
+    response_schema = chunk_data.get("response_schema")
     job_id = chunk_data["job_id"]
     video_id = chunk_data["video_id"]
     total_chunks = chunk_data["total_chunks"]
@@ -63,20 +63,18 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
     db = get_db()
     analyzer = get_scene_analyzer()
 
-    logger.info(f"[Process-{process_id}] Analyzing chunk {chunk_index + 1}/{total_chunks} with Gemini")
+    logger.info(f"[Process-{process_id}] Analyzing chunk {chunk_index + 1}/{total_chunks} from {chunk_gcs_path}")
 
     try:
-        # Analyze with Gemini (isolated SSL context per process)
-        # Context text is already loaded and passed as string
-        response_schema = chunk_data.get("response_schema")
+        # Analyze with Gemini — GCS URI passed directly, no local file
         result = analyzer.analyze_chunk(
-            media_path=local_chunk_path,
+            media_path=None,
             chunk_index=chunk_index,
             chunk_duration=chunk_duration,
             prompt_text=prompt_text,
             prompt_type=prompt_type,
             context_text=context_text,
-            gcs_path=chunk_data.get("gcs_path"),
+            gcs_path=chunk_gcs_path,
             response_schema=response_schema,
         )
 
@@ -138,27 +136,15 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 class ParallelSceneProcessor(SceneProcessor):
-    """Processes scene chunks in parallel using multiple processes (memory isolated)."""
+    """Processes scene chunks in parallel using multiple processes."""
 
     def __init__(self, db, storage, analyzer, temp_dir: Path, max_workers: int = None):
-        """
-        Initialize parallel scene processor with process-based parallelism.
-
-        Args:
-            db: Database client (not used in processes, each process creates own)
-            storage: Storage client (not used in processes)
-            analyzer: Scene analyzer (not used in processes)
-            temp_dir: Temporary directory
-            max_workers: Maximum concurrent processes (defaults to CPU count)
-        """
         super().__init__(db, storage, analyzer, temp_dir)
         self.cpu_count = multiprocessing.cpu_count()
 
-        # Use CPU count as default, or user-specified value
         if max_workers is None:
             self.max_workers = self.cpu_count
         else:
-            # Cap at CPU count for process-based parallelism
             self.max_workers = min(max_workers, self.cpu_count)
 
     def get_info(self) -> Dict[str, Any]:
@@ -168,18 +154,10 @@ class ParallelSceneProcessor(SceneProcessor):
             "cpu_count": self.cpu_count,
             "max_workers": self.max_workers,
             "process_based": True,
-            "description": f"Hybrid: sequential I/O, parallel Gemini ({self.max_workers} processes)",
+            "description": f"Parallel Gemini analysis ({self.max_workers} processes), GCS-direct",
         }
 
     def _update_progress(self, job_id: str, completed: int, total: int):
-        """
-        Update progress in database (process-safe via Firestore).
-
-        Args:
-            job_id: Scene job ID
-            completed: Number of completed chunks
-            total: Total number of chunks
-        """
         try:
             self.db.update_scene_job_status(
                 job_id,
@@ -203,19 +181,15 @@ class ParallelSceneProcessor(SceneProcessor):
         response_schema: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
-        Hybrid processing: Sequential I/O, Parallel Gemini API calls.
-
-        1. Download all chunk files sequentially (predictable, safe)
-        2. Analyze with Gemini in parallel processes (fast, isolated SSL)
-        3. Clean up files sequentially
+        Process chunks in parallel. Gemini reads chunks directly from GCS.
 
         Args:
-            chunks: List of chunk metadata dictionaries
+            chunks: List of chunk metadata dictionaries (must have gcs_path)
             job_id: Scene job ID for progress tracking
             video_id: Video ID
             prompt_text: Analysis prompt text
-            prompt_type: Type of analysis (scene_analysis, subtitling, etc.)
-            context_items: Optional list of context items to include in analysis
+            prompt_type: Type of analysis
+            context_items: Optional list of context items
             response_schema: Optional JSON schema for structured Gemini output
 
         Raises:
@@ -223,65 +197,39 @@ class ParallelSceneProcessor(SceneProcessor):
         """
         total_chunks = len(chunks)
         logger.info(
-            f"[HYBRID] Processing {total_chunks} chunks: sequential I/O, parallel Gemini "
-            f"({self.max_workers} processes, {self.cpu_count} CPUs)"
+            f"[PARALLEL] Processing {total_chunks} chunks with {self.max_workers} processes, GCS-direct"
         )
 
-        # STEP 1: Download all chunks SEQUENTIALLY (safe, predictable)
-        logger.info(f"[HYBRID] Step 1/3: Downloading {total_chunks} chunks sequentially...")
-        local_chunk_paths = []
-
-        for i, chunk in enumerate(chunks):
-            chunk_index = chunk["index"]
-
-            # Use local_path if available (no-chunking case)
-            if "local_path" in chunk:
-                local_chunk_path = Path(chunk["local_path"])
-                logger.info(f"[HYBRID] Chunk {i + 1}/{total_chunks}: Using already-downloaded file")
-            else:
-                # Download chunk from GCS
-                local_chunk_path = self.temp_dir / f"{video_id}_{chunk['filename']}"
-                self.storage.download_file(chunk["gcs_path"], local_chunk_path)
-                logger.info(f"[HYBRID] Chunk {i + 1}/{total_chunks}: Downloaded from GCS")
-
-            local_chunk_paths.append(local_chunk_path)
-
-        # Load context files once (not per chunk, not per process)
+        # Load context files once
         context_text = self.load_context_text(context_items) if context_items else None
         if context_text:
-            logger.info(f"[HYBRID] Loaded context text ({len(context_text)} chars) - will be reused for all chunks")
+            logger.info(f"[PARALLEL] Loaded context text ({len(context_text)} chars)")
 
-        logger.info(f"[HYBRID] Step 2/3: Analyzing {total_chunks} chunks in parallel with Gemini...")
-
-        # STEP 2: Analyze with Gemini in PARALLEL (isolated processes)
-        completed_count = 0
-        errors = []
-
-        # Prepare tasks for parallel Gemini processing
+        # Prepare tasks — no file downloads needed
         gemini_tasks = [
             {
                 "chunk_index": chunk["index"],
-                "local_chunk_path": str(local_chunk_paths[i]),
                 "chunk_duration": chunk["duration"],
+                "gcs_path": chunk["gcs_path"],
                 "prompt_text": prompt_text,
                 "prompt_type": prompt_type,
-                "context_text": context_text,  # Pre-loaded context text (not items)
-                "response_schema": response_schema,  # Category response schema
+                "context_text": context_text,
+                "response_schema": response_schema,
                 "job_id": job_id,
                 "video_id": video_id,
                 "total_chunks": total_chunks,
-                "gcs_path": chunk.get("gcs_path"),
             }
-            for i, chunk in enumerate(chunks)
+            for chunk in chunks
         ]
 
+        completed_count = 0
+        errors = []
+
         with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
-            # Submit all Gemini analysis tasks
             future_to_index = {
                 executor.submit(_analyze_chunk_worker, task): task["chunk_index"] for task in gemini_tasks
             }
 
-            # Process results as they complete
             for future in as_completed(future_to_index):
                 chunk_index = future_to_index[future]
 
@@ -290,48 +238,22 @@ class ParallelSceneProcessor(SceneProcessor):
 
                     if result["success"]:
                         completed_count += 1
-
-                        # Update progress
                         self._update_progress(job_id, completed_count, total_chunks)
-
                         logger.info(
-                            f"[HYBRID] Progress: {completed_count}/{total_chunks} chunks analyzed "
+                            f"[PARALLEL] Progress: {completed_count}/{total_chunks} chunks analyzed "
                             f"(chunk {chunk_index}, result_id: {result['result_id']})"
                         )
                     else:
-                        # Worker reported failure
-                        error_info = {
-                            "chunk_index": chunk_index,
-                            "error": result["error"],
-                        }
-                        errors.append(error_info)
-                        logger.error(f"[HYBRID] Chunk {chunk_index} failed: {result['error']}")
+                        errors.append({"chunk_index": chunk_index, "error": result["error"]})
+                        logger.error(f"[PARALLEL] Chunk {chunk_index} failed: {result['error']}")
 
                 except Exception as e:
-                    # Process itself crashed
-                    error_info = {
-                        "chunk_index": chunk_index,
-                        "error": f"Process crash: {type(e).__name__}: {e}",
-                    }
-                    errors.append(error_info)
-                    logger.error(f"[HYBRID] Process for chunk {chunk_index} crashed: {e}")
+                    errors.append({"chunk_index": chunk_index, "error": f"Process crash: {type(e).__name__}: {e}"})
+                    logger.error(f"[PARALLEL] Process for chunk {chunk_index} crashed: {e}")
 
-        # STEP 3: Clean up downloaded files SEQUENTIALLY
-        logger.info(f"[HYBRID] Step 3/3: Cleaning up {total_chunks} temporary files...")
-        for i, chunk in enumerate(chunks):
-            # Only delete if we downloaded it (not the original file)
-            if "local_path" not in chunk:
-                try:
-                    if local_chunk_paths[i].exists():
-                        local_chunk_paths[i].unlink()
-                        logger.info(f"[HYBRID] Deleted temp file: {local_chunk_paths[i].name}")
-                except Exception as e:
-                    logger.warning(f"[HYBRID] Failed to delete temp file {local_chunk_paths[i]}: {e}")
-
-        # Check if we had any errors
         if errors:
             error_summary = f"Failed to process {len(errors)}/{total_chunks} chunks: {errors}"
-            logger.error(f"[HYBRID] {error_summary}")
+            logger.error(f"[PARALLEL] {error_summary}")
             raise Exception(error_summary)
 
-        logger.info(f"[HYBRID] Successfully completed all {total_chunks} chunks for job {job_id}")
+        logger.info(f"[PARALLEL] Successfully completed all {total_chunks} chunks for job {job_id}")

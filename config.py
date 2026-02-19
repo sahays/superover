@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     """Application settings with environment variable support."""
 
     # Service Naming
-    service_name: str = "super-over"
+    service_name: str = "superover"
 
     # GCP Configuration
     gcp_project_id: str
@@ -24,8 +24,7 @@ class Settings(BaseSettings):
     processed_bucket: str
     results_bucket: str
 
-    # Gemini API
-    gemini_api_key: str = ""
+    # Gemini API (uses ADC — no API key needed on Cloud Run)
     gemini_region: str = "global"  # Gemini endpoint region (separate from gcp_region)
     gemini_default_model: str = "gemini-3-pro-preview"
     gemini_default_output_tokens: int = 65536
@@ -35,10 +34,6 @@ class Settings(BaseSettings):
     # Firestore
     firestore_database: str = "(default)"
 
-    # URLs (different for local vs Cloud Run)
-    api_url: str = "http://localhost:8000"
-    frontend_url: str = "http://localhost:3000"
-
     # Environment
     environment: str = "local"  # local, development, production
 
@@ -47,6 +42,10 @@ class Settings(BaseSettings):
     chunk_duration_seconds: int = 30
     compress_resolution: str = "480p"  # 480p for faster processing
     temp_storage_path: Path = Path("./storage/temp")
+
+    # Transcoder API
+    transcoder_location: str = "asia-south1"  # Must match GCS bucket region
+    transcoder_job_timeout_seconds: int = 600
 
     # Worker Settings
     worker_poll_interval_seconds: int = 5

@@ -118,8 +118,8 @@ async def delete_media_job(job_id: str):
                 detail=f"Media job not found: {job_id}",
             )
 
-        # Don't allow deleting jobs that are currently processing
-        if job["status"] == MediaJobStatus.PROCESSING:
+        # Don't allow deleting jobs that are currently processing or transcoding
+        if job["status"] in (MediaJobStatus.PROCESSING, MediaJobStatus.TRANSCODING):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot delete job that is currently processing",
@@ -196,7 +196,6 @@ async def get_media_presets():
         resolutions=["360p", "480p", "720p", "1080p", "1440p", "2160p"],
         audio_formats=["mp3", "aac", "wav"],
         audio_bitrates=["128k", "192k", "256k", "320k"],
-        presets=["ultrafast", "fast", "medium", "slow", "veryslow"],
         crf_range={"min": 0, "max": 51, "default": 23},
     )
 

@@ -115,7 +115,7 @@ class SceneAnalyzer:
 
     def analyze_chunk(
         self,
-        media_path: Path,
+        media_path: Optional[Path],
         chunk_index: int,
         chunk_duration: float,
         prompt_text: str,
@@ -128,7 +128,7 @@ class SceneAnalyzer:
         Analyze a media chunk (video or audio).
 
         Args:
-            media_path: Path to the media chunk file (fallback if no gcs_path)
+            media_path: Path to the media chunk file (fallback if no gcs_path, can be None)
             chunk_index: Index of this chunk in the full file
             chunk_duration: Duration of the chunk in seconds
             prompt_text: The full prompt text to use for the analysis

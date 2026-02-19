@@ -17,6 +17,7 @@ class MediaJobStatus(str, Enum):
 
     PENDING = "pending"
     PROCESSING = "processing"
+    TRANSCODING = "transcoding"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -491,6 +492,35 @@ class FirestoreDB:
         query = self.media_jobs.where("status", "==", MediaJobStatus.PENDING).limit(limit)
         jobs = [doc.to_dict() for doc in query.stream()]
         # Sort by created_at in memory to avoid needing a composite index
+        return sorted(jobs, key=lambda x: x.get("created_at", 0))
+
+    def update_media_job_transcoder(
+        self,
+        job_id: str,
+        transcoder_job_name: str,
+        phase: str = "media",
+    ) -> None:
+        """
+        Store Transcoder API job reference for polling.
+
+        Args:
+            job_id: Media job ID
+            transcoder_job_name: Full Transcoder API job resource name
+            phase: Processing phase (media, chunking)
+        """
+        update_data = {
+            "status": MediaJobStatus.TRANSCODING,
+            "transcoder_job_name": transcoder_job_name,
+            "transcoder_phase": phase,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }
+        self.media_jobs.document(job_id).update(update_data)
+        logger.info(f"Updated media job {job_id} with transcoder job: {transcoder_job_name} (phase={phase})")
+
+    def get_transcoding_media_jobs(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get media jobs currently in TRANSCODING state (awaiting Transcoder API completion)."""
+        query = self.media_jobs.where("status", "==", MediaJobStatus.TRANSCODING).limit(limit)
+        jobs = [doc.to_dict() for doc in query.stream()]
         return sorted(jobs, key=lambda x: x.get("created_at", 0))
 
     def delete_media_job(self, job_id: str) -> None:
