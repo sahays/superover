@@ -178,7 +178,7 @@ fi
 #   --no-allow-unauthenticated  (internal only, no public access)
 #   --no-cpu-throttling         (CRITICAL: without this, Cloud Run throttles CPU
 #                                outside of request handling, which kills poll loops)
-#   --min-instances 1           (keeps worker alive for continuous Firestore polling)
+# Note: min/max instances and concurrency are managed via Cloud Run console.
 if [ "$DEPLOY_WORKER" = true ]; then
     build_and_deploy \
         Dockerfile.worker "$SN-worker" . "$SN-worker" \
@@ -187,8 +187,6 @@ if [ "$DEPLOY_WORKER" = true ]; then
         --cpu 4 \
         --memory 8Gi \
         --timeout 3600 \
-        --min-instances 1 \
-        --max-instances 1 \
         --no-cpu-throttling
 fi
 
