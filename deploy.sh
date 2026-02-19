@@ -189,7 +189,6 @@ if [ "$DEPLOY_WORKER" = true ]; then
         --timeout 3600 \
         --min-instances 1 \
         --max-instances 1 \
-        --concurrency 1 \
         --no-cpu-throttling
 fi
 
