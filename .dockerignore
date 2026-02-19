@@ -23,8 +23,10 @@ v0/
 .env
 .env.local
 
-# Frontend
-frontend/
+# Frontend build artifacts (source needed for multi-stage API build)
+frontend/node_modules/
+frontend/.next/
+frontend/dist/
 node_modules/
 
 # Tests
