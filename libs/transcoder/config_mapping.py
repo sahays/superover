@@ -19,16 +19,16 @@ RESOLUTION_MAP: Dict[str, int] = {
 # CRF → approximate bitrate in bps (Transcoder API uses bitrate, not CRF).
 # These are rough equivalents for H.264 at 480p. Higher CRF = lower bitrate.
 CRF_TO_BITRATE: Dict[int, int] = {
-    18: 4_000_000,   # High quality
+    18: 4_000_000,  # High quality
     20: 3_000_000,
-    23: 2_000_000,   # Default / medium quality
+    23: 2_000_000,  # Default / medium quality
     26: 1_200_000,
     28: 800_000,
     30: 600_000,
     33: 400_000,
-    36: 250_000,     # Low quality
+    36: 250_000,  # Low quality
     40: 150_000,
-    51: 100_000,     # Minimum
+    51: 100_000,  # Minimum
 }
 
 # Audio format → Transcoder API codec string
@@ -74,5 +74,3 @@ def get_audio_codec(audio_format: str) -> str:
 def get_audio_bitrate_bps(bitrate_str: str) -> int:
     """Convert audio bitrate string to bps."""
     return AUDIO_BITRATE_MAP.get(bitrate_str, 128_000)
-
-

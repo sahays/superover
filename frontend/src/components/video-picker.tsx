@@ -375,8 +375,6 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
                               // Upload file to GCS
                               await uploadToGCS(signed_url, file)
 
-                              // Determine file type based on extension
-                              const fileExt = file.name.split('.').pop()?.toLowerCase()
                               const contextType = 'text' // Currently only supporting text files
 
                               // Create context item

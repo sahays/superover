@@ -2,14 +2,13 @@ import * as React from 'react'
 import { Video } from '@/lib/types'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { RefreshCw, Video as VideoIcon, Clock, CheckCircle, AlertCircle, Loader2, MoreVertical, Trash2, Info } from 'lucide-react'
+import { RefreshCw, Video as VideoIcon, Clock, Loader2, MoreVertical, Trash2, Info } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
 import { formatBytes, formatDuration } from '@/lib/utils'
 import { Link } from 'react-router-dom'

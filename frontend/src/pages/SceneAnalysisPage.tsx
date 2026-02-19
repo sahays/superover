@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Video as VideoIcon, FileVideo, ArrowLeft } from 'lucide-react'
+import { Video as VideoIcon, FileVideo } from 'lucide-react'
 import { videoApi, sceneJobApi } from '@/lib/api-client'
 import { SceneJob, SceneJobStatus, ContextItem } from '@/lib/types'
 import { VideoPicker } from '@/components/video-picker'

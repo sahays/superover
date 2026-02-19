@@ -196,9 +196,7 @@ class ParallelSceneProcessor(SceneProcessor):
             Exception: If processing fails
         """
         total_chunks = len(chunks)
-        logger.info(
-            f"[PARALLEL] Processing {total_chunks} chunks with {self.max_workers} processes, GCS-direct"
-        )
+        logger.info(f"[PARALLEL] Processing {total_chunks} chunks with {self.max_workers} processes, GCS-direct")
 
         # Load context files once
         context_text = self.load_context_text(context_items) if context_items else None

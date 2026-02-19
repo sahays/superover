@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, Wand2, Image as ImageIcon } from 'lucide-react'
+import { Loader2, Wand2 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 
 const ASPECT_RATIOS = [

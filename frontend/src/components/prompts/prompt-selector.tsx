@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { promptApi } from '@/lib/api-client'
 import { Prompt } from '@/lib/types'

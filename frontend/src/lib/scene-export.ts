@@ -67,7 +67,7 @@ export function adjustTimestampsForSequentialVideo(results: SceneResult[], chunk
       }
 
       // Adjust timestamps in any other time-based arrays (events, moments, etc.)
-      ;['events', 'moments', 'highlights'].forEach((key) => {
+      ['events', 'moments', 'highlights'].forEach((key) => {
         if (adjustedResult.result_data[key] && Array.isArray(adjustedResult.result_data[key])) {
           adjustedResult.result_data[key] = adjustedResult.result_data[key].map((item: any) => {
             const adjustedItem = { ...item }
@@ -114,7 +114,7 @@ function flattenObject(obj: any, prefix = '', depth = 0, maxDepth = 10): Record<
   }
 
   for (const key in obj) {
-    if (!obj.hasOwnProperty(key)) continue
+    if (!Object.prototype.hasOwnProperty.call(obj, key)) continue
 
     const fullKey = prefix ? `${prefix}.${key}` : key
     const value = obj[key]

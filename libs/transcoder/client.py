@@ -5,7 +5,7 @@ Replaces local FFmpeg operations with cloud-based transcoding.
 
 import logging
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 from google.cloud.video import transcoder_v1
 from google.cloud.video.transcoder_v1 import types as transcoder_types
@@ -426,14 +426,16 @@ class TranscoderClient:
             filename = f"chunk_{index:04d}.mp4"
             gcs_path = f"{output_gcs_prefix}{filename}"
 
-            chunks.append({
-                "index": index,
-                "filename": filename,
-                "gcs_path": gcs_path,
-                "start_time": start,
-                "end_time": end,
-                "duration": duration,
-            })
+            chunks.append(
+                {
+                    "index": index,
+                    "filename": filename,
+                    "gcs_path": gcs_path,
+                    "start_time": start,
+                    "end_time": end,
+                    "duration": duration,
+                }
+            )
 
             start = end
             index += 1

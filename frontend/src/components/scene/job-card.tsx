@@ -56,7 +56,7 @@ export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps
             Completed
           </Badge>
         )
-      case SceneJobStatus.PROCESSING:
+      case SceneJobStatus.PROCESSING: {
         // Show the actual processing step if available
         const stepLabel = job.results?.step
           ? job.results.step.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())
@@ -67,6 +67,7 @@ export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps
             {stepLabel}
           </Badge>
         )
+      }
       case SceneJobStatus.FAILED:
         return (
           <Badge variant="destructive">

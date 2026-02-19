@@ -55,7 +55,7 @@ export default function MediaJobDetailPage() {
             Completed
           </Badge>
         )
-      case MediaJobStatus.PROCESSING:
+      case MediaJobStatus.PROCESSING: {
         const stepLabel = job?.progress?.step
           ? job.progress.step.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())
           : 'Processing'
@@ -65,6 +65,7 @@ export default function MediaJobDetailPage() {
             {stepLabel}
           </Badge>
         )
+      }
       case MediaJobStatus.FAILED:
         return (
           <Badge variant="destructive">

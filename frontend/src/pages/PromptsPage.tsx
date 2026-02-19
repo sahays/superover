@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { FileText, Plus, Edit2, Trash2, ArrowLeft, Loader2, Paperclip, Braces, X } from 'lucide-react'
+import { FileText, Plus, Edit2, Trash2, Loader2, Paperclip, Braces, X } from 'lucide-react'
 import { promptApi } from '@/lib/api-client'
 import { Prompt, CategorySchema } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
@@ -116,13 +116,6 @@ export default function PromptsPage() {
       setEditingSchemaCategory(null)
       setSchemaText('')
       setSchemaError(null)
-    },
-  })
-
-  const deleteSchemaMutation = useMutation({
-    mutationFn: (category: string) => promptApi.deleteSchema(category),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['categorySchemas'] })
     },
   })
 

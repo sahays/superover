@@ -3,7 +3,7 @@ import { formatBytes, truncateFilename } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { CheckCircle, XCircle, Loader2, Download, Trash2, Clock } from 'lucide-react'
+import { CheckCircle, XCircle, Loader2, Trash2, Clock } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 interface JobCardProps {
@@ -48,7 +48,7 @@ export function JobCard({ job, videoFilename, onDelete }: JobCardProps) {
             Completed
           </Badge>
         )
-      case MediaJobStatus.PROCESSING:
+      case MediaJobStatus.PROCESSING: {
         // Show the actual processing step if available
         const stepLabel = job.progress?.step
           ? job.progress.step.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())
@@ -59,6 +59,7 @@ export function JobCard({ job, videoFilename, onDelete }: JobCardProps) {
             {stepLabel}
           </Badge>
         )
+      }
       case MediaJobStatus.FAILED:
         return (
           <Badge variant="destructive">

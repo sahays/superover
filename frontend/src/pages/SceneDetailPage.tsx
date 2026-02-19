@@ -1,21 +1,16 @@
-import { useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
-import { ArrowLeft, Play, Download, Settings, FileJson, FileSpreadsheet, Coins } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { ArrowLeft, Download, FileJson, FileSpreadsheet, Coins } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
-import { videoApi, mediaApi, sceneJobApi } from '@/lib/api-client'
+import { videoApi, sceneJobApi } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { formatBytes, formatDuration } from '@/lib/utils'
 import { generateSceneCSV, generateSceneJSON, downloadFile } from '@/lib/scene-export'
-import { StartProcessing } from '@/components/media/start-processing'
-import { JobCard } from '@/components/media/job-card'
 
 export default function SceneDetailPage() {
   const { id: jobId } = useParams<{ id: string }>()
-  const [showMediaDialog, setShowMediaDialog] = useState(false)
 
   // First get the scene job
   const { data: sceneJob, isLoading: isLoadingJob } = useQuery({
