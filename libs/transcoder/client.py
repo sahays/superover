@@ -98,8 +98,9 @@ class TranscoderClient:
                     audio_stream=transcoder_types.AudioStream(
                         codec=audio_codec,
                         bitrate_bps=audio_bps,
-                        channel_count=1,
-                        sample_rate_hertz=22050,
+                        channel_count=2,
+                        channel_layout=["fl", "fr"],
+                        sample_rate_hertz=48000,
                     ),
                 )
             )
@@ -270,7 +271,7 @@ class TranscoderClient:
         result = {
             "state": state,
             "error": None,
-            "output_uri": job.output_uri,
+            "output_uri": job.config.output.uri if job.config and job.config.output else job.output_uri,
         }
 
         if job.state == transcoder_types.Job.ProcessingState.FAILED:
@@ -384,7 +385,7 @@ class TranscoderClient:
         if not metadata["duration"] and metadata.get("video", {}).get("bitrate_bps"):
             try:
                 # Use compressed output size to estimate duration
-                output_uri = job.output_uri
+                output_uri = job.config.output.uri if job.config and job.config.output else job.output_uri
                 compressed_path = f"{output_uri}media_compressed.mp4"
                 storage = get_storage()
                 file_meta = storage.get_file_metadata(compressed_path)

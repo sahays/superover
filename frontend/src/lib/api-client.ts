@@ -22,6 +22,7 @@ export const videoApi = {
     gcs_path: string
     content_type: string
     size_bytes: number
+    metadata?: Record<string, unknown>
   }) => {
     const response = await apiClient.post('/api/scenes', data)
     return response.data

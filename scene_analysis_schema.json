@@ -1,0 +1,266 @@
+{
+  "type": "object",
+  "properties": {
+    "scenes": {
+      "type": "array",
+      "description": "List of distinct scenes identified in the video chunk, in chronological order.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "scene_number": {
+            "type": "integer",
+            "description": "Sequential scene number within this chunk, starting from 1."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Timestamp when the scene begins, in HH:MM:SS.mmm format."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Timestamp when the scene ends, in HH:MM:SS.mmm format."
+          },
+          "duration_seconds": {
+            "type": "number",
+            "description": "Duration of the scene in seconds."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Brief one-line summary of what happens in this scene."
+          },
+          "detailed_description": {
+            "type": "string",
+            "description": "Detailed narrative description of the scene's events, actions, and context."
+          },
+          "people": {
+            "type": "array",
+            "description": "All people visible or identifiable in the scene.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "description": "Identifier for this person (e.g. 'Person A', 'Speaker 1', or a name if identifiable from context)."
+                },
+                "appearance": {
+                  "type": "string",
+                  "description": "Physical description: clothing, hair, distinguishing features."
+                },
+                "actions": {
+                  "type": "string",
+                  "description": "What this person is doing in the scene."
+                },
+                "position_in_frame": {
+                  "type": "string",
+                  "description": "Where the person appears in the frame (e.g. 'center', 'left foreground', 'background right')."
+                },
+                "emotions": {
+                  "type": "string",
+                  "description": "Observed emotional state or facial expressions (e.g. 'smiling', 'tense', 'neutral')."
+                }
+              },
+              "required": ["label", "appearance", "actions"]
+            }
+          },
+          "interactions": {
+            "type": "array",
+            "description": "Interactions between people in the scene.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "participants": {
+                  "type": "array",
+                  "description": "Labels of people involved in this interaction.",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "type": {
+                  "type": "string",
+                  "description": "Type of interaction (e.g. 'conversation', 'handshake', 'argument', 'collaboration', 'eye contact')."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Details of the interaction."
+                }
+              },
+              "required": ["participants", "type", "description"]
+            }
+          },
+          "dialogue": {
+            "type": "array",
+            "description": "Spoken words, narration, or voiceover in the scene.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "speaker": {
+                  "type": "string",
+                  "description": "Who is speaking (person label, 'Narrator', 'Voiceover', or 'Unknown')."
+                },
+                "timestamp": {
+                  "type": "string",
+                  "description": "Approximate timestamp of the utterance in HH:MM:SS format."
+                },
+                "text": {
+                  "type": "string",
+                  "description": "The spoken words, transcribed as accurately as possible."
+                },
+                "language": {
+                  "type": "string",
+                  "description": "Language of the spoken words (e.g. 'English', 'Hindi', 'Spanish')."
+                },
+                "tone": {
+                  "type": "string",
+                  "description": "Tone of delivery (e.g. 'enthusiastic', 'whispered', 'commanding', 'casual')."
+                }
+              },
+              "required": ["speaker", "text"]
+            }
+          },
+          "camera": {
+            "type": "object",
+            "description": "Camera and cinematography details.",
+            "properties": {
+              "shot_type": {
+                "type": "string",
+                "description": "Shot type (e.g. 'wide shot', 'close-up', 'medium shot', 'extreme close-up', 'over-the-shoulder', 'aerial', 'POV')."
+              },
+              "angle": {
+                "type": "string",
+                "description": "Camera angle (e.g. 'eye level', 'low angle', 'high angle', 'dutch angle', 'bird's eye')."
+              },
+              "movement": {
+                "type": "string",
+                "description": "Camera movement (e.g. 'static', 'pan left', 'tilt up', 'tracking', 'dolly in', 'handheld', 'zoom in', 'crane')."
+              },
+              "focus": {
+                "type": "string",
+                "description": "What the camera is focused on or drawing attention to."
+              }
+            },
+            "required": ["shot_type", "angle", "movement"]
+          },
+          "mood": {
+            "type": "object",
+            "description": "Overall mood and atmosphere of the scene.",
+            "properties": {
+              "tone": {
+                "type": "string",
+                "description": "Primary emotional tone (e.g. 'tense', 'joyful', 'melancholic', 'suspenseful', 'comedic', 'romantic')."
+              },
+              "energy": {
+                "type": "string",
+                "description": "Energy level of the scene (e.g. 'high', 'medium', 'low', 'building', 'calming')."
+              },
+              "atmosphere": {
+                "type": "string",
+                "description": "Description of the overall atmosphere and feeling conveyed."
+              }
+            },
+            "required": ["tone", "energy", "atmosphere"]
+          },
+          "setting": {
+            "type": "object",
+            "description": "Location and environment details.",
+            "properties": {
+              "location": {
+                "type": "string",
+                "description": "Where the scene takes place (e.g. 'office interior', 'city street', 'beach')."
+              },
+              "time_of_day": {
+                "type": "string",
+                "description": "Time of day (e.g. 'morning', 'afternoon', 'dusk', 'night', 'indeterminate')."
+              },
+              "lighting": {
+                "type": "string",
+                "description": "Lighting conditions (e.g. 'natural daylight', 'artificial overhead', 'dim ambient', 'backlit', 'neon')."
+              },
+              "weather": {
+                "type": "string",
+                "description": "Weather conditions if outdoors or visible (e.g. 'clear', 'overcast', 'raining', 'N/A')."
+              }
+            },
+            "required": ["location", "time_of_day", "lighting"]
+          },
+          "audio": {
+            "type": "object",
+            "description": "Non-dialogue audio elements.",
+            "properties": {
+              "music": {
+                "type": "string",
+                "description": "Background music description (genre, mood, intensity) or 'none'."
+              },
+              "sound_effects": {
+                "type": "array",
+                "description": "Notable sound effects or ambient sounds.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "ambient_noise": {
+                "type": "string",
+                "description": "Background ambient noise (e.g. 'traffic', 'crowd chatter', 'birds', 'silence')."
+              }
+            },
+            "required": ["music"]
+          },
+          "on_screen_text": {
+            "type": "array",
+            "description": "Any text visible on screen (titles, subtitles, signs, graphics, lower thirds).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "The text content."
+                },
+                "type": {
+                  "type": "string",
+                  "description": "Type of text (e.g. 'title card', 'subtitle', 'sign', 'graphic overlay', 'lower third', 'watermark')."
+                }
+              },
+              "required": ["text", "type"]
+            }
+          },
+          "visual_style": {
+            "type": "string",
+            "description": "Notable visual style elements: color grading, filters, aspect ratio changes, special effects."
+          },
+          "scene_transition": {
+            "type": "string",
+            "description": "How this scene transitions to the next (e.g. 'hard cut', 'fade to black', 'dissolve', 'wipe', 'match cut', 'N/A')."
+          }
+        },
+        "required": [
+          "scene_number",
+          "start_time",
+          "end_time",
+          "duration_seconds",
+          "summary",
+          "detailed_description",
+          "people",
+          "dialogue",
+          "camera",
+          "mood",
+          "setting",
+          "audio"
+        ]
+      }
+    },
+    "chunk_summary": {
+      "type": "string",
+      "description": "High-level summary of this entire video chunk."
+    },
+    "total_scenes": {
+      "type": "integer",
+      "description": "Total number of distinct scenes identified in this chunk."
+    },
+    "notable_observations": {
+      "type": "array",
+      "description": "Any notable patterns, recurring motifs, continuity notes, or editorial observations.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": ["scenes", "chunk_summary", "total_scenes"]
+}

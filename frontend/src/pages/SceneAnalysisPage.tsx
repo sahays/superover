@@ -54,7 +54,7 @@ export default function SceneAnalysisPage() {
 
       await videoApi.processVideo(videoId, {
         prompt_id: promptId,             // User-selected prompt (required)
-        compressed_video_path: gcsPath, // GCS path from media job
+        compressed_video_path: isCompressed ? gcsPath : undefined, // Only pass for processed media; original falls back to video.gcs_path in worker
         chunk_duration: chunkDuration,  // User-selected chunk duration
         chunk: chunkDuration > 0,       // Only chunk if duration > 0
         compress: false,                 // Already compressed in media workflow
@@ -92,7 +92,7 @@ export default function SceneAnalysisPage() {
                   <div>
                     <CardTitle>Select Media for Analysis</CardTitle>
                     <CardDescription>
-                      Choose compressed video or extracted audio from your processed library
+                      Choose an original upload, compressed video, or extracted audio
                     </CardDescription>
                   </div>
                   <Button variant="outline" onClick={() => setShowPicker(false)}>

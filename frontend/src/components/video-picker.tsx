@@ -76,13 +76,8 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
     enabled: !!selectedPromptId,
   })
 
-  // Filter to only show videos with completed media processing jobs (video or audio)
-  const videosWithJobs = allVideosWithJobs?.filter(video =>
-    video.jobs.some(job =>
-      job.status === MediaJobStatus.COMPLETED &&
-      (job.results?.compressed_video_path || job.results?.audio_path)
-    )
-  )
+  // Show all uploaded videos (not just those with completed media jobs)
+  const videosWithJobs = allVideosWithJobs
 
   const isEmpty = !isLoadingVideos && (!videosWithJobs || videosWithJobs.length === 0)
 
@@ -105,12 +100,12 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
         <CardContent className="flex items-center justify-center py-12">
           <div className="text-center">
             <Video className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-4 text-lg font-semibold">No processed media available</h3>
+            <h3 className="mt-4 text-lg font-semibold">No videos uploaded</h3>
             <p className="mt-2 text-sm text-muted-foreground">
-              You need to upload and process videos in the Media workflow first
+              Upload a video to get started with scene analysis
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Scene analysis can use compressed videos or extracted audio files from media processing
+              You can analyze original uploads directly, or process them first in the Media workflow
             </p>
             <Link to="/media">
               <Button className="mt-4">
@@ -148,6 +143,44 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
+              {/* Original Upload Option */}
+              <Button
+                variant={
+                  selectedVideo?.videoId === video.video_id && selectedVideo?.jobId === ''
+                    ? 'default'
+                    : 'outline'
+                }
+                className="w-full justify-start"
+                onClick={() => {
+                  setSelectedVideo({
+                    videoId: video.video_id,
+                    isCompressed: false,
+                    gcsPath: video.gcs_path,
+                    jobId: '',
+                    mediaType: 'video',
+                    duration: video.metadata?.duration,
+                  })
+                }}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                <span className="flex-1 text-left">
+                  Original Upload
+                  {video.size_bytes && (
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      ({formatBytes(video.size_bytes)})
+                    </span>
+                  )}
+                  {video.metadata?.duration && (
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      • {formatDuration(video.metadata.duration)}
+                    </span>
+                  )}
+                </span>
+                {selectedVideo?.videoId === video.video_id && selectedVideo?.jobId === '' && (
+                  <CheckCircle className="h-4 w-4" />
+                )}
+              </Button>
+
               {/* Processed Video and Audio Options */}
               {video.jobs
                 .filter((job) =>
@@ -256,6 +289,11 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
                     <Music className="h-4 w-4 text-blue-600" />
                     <span className="font-medium text-blue-900">Audio file selected</span>
                   </>
+                ) : selectedVideo.jobId === '' ? (
+                  <>
+                    <Upload className="h-4 w-4 text-blue-600" />
+                    <span className="font-medium text-blue-900">Original video selected</span>
+                  </>
                 ) : (
                   <>
                     <FileVideo className="h-4 w-4 text-blue-600" />
@@ -269,6 +307,11 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
                 <p className="mt-1 text-xs text-blue-700">
                   Audio-only analysis is ideal for subtitling, transcription, and voice analysis tasks.
                   Use chunking for long audio files to avoid hitting token limits.
+                </p>
+              )}
+              {selectedVideo.jobId === '' && (
+                <p className="mt-1 text-xs text-blue-700">
+                  Analyzing the original uploaded file. For smaller file sizes, process the video in the Media workflow first.
                 </p>
               )}
             </div>

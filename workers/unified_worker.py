@@ -138,9 +138,7 @@ class UnifiedWorker:
             # Store duration on the video record so scene jobs can access it
             duration = results_data["metadata"].get("duration")
             if duration and video:
-                existing_meta = video.get("metadata") or {}
-                existing_meta["duration"] = duration
-                self.db.update_video(video_id, {"metadata": existing_meta})
+                self.db.update_video_metadata(video_id, {"duration": duration})
 
             # Determine output paths based on config
             if config_dict.get("compress", True):
@@ -173,7 +171,7 @@ class UnifiedWorker:
                 compressed_bytes = results_data.get("compressed_size_bytes", 0)
                 original_bytes = results_data["original_size_bytes"]
                 if original_bytes > 0 and compressed_bytes > 0:
-                    results_data["compression_ratio"] = round(original_bytes / compressed_bytes, 2)
+                    results_data["compression_ratio"] = round((1 - compressed_bytes / original_bytes) * 100, 1)
                 else:
                     results_data["compression_ratio"] = 0.0
 
@@ -425,25 +423,38 @@ class UnifiedWorker:
 
             total_duration = video.get("metadata", {}).get("duration")
             if not total_duration:
-                raise ValueError(f"Video {video_id} has no duration metadata. Run media processing first.")
+                logger.warning(
+                    f"Video {video_id} has no duration metadata. "
+                    f"Falling back to no-chunking mode (processing entire video as single chunk)."
+                )
+                # Fall back to single-chunk mode
+                chunks = [
+                    {
+                        "index": 0,
+                        "filename": Path(video_path_to_process).name,
+                        "gcs_path": video_path_to_process,
+                        "duration": 0,
+                    }
+                ]
+                manifest_data["chunks"] = chunks
+            else:
+                output_prefix = f"gs://{settings.processed_bucket}/{video_id}/scene_chunks/"
 
-            output_prefix = f"gs://{settings.processed_bucket}/{video_id}/scene_chunks/"
+                # Submit chunking job and wait for completion (blocking)
+                transcoder_job_name = self.transcoder.submit_chunking_job(
+                    input_gcs_uri=video_path_to_process,
+                    output_gcs_prefix=output_prefix,
+                    chunk_duration=chunk_duration,
+                    total_duration=total_duration,
+                )
 
-            # Submit chunking job and wait for completion (blocking)
-            transcoder_job_name = self.transcoder.submit_chunking_job(
-                input_gcs_uri=video_path_to_process,
-                output_gcs_prefix=output_prefix,
-                chunk_duration=chunk_duration,
-                total_duration=total_duration,
-            )
+                status = self.transcoder.wait_for_completion(transcoder_job_name)
+                if status["state"] != "SUCCEEDED":
+                    raise Exception(f"Chunking failed: {status.get('error', 'Unknown error')}")
 
-            status = self.transcoder.wait_for_completion(transcoder_job_name)
-            if status["state"] != "SUCCEEDED":
-                raise Exception(f"Chunking failed: {status.get('error', 'Unknown error')}")
-
-            # Build chunk list from expected output paths
-            chunks = self.transcoder.build_chunk_list(output_prefix, chunk_duration, total_duration)
-            manifest_data["chunks"] = chunks
+                # Build chunk list from expected output paths
+                chunks = self.transcoder.build_chunk_list(output_prefix, chunk_duration, total_duration)
+                manifest_data["chunks"] = chunks
         else:
             # No chunking — process the entire video as a single chunk
             duration = video.get("metadata", {}).get("duration", 0)

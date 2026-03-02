@@ -5,6 +5,25 @@ import { videoApi, uploadToGCS } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { formatBytes } from '@/lib/utils'
 
+function extractMediaDuration(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const isAudio = file.type.startsWith('audio/')
+    const el = document.createElement(isAudio ? 'audio' : 'video') as HTMLMediaElement
+    el.preload = 'metadata'
+    el.onloadedmetadata = () => {
+      const duration = isFinite(el.duration) ? el.duration : null
+      URL.revokeObjectURL(url)
+      resolve(duration)
+    }
+    el.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve(null)
+    }
+    el.src = url
+  })
+}
+
 interface UploadVideoProps {
   onComplete: () => void
   onCancel: () => void
@@ -23,9 +42,12 @@ export function UploadVideo({ onComplete, onCancel }: UploadVideoProps) {
         file.type
       )
 
-      // Step 2: Upload to GCS
+      // Step 2: Upload to GCS and extract duration in parallel
       setUploadProgress(30)
-      await uploadToGCS(signed_url, file)
+      const [, duration] = await Promise.all([
+        uploadToGCS(signed_url, file),
+        extractMediaDuration(file),
+      ])
       setUploadProgress(70)
 
       // Step 3: Create video record
@@ -34,6 +56,7 @@ export function UploadVideo({ onComplete, onCancel }: UploadVideoProps) {
         gcs_path,
         content_type: file.type,
         size_bytes: file.size,
+        ...(duration ? { metadata: { duration } } : {}),
       })
 
       setUploadProgress(100)
