@@ -168,7 +168,7 @@ def register_job_routes(router: APIRouter) -> None:
     @router.post(
         "/{video_id}/process",
         response_model=ProcessingJobResponse,
-        dependencies=[Depends(rate_limit("scene_analysis", max_requests=20, window_minutes=1440))],
+        dependencies=[Depends(rate_limit("scene_analysis", max_requests=25, window_minutes=1440))],
     )
     async def process_video(video_id: str, request: Request, body: ProcessVideoRequest):
         """Start scene processing with user-selected prompt."""

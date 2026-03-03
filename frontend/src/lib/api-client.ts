@@ -303,10 +303,16 @@ export const searchApi = {
     return response.data
   },
 
-  searchVideos: async (query: string, limit = 20) => {
+  searchVideos: async (
+    query: string,
+    limit = 20,
+    audio?: string,
+    audioMime?: string,
+  ) => {
     const response = await apiClient.post('/api/search/videos', {
       query,
       limit,
+      ...(audio ? { audio, audio_mime: audioMime } : {}),
     })
     return response.data
   },

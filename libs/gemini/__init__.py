@@ -4,6 +4,7 @@ from functools import lru_cache
 from .analyzer import GeminiAnalyzer
 from .scene_analyzer import SceneAnalyzer
 from .search_curator import SearchCurator
+from .search_query_interpreter import SearchQueryInterpreter
 
 __all__ = [
     "GeminiAnalyzer",
@@ -12,6 +13,8 @@ __all__ = [
     "get_scene_analyzer",
     "SearchCurator",
     "get_search_curator",
+    "SearchQueryInterpreter",
+    "get_search_query_interpreter",
 ]
 
 
@@ -31,3 +34,9 @@ def get_scene_analyzer() -> SceneAnalyzer:
 def get_search_curator() -> SearchCurator:
     """Get a singleton Search curator instance."""
     return SearchCurator()
+
+
+@lru_cache()
+def get_search_query_interpreter() -> SearchQueryInterpreter:
+    """Get a singleton Search query interpreter instance."""
+    return SearchQueryInterpreter()

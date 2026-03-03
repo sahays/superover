@@ -128,10 +128,7 @@ class SearchCurator:
                 last_exception = e
                 if attempt < self.max_retries - 1:
                     delay = self.base_delay * (2**attempt)
-                    logger.warning(
-                        f"Attempt {attempt + 1}/{self.max_retries} failed: {e}. "
-                        f"Retrying in {delay:.1f}s..."
-                    )
+                    logger.warning(f"Attempt {attempt + 1}/{self.max_retries} failed: {e}. Retrying in {delay:.1f}s...")
                     time.sleep(delay)
                 else:
                     logger.error(f"All {self.max_retries} retry attempts failed")
@@ -141,9 +138,7 @@ class SearchCurator:
 
         raise last_exception
 
-    def curate_search_results(
-        self, query: str, bq_results: list[dict]
-    ) -> dict[str, Any]:
+    def curate_search_results(self, query: str, bq_results: list[dict]) -> dict[str, Any]:
         """Curate BQ search results into structured recommendations.
 
         Returns dict with response_text and recommendations list.
@@ -208,9 +203,7 @@ class SearchCurator:
             logger.error(f"Search curation failed: {e}", exc_info=True)
             return self._fallback_response(query, bq_results)
 
-    def _fallback_response(
-        self, query: str, bq_results: list[dict]
-    ) -> dict[str, Any]:
+    def _fallback_response(self, query: str, bq_results: list[dict]) -> dict[str, Any]:
         """Generate a basic fallback when Gemini curation fails."""
         recommendations = []
         for row in bq_results[:10]:
@@ -227,8 +220,7 @@ class SearchCurator:
             )
         return {
             "response_text": (
-                f"Found {len(bq_results)} result(s) matching \"{query}\". "
-                "Showing raw results (AI curation unavailable)."
+                f'Found {len(bq_results)} result(s) matching "{query}". Showing raw results (AI curation unavailable).'
             ),
             "recommendations": recommendations,
         }

@@ -7,6 +7,8 @@ import {
   Sparkles,
   Play,
   Star,
+  Mic,
+  Square,
 } from 'lucide-react'
 import { searchApi, videoApi } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
@@ -17,6 +19,7 @@ import {
   VideoSearchPlayer,
   parseTimestamp,
 } from '@/components/search/video-search-player'
+import { useAudioRecorder } from '@/hooks/use-audio-recorder'
 
 const LOADING_MESSAGES = [
   'Asking the AI to binge-watch your videos real quick...',
@@ -63,6 +66,7 @@ interface CuratedSearchResponse {
   response_text: string
   recommendations: SearchRecommendation[]
   raw_results: VideoSearchResult[]
+  interpreted_query: string | null
 }
 
 function SearchLoadingAnimation() {
@@ -119,24 +123,61 @@ export default function SearchPage() {
   const [searching, setSearching] = useState(false)
   const [searchDuration, setSearchDuration] = useState<number | null>(null)
 
-  const handleSearch = useCallback(async () => {
-    if (!query.trim()) return
-    setSearching(true)
-    setSearchDuration(null)
-    const startTime = performance.now()
+  const {
+    isRecording,
+    audioBase64,
+    secondsLeft,
+    error: micError,
+    startRecording,
+    stopRecording,
+    reset: resetAudio,
+  } = useAudioRecorder(10_000)
 
-    try {
-      const response = await searchApi.searchVideos(query)
-      setCuratedResponse(response)
-    } finally {
-      setSearchDuration(Math.round((performance.now() - startTime) / 100) / 10)
-      setSearching(false)
+  const handleSearch = useCallback(
+    async (audio?: string, audioMime?: string) => {
+      if (!query.trim() && !audio) return
+      setSearching(true)
+      setSearchDuration(null)
+      const startTime = performance.now()
+
+      try {
+        const response = await searchApi.searchVideos(
+          query,
+          20,
+          audio,
+          audioMime,
+        )
+        setCuratedResponse(response)
+      } finally {
+        setSearchDuration(
+          Math.round((performance.now() - startTime) / 100) / 10,
+        )
+        setSearching(false)
+      }
+    },
+    [query],
+  )
+
+  // Auto-submit when recording completes
+  useEffect(() => {
+    if (!isRecording && audioBase64) {
+      handleSearch(audioBase64, 'audio/webm')
+      resetAudio()
     }
-  }, [query])
+  }, [isRecording, audioBase64, handleSearch, resetAudio])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleSearch()
+    }
+  }
+
+  const handleMicClick = () => {
+    if (isRecording) {
+      stopRecording()
+    } else {
+      resetAudio()
+      startRecording()
     }
   }
 
@@ -167,20 +208,49 @@ export default function SearchPage() {
       {/* Search Bar */}
       <div className="flex gap-2 mb-8">
         <Input
-          placeholder="Describe what you're looking for..."
+          placeholder="Describe what you're looking for (any language)..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           className="flex-1"
         />
         <Button
-          onClick={handleSearch}
+          variant={isRecording ? 'destructive' : 'outline'}
+          size="icon"
+          onClick={handleMicClick}
+          disabled={searching}
+          title={isRecording ? 'Stop recording' : 'Voice search'}
+        >
+          {isRecording ? (
+            <Square className="h-4 w-4" />
+          ) : (
+            <Mic className="h-4 w-4" />
+          )}
+        </Button>
+        <Button
+          onClick={() => handleSearch()}
           disabled={searching || !query.trim()}
         >
           <Search className="mr-2 h-4 w-4" />
           {searching ? 'Searching...' : 'Search'}
         </Button>
       </div>
+
+      {/* Recording indicator */}
+      {isRecording && (
+        <div className="flex items-center gap-2 mb-4 text-sm text-destructive">
+          <span className="relative flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-destructive" />
+          </span>
+          Recording{secondsLeft != null ? ` (${secondsLeft}s remaining)` : ''}...
+        </div>
+      )}
+
+      {/* Mic error */}
+      {micError && (
+        <p className="text-sm text-destructive mb-4">{micError}</p>
+      )}
 
       {/* Loading Animation */}
       {searching && <SearchLoadingAnimation />}
@@ -193,6 +263,13 @@ export default function SearchPage() {
             <p className="text-sm text-muted-foreground">
               Found {totalResults} result{totalResults !== 1 ? 's' : ''} in{' '}
               {searchDuration}s
+            </p>
+          )}
+
+          {/* Interpreted query */}
+          {curatedResponse.interpreted_query && (
+            <p className="text-sm text-muted-foreground italic">
+              Searched for: &ldquo;{curatedResponse.interpreted_query}&rdquo;
             </p>
           )}
 

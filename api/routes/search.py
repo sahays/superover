@@ -1,5 +1,6 @@
 """Search and sync API routes for BigQuery AI.SEARCH integration."""
 
+import base64
 import json
 import logging
 from typing import List
@@ -19,7 +20,7 @@ from api.models.schemas.search import (
 from google.cloud import firestore as firestore_module
 from libs.database import get_db
 from libs.bigquery import get_bq_client
-from libs.gemini import get_search_curator
+from libs.gemini import get_search_curator, get_search_query_interpreter
 
 logger = logging.getLogger(__name__)
 
@@ -425,8 +426,37 @@ def _parse_result_data_json(row: dict) -> dict:
 async def search_videos(request: SearchRequest):
     """Cross-video semantic search with Gemini curation. Zero Firestore reads."""
     try:
+        # Interpret query: translate multilingual/multimodal input to English
+        interpreted_query = None
+        search_query = request.query
+
+        interpreter = get_search_query_interpreter()
+        audio_bytes = None
+        if request.audio:
+            try:
+                audio_bytes = base64.b64decode(request.audio)
+            except Exception:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid base64 audio data",
+                )
+
+        if audio_bytes:
+            interpreted_query = interpreter.interpret_query(
+                text=request.query if request.query.strip() else None,
+                audio_bytes=audio_bytes,
+                audio_mime=request.audio_mime or "audio/webm",
+            )
+            search_query = interpreted_query
+        else:
+            interpreted_query = interpreter.interpret_query(text=request.query)
+            if interpreted_query != request.query.strip():
+                search_query = interpreted_query
+            else:
+                interpreted_query = None  # Don't show if unchanged (fast path)
+
         bq = get_bq_client()
-        raw_results = bq.search_videos(request.query, request.limit)
+        raw_results = bq.search_videos(search_query, request.limit)
 
         # Group by video_id, keep best match per video
         video_groups: dict[str, list[dict]] = {}
@@ -461,16 +491,15 @@ async def search_videos(request: SearchRequest):
 
         # Gemini curation
         curator = get_search_curator()
-        curated = curator.curate_search_results(request.query, raw_results)
+        curated = curator.curate_search_results(search_query, raw_results)
 
-        recommendations = [
-            SearchRecommendation(**rec) for rec in curated.get("recommendations", [])
-        ]
+        recommendations = [SearchRecommendation(**rec) for rec in curated.get("recommendations", [])]
 
         return CuratedSearchResponse(
             response_text=curated.get("response_text", ""),
             recommendations=recommendations,
             raw_results=raw_video_results,
+            interpreted_query=interpreted_query,
         )
 
     except Exception as e:

@@ -26,7 +26,7 @@ def _is_media_file(video: dict) -> bool:
     "/jobs",
     response_model=MediaJobResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(rate_limit("media_processing"))],
+    dependencies=[Depends(rate_limit("media_processing", max_requests=25, window_minutes=1440))],
 )
 async def create_media_job(request: Request, body: CreateMediaJobRequest):
     """

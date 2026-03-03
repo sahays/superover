@@ -50,6 +50,8 @@ class SearchRequest(BaseModel):
 
     query: str = Field(..., description="Natural language search query")
     limit: int = Field(20, ge=1, le=100, description="Max results to return")
+    audio: Optional[str] = Field(None, description="Base64-encoded audio (max ~10s)")
+    audio_mime: Optional[str] = Field(None, description="Audio MIME type, e.g. audio/webm")
 
 
 class VideoSearchResult(BaseModel):
@@ -103,3 +105,4 @@ class CuratedSearchResponse(BaseModel):
     response_text: str
     recommendations: List[SearchRecommendation] = Field(default_factory=list)
     raw_results: List[VideoSearchResult] = Field(default_factory=list)
+    interpreted_query: Optional[str] = Field(None, description="English query produced by the interpreter")
