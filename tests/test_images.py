@@ -4,7 +4,11 @@ from api.main import app
 from libs.database import get_db
 import uuid
 
-client = TestClient(app)
+
+@pytest.fixture()
+def client():
+    """TestClient — seeding is suppressed by conftest._no_seed."""
+    return TestClient(app)
 
 
 @pytest.fixture
@@ -18,7 +22,9 @@ def mock_asset():
         content_type="image/jpeg",
         size_bytes=1024,
     )
-    return asset_id
+    yield asset_id
+    # Cleanup
+    db.videos.document(asset_id).delete()
 
 
 @pytest.fixture
@@ -29,10 +35,23 @@ def mock_prompt():
         type="image_adaptation",
         prompt_text="Generate vertical version",
     )
-    return prompt["prompt_id"]
+    prompt_id = prompt["prompt_id"]
+    yield prompt_id
+    # Cleanup
+    db.delete_prompt(prompt_id)
 
 
-def test_create_image_job(mock_asset, mock_prompt):
+def _cleanup_image_jobs(db, video_id):
+    """Delete all image jobs and their results for a test asset."""
+    jobs = db.list_image_jobs_for_video(video_id)
+    for job in jobs:
+        job_id = job["job_id"]
+        for doc in db.image_results.where("job_id", "==", job_id).stream():
+            doc.reference.delete()
+        db.image_jobs.document(job_id).delete()
+
+
+def test_create_image_job(client, mock_asset, mock_prompt):
     payload = {
         "video_id": mock_asset,
         "prompt_id": mock_prompt,
@@ -45,9 +64,10 @@ def test_create_image_job(mock_asset, mock_prompt):
     assert data["video_id"] == mock_asset
     assert "16:9" in data["config"]["aspect_ratios"]
 
+    _cleanup_image_jobs(get_db(), mock_asset)
 
-def test_get_image_job(mock_asset, mock_prompt):
-    # Create first
+
+def test_get_image_job(client, mock_asset, mock_prompt):
     payload = {
         "video_id": mock_asset,
         "prompt_id": mock_prompt,
@@ -56,13 +76,14 @@ def test_get_image_job(mock_asset, mock_prompt):
     create_res = client.post("/api/images/jobs", json=payload)
     job_id = create_res.json()["job_id"]
 
-    # Get
     response = client.get(f"/api/images/jobs/{job_id}")
     assert response.status_code == 200
     assert response.json()["job_id"] == job_id
 
+    _cleanup_image_jobs(get_db(), mock_asset)
 
-def test_list_jobs_for_asset(mock_asset, mock_prompt):
+
+def test_list_jobs_for_asset(client, mock_asset, mock_prompt):
     client.post(
         "/api/images/jobs",
         json={
@@ -76,8 +97,10 @@ def test_list_jobs_for_asset(mock_asset, mock_prompt):
     assert response.status_code == 200
     assert len(response.json()) >= 1
 
+    _cleanup_image_jobs(get_db(), mock_asset)
 
-def test_get_signed_url():
+
+def test_get_signed_url(client):
     response = client.post("/api/images/signed-url", params={"gcs_path": "gs://test/img.jpg"})
     assert response.status_code == 200
     assert "url" in response.json()

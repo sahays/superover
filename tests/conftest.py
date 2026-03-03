@@ -3,9 +3,18 @@
 import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from google.cloud import firestore
 from google.cloud import storage
+
+from libs.database import get_db
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _no_seed():
+    """Prevent seed_default_prompts from writing to Firestore during tests."""
+    with patch.object(get_db(), "seed_default_prompts"):
+        yield
 
 
 @pytest.fixture
