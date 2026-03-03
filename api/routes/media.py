@@ -15,6 +15,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/media", tags=["media"])
 
 
+def _is_media_file(video: dict) -> bool:
+    """Return True if the video record represents an audio or video file."""
+    ct = video.get("content_type", "")
+    return ct.startswith("video/") or ct.startswith("audio/")
+
+
 @router.post("/jobs", response_model=MediaJobResponse, status_code=status.HTTP_201_CREATED)
 async def create_media_job(request: CreateMediaJobRequest):
     """
@@ -179,6 +185,8 @@ async def list_all_videos(limit: int = 50):
     try:
         db = get_db()
         videos = db.list_videos(limit=limit)
+        # Filter out non-audio/video files (e.g. images)
+        videos = [v for v in videos if _is_media_file(v)]
         return videos
 
     except Exception as e:
@@ -206,8 +214,8 @@ async def get_all_videos_with_jobs():
     try:
         db = get_db()
 
-        # Get all videos
-        videos = db.list_videos()
+        # Get all videos (exclude non-audio/video files)
+        videos = [v for v in db.list_videos() if _is_media_file(v)]
 
         # For each video, get its media jobs
         videos_with_jobs = []

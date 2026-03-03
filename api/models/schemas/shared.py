@@ -2,17 +2,26 @@
 
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # === Request Models ===
+
+ALLOWED_MEDIA_TYPES = ("video/", "audio/")
 
 
 class SignedUrlRequest(BaseModel):
     """Request for generating a signed upload URL."""
 
     filename: str = Field(..., description="Name of the file to upload")
-    content_type: str = Field(..., description="MIME type of the file")
+    content_type: str = Field(..., description="MIME type of the file (must be audio/* or video/*)")
+
+    @field_validator("content_type")
+    @classmethod
+    def validate_content_type(cls, v: str) -> str:
+        if not v.startswith(ALLOWED_MEDIA_TYPES):
+            raise ValueError(f"Only audio and video files are allowed. Got: {v}")
+        return v
 
 
 class CreateVideoRequest(BaseModel):
@@ -23,6 +32,13 @@ class CreateVideoRequest(BaseModel):
     content_type: str
     size_bytes: int
     metadata: Optional[Dict[str, Any]] = None
+
+    @field_validator("content_type")
+    @classmethod
+    def validate_content_type(cls, v: str) -> str:
+        if not v.startswith(ALLOWED_MEDIA_TYPES):
+            raise ValueError(f"Only audio and video files are allowed. Got: {v}")
+        return v
 
 
 class ContextItemRequest(BaseModel):
