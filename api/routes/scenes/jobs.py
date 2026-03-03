@@ -54,6 +54,37 @@ def register_job_routes(router: APIRouter) -> None:
                 detail=f"Failed to get results for job: {str(e)}",
             )
 
+    @router.patch("/jobs/{job_id}/archive")
+    async def archive_scene_job(job_id: str):
+        """Archive a completed scene job."""
+        try:
+            db = get_db()
+            job = db.get_scene_job(job_id)
+            if not job:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Scene job not found: {job_id}",
+                )
+
+            if job["status"] != SceneJobStatus.COMPLETED.value:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Only completed jobs can be archived",
+                )
+
+            db.update_scene_job_status(job_id, SceneJobStatus.ARCHIVED)
+            logger.info(f"Archived scene job {job_id}")
+            return {"job_id": job_id, "status": "archived"}
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to archive scene job: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to archive scene job: {str(e)}",
+            )
+
     @router.delete("/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
     async def delete_scene_job_endpoint(job_id: str):
         """Delete a scene job and its results (including stuck/orphaned jobs)."""
@@ -146,9 +177,7 @@ def register_job_routes(router: APIRouter) -> None:
 
             logger.info("=== process_video API called ===")
             logger.info(f"video_id: {video_id}")
-            logger.info(
-                f"body.chunk_duration: {body.chunk_duration} (type: {type(body.chunk_duration).__name__})"
-            )
+            logger.info(f"body.chunk_duration: {body.chunk_duration} (type: {type(body.chunk_duration).__name__})")
             logger.info(f"body.chunk: {body.chunk}")
             logger.info(f"body.compressed_video_path: {body.compressed_video_path}")
             logger.info(f"body.prompt_id: {body.prompt_id}")

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Video as VideoIcon, FileVideo } from 'lucide-react'
@@ -8,15 +8,17 @@ import { VideoPicker } from '@/components/video-picker'
 import { SceneJobCard } from '@/components/scene/job-card'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 export default function SceneAnalysisPage() {
   const [showPicker, setShowPicker] = useState(false)
+  const [promptTypeFilter, setPromptTypeFilter] = useState('all')
+  const [videoFilenames, setVideoFilenames] = useState<Record<string, string>>({})
 
   const { data: sceneJobs, isLoading, refetch } = useQuery<SceneJob[]>({
     queryKey: ['scene-jobs'],
     queryFn: () => sceneJobApi.listJobs(),
     refetchInterval: (query) => {
-      // Auto-refresh if any scene job is being processed
       const activeStatuses = [
         SceneJobStatus.PENDING,
         SceneJobStatus.PROCESSING,
@@ -24,14 +26,66 @@ export default function SceneAnalysisPage() {
       const hasActiveJobs = query.state.data?.some(
         (job: SceneJob) => activeStatuses.includes(job.status)
       )
-      return hasActiveJobs ? 3000 : false // 3 seconds
+      return hasActiveJobs ? 3000 : false
     },
   })
+
+  // Batch-fetch video filenames for all jobs
+  useEffect(() => {
+    if (!sceneJobs) return
+
+    const uniqueVideoIds = [...new Set(sceneJobs.map((j) => j.video_id))]
+    const missingIds = uniqueVideoIds.filter((id) => !(id in videoFilenames))
+
+    if (missingIds.length === 0) return
+
+    Promise.all(
+      missingIds.map((id) =>
+        videoApi.getVideo(id).then((v) => ({ id, filename: v.filename as string })).catch(() => null)
+      )
+    ).then((results) => {
+      const newMap: Record<string, string> = {}
+      for (const r of results) {
+        if (r) newMap[r.id] = r.filename
+      }
+      if (Object.keys(newMap).length > 0) {
+        setVideoFilenames((prev) => ({ ...prev, ...newMap }))
+      }
+    })
+  }, [sceneJobs])
+
+  // Extract unique prompt types for the filter dropdown
+  const promptTypes = useMemo(() => {
+    if (!sceneJobs) return []
+    const types = new Set(sceneJobs.map((j) => j.prompt_type || 'custom'))
+    return [...types].sort()
+  }, [sceneJobs])
+
+  // Filter jobs by selected prompt type (exclude archived by default)
+  const filteredJobs = useMemo(() => {
+    if (!sceneJobs) return []
+    return sceneJobs.filter((job) => {
+      if (job.status === SceneJobStatus.ARCHIVED) return false
+      if (promptTypeFilter === 'all') return true
+      return (job.prompt_type || 'custom') === promptTypeFilter
+    })
+  }, [sceneJobs, promptTypeFilter])
 
   const deleteJobMutation = useMutation({
     mutationFn: (jobId: string) => sceneJobApi.deleteJob(jobId),
     onSuccess: () => {
       refetch()
+    },
+  })
+
+  const archiveJobMutation = useMutation({
+    mutationFn: (jobId: string) => sceneJobApi.archiveJob(jobId),
+    onSuccess: () => {
+      toast.success('Job archived')
+      refetch()
+    },
+    onError: () => {
+      toast.error('Failed to archive job')
     },
   })
 
@@ -43,24 +97,15 @@ export default function SceneAnalysisPage() {
     promptId: string,
     contextItems?: ContextItem[]
   ) => {
-    // Start scene analysis for the selected (already compressed) video
-    // The video is already compressed from /media workflow, we just need to chunk and analyze
     try {
-      console.log('=== handleVideoSelect called ===')
-      console.log('videoId:', videoId)
-      console.log('gcsPath:', gcsPath)
-      console.log('chunkDuration:', chunkDuration, 'type:', typeof chunkDuration)
-      console.log('promptId:', promptId)
-      console.log('contextItems:', contextItems)
-
       await videoApi.processVideo(videoId, {
-        prompt_id: promptId,             // User-selected prompt (required)
-        compressed_video_path: isCompressed ? gcsPath : undefined, // Only pass for processed media; original falls back to video.gcs_path in worker
-        chunk_duration: chunkDuration,  // User-selected chunk duration
-        chunk: chunkDuration > 0,       // Only chunk if duration > 0
-        compress: false,                 // Already compressed in media workflow
-        extract_audio: false,            // Already extracted in media workflow
-        context_items: contextItems,     // Optional context files for analysis
+        prompt_id: promptId,
+        compressed_video_path: isCompressed ? gcsPath : undefined,
+        chunk_duration: chunkDuration,
+        chunk: chunkDuration > 0,
+        compress: false,
+        extract_audio: false,
+        context_items: contextItems,
       })
       setShowPicker(false)
       refetch()
@@ -118,14 +163,14 @@ export default function SceneAnalysisPage() {
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Total Jobs</CardDescription>
-                  <CardTitle className="text-3xl">{sceneJobs?.length || 0}</CardTitle>
+                  <CardTitle className="text-3xl">{filteredJobs.length}</CardTitle>
                 </CardHeader>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Pending</CardDescription>
                   <CardTitle className="text-3xl text-yellow-600">
-                    {sceneJobs?.filter((job) => job.status === SceneJobStatus.PENDING).length || 0}
+                    {filteredJobs.filter((job) => job.status === SceneJobStatus.PENDING).length}
                   </CardTitle>
                 </CardHeader>
               </Card>
@@ -133,7 +178,7 @@ export default function SceneAnalysisPage() {
                 <CardHeader className="pb-2">
                   <CardDescription>Processing</CardDescription>
                   <CardTitle className="text-3xl text-blue-600">
-                    {sceneJobs?.filter((job) => job.status === SceneJobStatus.PROCESSING).length || 0}
+                    {filteredJobs.filter((job) => job.status === SceneJobStatus.PROCESSING).length}
                   </CardTitle>
                 </CardHeader>
               </Card>
@@ -141,7 +186,7 @@ export default function SceneAnalysisPage() {
                 <CardHeader className="pb-2">
                   <CardDescription>Completed</CardDescription>
                   <CardTitle className="text-3xl text-green-600">
-                    {sceneJobs?.filter((job) => job.status === SceneJobStatus.COMPLETED).length || 0}
+                    {filteredJobs.filter((job) => job.status === SceneJobStatus.COMPLETED).length}
                   </CardTitle>
                 </CardHeader>
               </Card>
@@ -154,19 +199,40 @@ export default function SceneAnalysisPage() {
                   <p className="text-muted-foreground">Loading scene jobs...</p>
                 </CardContent>
               </Card>
-            ) : sceneJobs && sceneJobs.length > 0 ? (
+            ) : filteredJobs.length > 0 ? (
               <Card>
                 <CardHeader>
-                  <CardTitle>Scene Analysis Jobs</CardTitle>
-                  <CardDescription>{sceneJobs.length} job(s) total</CardDescription>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Scene Analysis Jobs</CardTitle>
+                      <CardDescription>{filteredJobs.length} job(s) total</CardDescription>
+                    </div>
+                    {promptTypes.length > 1 && (
+                      <Select value={promptTypeFilter} onValueChange={setPromptTypeFilter}>
+                        <SelectTrigger className="w-[180px]">
+                          <SelectValue placeholder="Filter by type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Types</SelectItem>
+                          {promptTypes.map((type) => (
+                            <SelectItem key={type} value={type}>
+                              {type.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {sceneJobs.map((job) => (
+                    {filteredJobs.map((job) => (
                       <SceneJobCard
                         key={job.job_id}
                         job={job}
+                        videoFilename={videoFilenames[job.video_id]}
                         onDelete={(jobId) => deleteJobMutation.mutate(jobId)}
+                        onArchive={(jobId) => archiveJobMutation.mutate(jobId)}
                       />
                     ))}
                   </div>

@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from config import settings
-from api.routes import scenes, media, prompts, images
+from api.routes import scenes, media, prompts, images, search
 from api.models.schemas import HealthResponse
 
 # Configure logging
@@ -50,11 +50,6 @@ async def lifespan(app: FastAPI):
     # Ensure temp directory exists
     settings.get_temp_dir()
 
-    # Seed default prompts
-    from libs.database import get_db
-
-    get_db().seed_default_prompts()
-
     yield
 
     # Shutdown
@@ -80,6 +75,7 @@ if settings.is_local():
         allow_headers=["*"],
     )
 
+
 @app.exception_handler(429)
 async def rate_limit_handler(request: Request, exc: HTTPException):
     """Return structured JSON for rate limit errors."""
@@ -95,6 +91,7 @@ app.include_router(scenes.router, prefix="/api")
 app.include_router(media.router, prefix="/api")
 app.include_router(prompts.router, prefix="/api")
 app.include_router(images.router, prefix="/api")
+app.include_router(search.router, prefix="/api")
 
 
 @app.get("/health", response_model=HealthResponse)

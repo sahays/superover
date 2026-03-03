@@ -52,7 +52,6 @@ export interface SelectedVideoState {
 
 export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
   const [selectedVideo, setSelectedVideo] = useState<SelectedVideoState | null>(null)
-  const [chunkDuration, setChunkDuration] = useState<number>(0)
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null)
 
   const contextUpload = useContextUpload()
@@ -129,8 +128,6 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
           selectedPromptId={selectedPromptId}
           onPromptChange={setSelectedPromptId}
           selectedPrompt={selectedPrompt}
-          chunkDuration={chunkDuration}
-          onChunkDurationChange={setChunkDuration}
           contextFiles={contextUpload.contextFiles}
           showContextUpload={contextUpload.showContextUpload}
           isUploadingContext={contextUpload.isUploadingContext}
@@ -145,7 +142,7 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
                 selectedVideo.videoId,
                 selectedVideo.isCompressed,
                 selectedVideo.gcsPath,
-                chunkDuration,
+                0,
                 selectedPromptId,
                 contextUpload.uploadedContextItems.length > 0
                   ? contextUpload.uploadedContextItems

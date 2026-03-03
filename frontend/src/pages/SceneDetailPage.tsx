@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { videoApi, sceneJobApi } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { useSceneExport } from '@/hooks/use-scene-export'
 import { SceneVideoMetadataCard } from '@/components/scene/scene-video-metadata-card'
 import { SceneJobInfoCard } from '@/components/scene/scene-job-info-card'
@@ -101,20 +102,7 @@ export default function SceneDetailPage() {
 
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="space-y-6 lg:col-span-3">
-            <SceneVideoMetadataCard scene={scene} />
-
-            {sceneJob && (
-              <SceneJobInfoCard
-                sceneJob={sceneJob}
-                totalCost={totalCost}
-                totalInputCost={totalInputCost}
-                totalOutputCost={totalOutputCost}
-                totalTokens={totalTokens}
-              />
-            )}
-
-            {manifest && <SceneManifestCard manifest={manifest} />}
-
+            {/* Results first */}
             {results && results.length > 0 && (
               <SceneResultsCard
                 results={results}
@@ -124,6 +112,40 @@ export default function SceneDetailPage() {
                 downloadAsSRT={downloadAsSRT}
               />
             )}
+
+            {/* Metadata in collapsible accordion */}
+            <Accordion type="multiple" className="w-full">
+              {sceneJob && (
+                <AccordionItem value="job-details">
+                  <AccordionTrigger>Job Details</AccordionTrigger>
+                  <AccordionContent>
+                    <SceneJobInfoCard
+                      sceneJob={sceneJob}
+                      totalCost={totalCost}
+                      totalInputCost={totalInputCost}
+                      totalOutputCost={totalOutputCost}
+                      totalTokens={totalTokens}
+                    />
+                  </AccordionContent>
+                </AccordionItem>
+              )}
+
+              <AccordionItem value="video-metadata">
+                <AccordionTrigger>Video Metadata</AccordionTrigger>
+                <AccordionContent>
+                  <SceneVideoMetadataCard scene={scene} />
+                </AccordionContent>
+              </AccordionItem>
+
+              {manifest && (
+                <AccordionItem value="processing-info">
+                  <AccordionTrigger>Processing Info</AccordionTrigger>
+                  <AccordionContent>
+                    <SceneManifestCard manifest={manifest} />
+                  </AccordionContent>
+                </AccordionItem>
+              )}
+            </Accordion>
           </div>
         </div>
       </div>

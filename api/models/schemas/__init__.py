@@ -43,6 +43,14 @@ from .category import (
     CategorySchemaResponse,
     SetCategorySchemaRequest,
 )
+from .search import (
+    SyncStatusItem,
+    SyncRequest,
+    SyncResponse,
+    SearchRequest,
+    VideoSearchResult,
+    InVideoSearchResult,
+)
 
 __all__ = [
     # Shared
@@ -82,4 +90,11 @@ __all__ = [
     # Category
     "CategorySchemaResponse",
     "SetCategorySchemaRequest",
+    # Search
+    "SyncStatusItem",
+    "SyncRequest",
+    "SyncResponse",
+    "SearchRequest",
+    "VideoSearchResult",
+    "InVideoSearchResult",
 ]

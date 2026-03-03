@@ -5,15 +5,17 @@ interface ResultChunkItemProps {
   index: number
 }
 
-export function ResultChunkItem({ result, index }: ResultChunkItemProps) {
+export function ResultChunkItem({ result, index, totalResults }: ResultChunkItemProps & { totalResults?: number }) {
   const isSubtitle = result.result_data?.prompt_type === 'subtitling' || result.result_data?.prompt_type === 'transcription'
   const subtitleText = result.result_data?.subtitle_text
+  const rawText = result.result_data?.raw_text
+  const hasFormattedText = isSubtitle && subtitleText ? true : !!rawText
 
   return (
     <AccordionItem value={`result-${index}`}>
       <AccordionTrigger>
         <div className="flex gap-2 items-center">
-          <span>{result.result_type.replace('_', ' ')} - Chunk {index}</span>
+          <span>{(totalResults ?? 2) > 1 ? `Result ${index + 1}` : 'Result'}</span>
           {result.result_data?.token_usage?.estimated_cost_usd !== undefined && (
             <span className="text-xs font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
               ${result.result_data.token_usage.estimated_cost_usd.toFixed(4)}
@@ -40,11 +42,11 @@ export function ResultChunkItem({ result, index }: ResultChunkItemProps) {
             <div>Total: <span className="font-mono">{result.result_data.token_usage.total_tokens?.toLocaleString()}</span></div>
           </div>
         )}
-        {isSubtitle && subtitleText ? (
+        {hasFormattedText ? (
           <div className="space-y-4">
-            <div className="rounded bg-slate-100 p-4 dark:bg-slate-800">
+            <div className="rounded bg-slate-100 p-4 dark:bg-slate-800 max-h-[500px] overflow-y-auto">
               <pre className="whitespace-pre-wrap text-sm font-mono">
-                {subtitleText}
+                {subtitleText || rawText}
               </pre>
             </div>
             <details className="text-xs text-muted-foreground">

@@ -5,7 +5,9 @@ import {
   Video,
   FileVideo,
   FileText,
-  Clapperboard
+  Clapperboard,
+  Search,
+  DatabaseZap,
 } from 'lucide-react'
 
 interface NavItem {
@@ -15,7 +17,7 @@ interface NavItem {
   description: string
 }
 
-const navItems: NavItem[] = [
+const featureItems: NavItem[] = [
   {
     title: 'Home',
     href: '/',
@@ -35,12 +37,60 @@ const navItems: NavItem[] = [
     description: 'AI-powered scene analysis',
   },
   {
+    title: 'Search',
+    href: '/search',
+    icon: Search,
+    description: 'Semantic video search',
+  },
+]
+
+const configItems: NavItem[] = [
+  {
     title: 'Prompts',
     href: '/prompts',
     icon: FileText,
     description: 'Manage analysis prompts',
   },
+  {
+    title: 'Search Sync',
+    href: '/search/sync',
+    icon: DatabaseZap,
+    description: 'Sync results to search index',
+  },
 ]
+
+// Hrefs that should only match exactly (not their sub-paths)
+const exactMatchOnly = new Set(['/search'])
+
+function isNavActive(pathname: string, href: string): boolean {
+  if (href === '/' || exactMatchOnly.has(href)) return pathname === href
+  return pathname === href || pathname.startsWith(href + '/')
+}
+
+function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
+  const Icon = item.icon
+  const isActive = isNavActive(pathname, item.href)
+
+  return (
+    <Link
+      to={item.href}
+      className={cn(
+        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+        isActive
+          ? 'bg-primary text-primary-foreground'
+          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+      )}
+    >
+      <Icon className="h-5 w-5 flex-shrink-0" />
+      <div className="flex flex-col">
+        <span>{item.title}</span>
+        {!isActive && (
+          <span className="text-xs opacity-70">{item.description}</span>
+        )}
+      </div>
+    </Link>
+  )
+}
 
 export function Sidebar() {
   const pathname = useLocation().pathname
@@ -59,33 +109,24 @@ export function Sidebar() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 space-y-1 p-4">
-          {navItems.map((item) => {
-            const Icon = item.icon
-            const isActive = pathname === item.href ||
-                           (item.href !== '/' && pathname.startsWith(item.href))
+        <nav className="flex-1 p-4">
+          <div className="space-y-1">
+            {featureItems.map((item) => (
+              <NavLink key={item.href} item={item} pathname={pathname} />
+            ))}
+          </div>
 
-            return (
-              <Link
-                key={item.href}
-                to={item.href}
-                className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                )}
-              >
-                <Icon className="h-5 w-5 flex-shrink-0" />
-                <div className="flex flex-col">
-                  <span>{item.title}</span>
-                  {!isActive && (
-                    <span className="text-xs opacity-70">{item.description}</span>
-                  )}
-                </div>
-              </Link>
-            )
-          })}
+          {/* Separator */}
+          <div className="my-4 border-t" />
+
+          <div className="space-y-1">
+            <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
+              Configuration
+            </p>
+            {configItems.map((item) => (
+              <NavLink key={item.href} item={item} pathname={pathname} />
+            ))}
+          </div>
         </nav>
 
         {/* Footer */}

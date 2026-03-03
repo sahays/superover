@@ -34,10 +34,7 @@ def rate_limit(endpoint_group: str, max_requests: int = 2, window_minutes: int =
                 status_code=429,
                 detail={
                     "error_code": "RATE_LIMIT_EXCEEDED",
-                    "message": (
-                        f"Rate limit exceeded. Maximum {max_requests} requests "
-                        f"per {window_minutes} minutes."
-                    ),
+                    "message": (f"Rate limit exceeded. Maximum {max_requests} requests per {window_minutes} minutes."),
                     "retry_after": window_minutes * 60,
                 },
             )

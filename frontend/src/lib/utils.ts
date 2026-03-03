@@ -52,3 +52,17 @@ export function truncateFilename(filename: string, maxLength: number = 30): stri
 
   return `${start}...${end}.${ext}`
 }
+
+export function compactFilename(filename: string): string {
+  if (!filename) return filename
+
+  const parts = filename.split('.')
+  const ext = parts.length > 1 ? '.' + parts.pop() : ''
+  const name = parts.join('.')
+
+  if (name.length <= 12) return filename
+
+  const first = name.substring(0, 4)
+  const last = name.substring(name.length - 4)
+  return `${first}...${last}${ext}`
+}

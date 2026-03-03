@@ -27,7 +27,7 @@ export function SceneResultsCard({
           <div>
             <CardTitle>{isSubtitleJob ? 'Subtitles' : 'Scene Analysis'}</CardTitle>
             <CardDescription>
-              {results.length} chunk(s) analyzed
+              {results.length} result(s)
               {isSubtitleJob && results.length > 0 && (
                 <span className="ml-2">
                   • {results.reduce((sum: number, r: any) =>
@@ -66,7 +66,7 @@ export function SceneResultsCard({
       <CardContent>
         <Accordion type="single" collapsible className="w-full">
           {results.map((result: any, idx: number) => (
-            <ResultChunkItem key={result.result_id} result={result} index={idx} />
+            <ResultChunkItem key={result.result_id} result={result} index={idx} totalResults={results.length} />
           ))}
         </Accordion>
       </CardContent>

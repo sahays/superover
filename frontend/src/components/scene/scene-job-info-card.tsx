@@ -5,8 +5,8 @@ interface SceneJobInfoCardProps {
   sceneJob: {
     job_id: string
     status: string
-    config: { chunk_duration: number; compressed_video_path?: string }
-    results?: { chunks_analyzed: number; manifest_created?: boolean }
+    config: { compressed_video_path?: string }
+    results?: Record<string, any>
     error_message?: string
   }
   totalCost: number
@@ -64,27 +64,10 @@ export function SceneJobInfoCard({
               {totalTokens > 0 ? totalTokens.toLocaleString() : <span className="text-muted-foreground">N/A</span>}
             </dd>
           </div>
-          <div>
-            <dt className="text-sm font-medium text-muted-foreground">Chunk Duration</dt>
-            <dd className="mt-1 text-sm">
-              {sceneJob.config.chunk_duration > 0
-                ? `${sceneJob.config.chunk_duration}s`
-                : 'No chunking (full video)'}
-            </dd>
-          </div>
           {sceneJob.config.compressed_video_path && (
             <div>
               <dt className="text-sm font-medium text-muted-foreground">Source</dt>
               <dd className="mt-1 text-sm">Compressed video from media workflow</dd>
-            </div>
-          )}
-          {sceneJob.results && (
-            <div className="col-span-full">
-              <dt className="text-sm font-medium text-muted-foreground">Results</dt>
-              <dd className="mt-1 text-sm">
-                {sceneJob.results.chunks_analyzed} chunk(s) analyzed
-                {sceneJob.results.manifest_created && ' • Manifest created'}
-              </dd>
             </div>
           )}
           {sceneJob.error_message && (

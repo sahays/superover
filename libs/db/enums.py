@@ -20,6 +20,7 @@ class SceneJobStatus(str, Enum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    ARCHIVED = "archived"
 
 
 class ImageJobStatus(str, Enum):

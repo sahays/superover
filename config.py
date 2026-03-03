@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     # Firestore
     firestore_database: str = "(default)"
 
+    # BigQuery (Natural Language Search)
+    bq_dataset: str = "superover_search"
+
     # Environment
     environment: str = "local"  # local, development, production
 

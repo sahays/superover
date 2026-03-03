@@ -89,6 +89,9 @@ class SequentialSceneProcessor(SceneProcessor):
                     response_schema=response_schema,
                 )
 
+                # Tag result with prompt_type for filtering
+                result["prompt_type"] = prompt_type
+
                 # Save result to database
                 result_id = self.db.save_result(
                     video_id=video_id,

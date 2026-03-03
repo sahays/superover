@@ -13,6 +13,9 @@ google-genai>=1.47.0
 # Video Processing (Transcoder API)
 google-cloud-video-transcoder>=1.0.0
 
+# BigQuery (Natural Language Search)
+google-cloud-bigquery>=3.25.0
+
 # Utilities
 python-dotenv==1.0.1
 aiofiles==24.1.0

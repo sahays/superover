@@ -139,6 +139,11 @@ export const sceneJobApi = {
     const response = await apiClient.delete(`/api/scenes/jobs/${jobId}`)
     return response.data
   },
+
+  archiveJob: async (jobId: string) => {
+    const response = await apiClient.patch(`/api/scenes/jobs/${jobId}/archive`)
+    return response.data
+  },
 }
 
 // Media processing endpoints
@@ -269,6 +274,43 @@ export const promptApi = {
 
   deleteSchema: async (category: string) => {
     const response = await apiClient.delete(`/api/prompts/schemas/${category}`)
+    return response.data
+  },
+}
+
+// Search endpoints
+export const searchApi = {
+  getSyncStatus: async () => {
+    const response = await apiClient.get('/api/search/sync-status')
+    return response.data
+  },
+
+  syncResults: async (resultIds: string[], resync = false) => {
+    const response = await apiClient.post('/api/search/sync', {
+      result_ids: resultIds,
+      resync,
+    })
+    return response.data
+  },
+
+  deleteSyncedResult: async (resultId: string) => {
+    const response = await apiClient.delete(`/api/search/sync/${resultId}`)
+    return response.data
+  },
+
+  searchVideos: async (query: string, limit = 20) => {
+    const response = await apiClient.post('/api/search/videos', {
+      query,
+      limit,
+    })
+    return response.data
+  },
+
+  searchWithinVideo: async (videoId: string, query: string, limit = 20) => {
+    const response = await apiClient.post(`/api/search/videos/${videoId}`, {
+      query,
+      limit,
+    })
     return response.data
   },
 }

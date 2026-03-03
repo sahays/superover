@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PromptSelector } from '@/components/prompts/prompt-selector'
 import { ContextUploadSection } from './context-upload-section'
-import { ChunkDurationSelector } from './chunk-duration-selector'
 import type { Prompt } from '@/lib/types'
 import type { SelectedVideoState } from '@/components/video-picker'
 
@@ -17,8 +16,6 @@ interface SceneConfigPanelProps {
   selectedPromptId: string | null
   onPromptChange: (promptId: string | null) => void
   selectedPrompt: Prompt | undefined
-  chunkDuration: number
-  onChunkDurationChange: (duration: number) => void
   contextFiles: ContextFile[]
   showContextUpload: boolean
   isUploadingContext: boolean
@@ -35,8 +32,6 @@ export function SceneConfigPanel({
   selectedPromptId,
   onPromptChange,
   selectedPrompt,
-  chunkDuration,
-  onChunkDurationChange,
   contextFiles,
   showContextUpload,
   isUploadingContext,
@@ -52,7 +47,7 @@ export function SceneConfigPanel({
       <CardHeader>
         <CardTitle className="text-base">Configure Scene Analysis</CardTitle>
         <CardDescription>
-          Select prompt and set chunk duration for {selectedVideo.mediaType} analysis
+          Select prompt for {selectedVideo.mediaType} analysis
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -81,7 +76,6 @@ export function SceneConfigPanel({
           {selectedVideo.mediaType === 'audio' && (
             <p className="mt-1 text-xs text-blue-700">
               Audio-only analysis is ideal for subtitling, transcription, and voice analysis tasks.
-              Use chunking for long audio files to avoid hitting token limits.
             </p>
           )}
           {selectedVideo.jobId === '' && (
@@ -110,13 +104,6 @@ export function SceneConfigPanel({
             onRemoveFile={onRemoveContextFile}
           />
         )}
-
-        <ChunkDurationSelector
-          chunkDuration={chunkDuration}
-          onChunkDurationChange={onChunkDurationChange}
-          mediaType={selectedVideo.mediaType}
-          mediaDuration={selectedVideo.duration}
-        />
 
         <div className="flex justify-end gap-2 border-t pt-4">
           <Button variant="outline" onClick={onCancel}>

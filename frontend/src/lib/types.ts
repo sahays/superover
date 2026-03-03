@@ -13,6 +13,7 @@ export enum SceneJobStatus {
   PROCESSING = 'processing',
   COMPLETED = 'completed',
   FAILED = 'failed',
+  ARCHIVED = 'archived',
 }
 
 export enum ImageJobStatus {

@@ -4,17 +4,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { CheckCircle, XCircle, Loader2, Eye, Trash2, FileText, Clock, Coins } from 'lucide-react'
+import { CheckCircle, XCircle, Loader2, Eye, Trash2, FileText, Clock, Coins, Archive } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { truncateFilename } from '@/lib/utils'
+import { truncateFilename, compactFilename } from '@/lib/utils'
 
 interface SceneJobCardProps {
   job: SceneJob
   videoFilename?: string
   onDelete?: (jobId: string) => void
+  onArchive?: (jobId: string) => void
 }
 
-export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps) {
+export function SceneJobCard({ job, videoFilename, onDelete, onArchive }: SceneJobCardProps) {
   const [showPromptDialog, setShowPromptDialog] = useState(false)
 
   // Get prompt type label (use 'custom' if not specified for backward compatibility)
@@ -126,7 +127,7 @@ export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps
             {videoFilename && (
               <div className="mt-1 flex items-center gap-1.5 text-sm font-medium text-foreground/80">
                 <FileText className="h-3.5 w-3.5" />
-                <span>{truncateFilename(videoFilename, 35)}</span>
+                <span>{compactFilename(videoFilename)}</span>
               </div>
             )}
             {job.status === SceneJobStatus.COMPLETED && getTimeTaken() && (
@@ -238,12 +239,24 @@ export function SceneJobCard({ job, videoFilename, onDelete }: SceneJobCardProps
         {/* Actions */}
         <div className="flex gap-2">
           {job.status === SceneJobStatus.COMPLETED && (
-            <Button asChild variant="outline" size="sm" className="flex-1">
-              <Link to={`/scene/${job.job_id}`}>
-                <Eye className="mr-2 h-4 w-4" />
-                View Results
-              </Link>
-            </Button>
+            <>
+              <Button asChild variant="outline" size="sm" className="flex-1">
+                <Link to={`/scene/${job.job_id}`}>
+                  <Eye className="mr-2 h-4 w-4" />
+                  View Results
+                </Link>
+              </Button>
+              {onArchive && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onArchive(job.job_id)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <Archive className="h-4 w-4" />
+                </Button>
+              )}
+            </>
           )}
           {job.status !== SceneJobStatus.COMPLETED && onDelete && (
             <Button
