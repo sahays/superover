@@ -43,11 +43,8 @@ def mock_db():
 
         # Rate limiter queries db.client.collection().where().where().where().stream()
         # Must return an iterable so sum(1 for _ in docs) works
-        db.client.collection.return_value \
-            .where.return_value \
-            .where.return_value \
-            .where.return_value \
-            .stream.return_value = []
+        chain = db.client.collection.return_value
+        chain.where.return_value.where.return_value.where.return_value.stream.return_value = []
 
         yield db
 
