@@ -28,10 +28,16 @@ def client():
 
 @pytest.fixture
 def mock_db():
-    """Mock database."""
-    with patch("api.routes.scenes.get_db") as mock:
+    """Mock database — patch get_db in all scene sub-modules."""
+    with (
+        patch("api.routes.scenes.jobs.get_db") as mock_jobs,
+        patch("api.routes.scenes.videos.get_db") as mock_videos,
+        patch("api.routes.scenes.results.get_db") as mock_results,
+    ):
         db = MagicMock()
-        mock.return_value = db
+        mock_jobs.return_value = db
+        mock_videos.return_value = db
+        mock_results.return_value = db
         yield db
 
 

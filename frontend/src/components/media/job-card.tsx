@@ -1,10 +1,10 @@
 import { MediaJob, MediaJobStatus } from '@/lib/types'
 import { formatBytes, truncateFilename } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { CheckCircle, XCircle, Loader2, Trash2, Clock } from 'lucide-react'
+import { Trash2, Clock } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { getMediaStatusBadge } from '@/lib/media-status'
 
 interface JobCardProps {
   job: MediaJob
@@ -37,41 +37,6 @@ export function JobCard({ job, videoFilename, onDelete }: JobCardProps) {
       }
     }
     return null
-  }
-
-  const getStatusBadge = (status: MediaJobStatus) => {
-    switch (status) {
-      case MediaJobStatus.COMPLETED:
-        return (
-          <Badge variant="default" className="bg-green-600">
-            <CheckCircle className="mr-1 h-3 w-3" />
-            Completed
-          </Badge>
-        )
-      case MediaJobStatus.PROCESSING: {
-        // Show the actual processing step if available
-        const stepLabel = job.progress?.step
-          ? job.progress.step.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())
-          : 'Processing'
-        return (
-          <Badge variant="default" className="bg-blue-600">
-            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-            {stepLabel}
-          </Badge>
-        )
-      }
-      case MediaJobStatus.FAILED:
-        return (
-          <Badge variant="destructive">
-            <XCircle className="mr-1 h-3 w-3" />
-            Failed
-          </Badge>
-        )
-      case MediaJobStatus.PENDING:
-        return <Badge variant="outline">Pending</Badge>
-      default:
-        return <Badge variant="outline">{status}</Badge>
-    }
   }
 
   const getProgressStep = () => {
@@ -112,7 +77,7 @@ export function JobCard({ job, videoFilename, onDelete }: JobCardProps) {
               {new Date(job.created_at || '').toLocaleString()}
             </p>
           </div>
-          {getStatusBadge(job.status)}
+          {getMediaStatusBadge(job.status, job.progress)}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

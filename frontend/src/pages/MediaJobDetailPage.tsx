@@ -1,14 +1,16 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { ArrowLeft, Trash2, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { ArrowLeft, Trash2 } from 'lucide-react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { mediaApi, videoApi, imageApi } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { formatBytes } from '@/lib/utils'
 import { MediaJobStatus, ImageJobStatus } from '@/lib/types'
 import { CreateAdapts } from '@/components/images/create-adapts'
 import { AdaptResults } from '@/components/images/adapt-results'
+import { getMediaStatusBadge } from '@/lib/media-status'
+import { JobProgressSection } from '@/components/media/job-progress-section'
+import { JobResultsCard } from '@/components/media/job-results-card'
 
 export default function MediaJobDetailPage() {
   const { jobId } = useParams<{ jobId: string }>()
@@ -45,40 +47,6 @@ export default function MediaJobDetailPage() {
       navigate('/media')
     },
   })
-
-  const getStatusBadge = (status: MediaJobStatus) => {
-    switch (status) {
-      case MediaJobStatus.COMPLETED:
-        return (
-          <Badge variant="default" className="bg-green-600">
-            <CheckCircle className="mr-1 h-3 w-3" />
-            Completed
-          </Badge>
-        )
-      case MediaJobStatus.PROCESSING: {
-        const stepLabel = job?.progress?.step
-          ? job.progress.step.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())
-          : 'Processing'
-        return (
-          <Badge variant="default" className="bg-blue-600">
-            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-            {stepLabel}
-          </Badge>
-        )
-      }
-      case MediaJobStatus.FAILED:
-        return (
-          <Badge variant="destructive">
-            <XCircle className="mr-1 h-3 w-3" />
-            Failed
-          </Badge>
-        )
-      case MediaJobStatus.PENDING:
-        return <Badge variant="outline">Pending</Badge>
-      default:
-        return <Badge variant="outline">{status}</Badge>
-    }
-  }
 
   if (isLoading) {
     return (
@@ -133,7 +101,7 @@ export default function MediaJobDetailPage() {
                     Created {new Date(job.created_at || '').toLocaleString()}
                   </CardDescription>
                 </div>
-                {getStatusBadge(job.status)}
+                {getMediaStatusBadge(job.status, job.progress)}
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -160,33 +128,11 @@ export default function MediaJobDetailPage() {
                 )}
               </dl>
 
-              {/* Progress */}
-              {job.status === MediaJobStatus.PROCESSING && job.progress && (
-                <div className="space-y-2 rounded-lg bg-blue-50 p-4 dark:bg-blue-900/20">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium capitalize">
-                      {job.progress.step?.replace('_', ' ')}
-                    </span>
-                    <span className="font-semibold">{job.progress.percent}%</span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-gray-200">
-                    <div
-                      className="h-full bg-blue-600 transition-all duration-300"
-                      style={{ width: `${job.progress.percent}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Error */}
-              {job.status === MediaJobStatus.FAILED && job.error_message && (
-                <div className="rounded-lg bg-red-50 p-4 dark:bg-red-900/20">
-                  <h4 className="font-semibold text-red-900 dark:text-red-100">Error</h4>
-                  <p className="mt-1 text-sm text-red-800 dark:text-red-200">
-                    {job.error_message}
-                  </p>
-                </div>
-              )}
+              <JobProgressSection
+                status={job.status}
+                progress={job.progress}
+                errorMessage={job.error_message}
+              />
             </CardContent>
           </Card>
 
@@ -228,73 +174,8 @@ export default function MediaJobDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Results */}
           {job.status === MediaJobStatus.COMPLETED && job.results && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Results</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <dl className="grid gap-3 text-sm">
-                  <div className="flex justify-between">
-                    <dt className="font-medium text-muted-foreground">Original Size</dt>
-                    <dd className="font-medium">
-                      {formatBytes(job.results.original_size_bytes)}
-                    </dd>
-                  </div>
-                  {job.results.compressed_video_path && (
-                    <>
-                      <div className="flex justify-between">
-                        <dt className="font-medium text-muted-foreground">Compressed Size</dt>
-                        <dd className="font-medium">
-                          {formatBytes(job.results.compressed_size_bytes)}
-                        </dd>
-                      </div>
-                      <div className="flex justify-between">
-                        <dt className="font-medium text-muted-foreground">Size Reduction</dt>
-                        <dd className="font-medium text-green-600 dark:text-green-400">
-                          {job.results.compression_ratio.toFixed(1)}%
-                        </dd>
-                      </div>
-                      <div className="col-span-full">
-                        <dt className="font-medium text-muted-foreground">Compressed Video Path</dt>
-                        <dd className="mt-1 break-all font-mono text-xs text-blue-600 dark:text-blue-400">
-                          {job.results.compressed_video_path}
-                        </dd>
-                      </div>
-                    </>
-                  )}
-                  {job.results.audio_path && (
-                    <>
-                      <div className="flex justify-between">
-                        <dt className="font-medium text-muted-foreground">Audio Size</dt>
-                        <dd className="font-medium">
-                          {formatBytes(job.results.audio_size_bytes)}
-                        </dd>
-                      </div>
-                      <div className="col-span-full">
-                        <dt className="font-medium text-muted-foreground">Audio File Path</dt>
-                        <dd className="mt-1 break-all font-mono text-xs text-blue-600 dark:text-blue-400">
-                          {job.results.audio_path}
-                        </dd>
-                      </div>
-                    </>
-                  )}
-                </dl>
-
-                {/* Metadata Accordion */}
-                {job.results.metadata && (
-                  <details className="rounded-lg bg-slate-50 p-4 dark:bg-slate-800">
-                    <summary className="cursor-pointer font-medium">
-                      View Full Metadata
-                    </summary>
-                    <pre className="mt-3 overflow-x-auto text-xs">
-                      {JSON.stringify(job.results.metadata, null, 2)}
-                    </pre>
-                  </details>
-                )}
-              </CardContent>
-            </Card>
+            <JobResultsCard results={job.results} />
           )}
 
           {/* Image Adaptation Section (Only for Images) */}

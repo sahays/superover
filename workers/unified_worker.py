@@ -21,6 +21,7 @@ from libs.transcoder import get_transcoder_client
 from libs.gemini import get_scene_analyzer
 from libs.gemini.image_analyzer import get_image_analyzer
 from libs.scene_processing import get_scene_processor
+from libs.scene_processing.orchestrator import SceneOrchestrator
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -39,12 +40,16 @@ class UnifiedWorker:
         self.temp_dir = settings.get_temp_dir()
         self.running = False
 
-        # Initialize scene processor
+        # Initialize scene processor and orchestrator
         self.scene_processor = get_scene_processor(
             db=self.db,
             storage=self.storage,
             analyzer=self.scene_analyzer,
             temp_dir=self.temp_dir,
+        )
+        self.scene_orchestrator = SceneOrchestrator(
+            transcoder=self.transcoder,
+            scene_processor=self.scene_processor,
         )
 
     def start(self):
@@ -393,121 +398,7 @@ class UnifiedWorker:
 
     def _process_scene(self, job: dict):
         """Process a scene analysis job using Transcoder API for chunking."""
-        job_id = job["job_id"]
-        video_id = job["video_id"]
-        config = job.get("config", {})
-
-        compressed_video_path = config.get("compressed_video_path")
-        chunk_duration = config.get("chunk_duration", 30)
-        should_chunk = config.get("chunk", True)
-        context_items = config.get("context_items", [])
-
-        # Get video info
-        video = self.db.get_video(video_id)
-        if not video:
-            raise ValueError(f"Video not found: {video_id}")
-
-        video_path_to_process = compressed_video_path or video.get("gcs_path")
-        if not video_path_to_process:
-            raise ValueError(f"No video path available for processing video {video_id}")
-
-        prompt_text = job.get("prompt_text")
-        prompt_type = job.get("prompt_type", "scene_analysis")
-        response_schema = job.get("response_schema")
-
-        manifest_data = {"processed_path": video_path_to_process}
-
-        # Chunking via Transcoder API
-        if should_chunk and chunk_duration > 0:
-            self.db.update_scene_job_status(job_id, SceneJobStatus.PROCESSING, results={"step": "chunking"})
-
-            total_duration = video.get("metadata", {}).get("duration")
-            if not total_duration:
-                logger.warning(
-                    f"Video {video_id} has no duration metadata. "
-                    f"Falling back to no-chunking mode (processing entire video as single chunk)."
-                )
-                # Fall back to single-chunk mode
-                chunks = [
-                    {
-                        "index": 0,
-                        "filename": Path(video_path_to_process).name,
-                        "gcs_path": video_path_to_process,
-                        "duration": 0,
-                    }
-                ]
-                manifest_data["chunks"] = chunks
-            else:
-                output_prefix = f"gs://{settings.processed_bucket}/{video_id}/scene_chunks/"
-
-                # Submit chunking job and wait for completion (blocking)
-                transcoder_job_name = self.transcoder.submit_chunking_job(
-                    input_gcs_uri=video_path_to_process,
-                    output_gcs_prefix=output_prefix,
-                    chunk_duration=chunk_duration,
-                    total_duration=total_duration,
-                )
-
-                status = self.transcoder.wait_for_completion(transcoder_job_name)
-                if status["state"] != "SUCCEEDED":
-                    raise Exception(f"Chunking failed: {status.get('error', 'Unknown error')}")
-
-                # Build chunk list from expected output paths
-                chunks = self.transcoder.build_chunk_list(output_prefix, chunk_duration, total_duration)
-                manifest_data["chunks"] = chunks
-        else:
-            # No chunking — process the entire video as a single chunk
-            duration = video.get("metadata", {}).get("duration", 0)
-            chunks = [
-                {
-                    "index": 0,
-                    "filename": Path(video_path_to_process).name,
-                    "gcs_path": video_path_to_process,
-                    "duration": duration,
-                }
-            ]
-            manifest_data["chunks"] = chunks
-
-        self.db.create_manifest(video_id, manifest_data)
-
-        # Analysis — chunks are already in GCS, pass GCS URIs to scene processor
-        self.db.update_scene_job_status(job_id, SceneJobStatus.PROCESSING, results={"step": "analyzing"})
-        self.scene_processor.process_chunks(
-            chunks=chunks,
-            job_id=job_id,
-            video_id=video_id,
-            prompt_text=prompt_text,
-            prompt_type=prompt_type,
-            context_items=context_items,
-            response_schema=response_schema,
-        )
-
-        # Finalize
-        job_results = self.db.get_results_for_job(job_id)
-        total_tokens = 0
-        total_cost = 0.0
-        last_stop_reason = "completed"
-
-        for res in job_results:
-            usage = res.get("result_data", {}).get("token_usage", {})
-            total_tokens += usage.get("total_tokens", 0)
-            total_cost += usage.get("estimated_cost_usd", 0.0)
-            last_stop_reason = res.get("result_data", {}).get("finish_reason", last_stop_reason)
-
-        self.db.update_scene_job_status(
-            job_id,
-            SceneJobStatus.COMPLETED,
-            results={
-                "manifest_created": True,
-                "chunks_analyzed": len(chunks),
-                "step": "completed",
-                "token_usage": {
-                    "total_tokens": total_tokens,
-                    "estimated_cost_usd": round(total_cost, 6),
-                },
-            },
-            stop_reason=last_stop_reason,
-        )
+        self.scene_orchestrator.run(job)
 
 
 def main():

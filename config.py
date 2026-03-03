@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"
 
     def is_local(self) -> bool:
         """Check if running in local environment."""
