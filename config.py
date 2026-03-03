@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     # BigQuery (Natural Language Search)
     bq_dataset: str = "superover_search"
 
+    # Gemini Search Curation
+    gemini_search_model: str = "gemini-3-flash-preview"
+    gemini_search_output_tokens: int = 8192
+
     # Environment
     environment: str = "local"  # local, development, production
 

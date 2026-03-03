@@ -23,7 +23,7 @@ class BigQueryClient:
         settings = get_settings()
         self.client = bigquery.Client(project=settings.gcp_project_id)
         self.dataset = settings.bq_dataset
-        self.table_ref = f"{self.client.project}.{self.dataset}.scene_embeddings"
+        self.table_ref = f"{self.client.project}.{self.dataset}.scene_embeddings_v2"
         logger.info(
             f"BigQuery client initialized: project={self.client.project}, "
             f"dataset={self.dataset}, table={self.table_ref}"
@@ -39,6 +39,8 @@ class BigQueryClient:
         text_content: str,
         timestamp_start: Optional[str],
         timestamp_end: Optional[str],
+        result_data_json: Optional[str] = None,
+        gcs_path: Optional[str] = None,
     ) -> None:
         """Insert a scene result via DML INSERT. Returns immediately.
 
@@ -50,10 +52,12 @@ class BigQueryClient:
         sql = f"""
         INSERT INTO `{self.table_ref}`
             (result_id, video_id, video_filename, scene_job_id,
-             chunk_index, text_content, timestamp_start, timestamp_end)
+             chunk_index, text_content, timestamp_start, timestamp_end,
+             result_data_json, gcs_path)
         VALUES
             (@result_id, @video_id, @video_filename, @scene_job_id,
-             @chunk_index, @text_content, @timestamp_start, @timestamp_end)
+             @chunk_index, @text_content, @timestamp_start, @timestamp_end,
+             @result_data_json, @gcs_path)
         """
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
@@ -65,6 +69,8 @@ class BigQueryClient:
                 bigquery.ScalarQueryParameter("text_content", "STRING", text_content),
                 bigquery.ScalarQueryParameter("timestamp_start", "STRING", timestamp_start),
                 bigquery.ScalarQueryParameter("timestamp_end", "STRING", timestamp_end),
+                bigquery.ScalarQueryParameter("result_data_json", "STRING", result_data_json),
+                bigquery.ScalarQueryParameter("gcs_path", "STRING", gcs_path),
             ]
         )
         job = self.client.query(sql, job_config=job_config)
@@ -131,25 +137,36 @@ class BigQueryClient:
 
         return statuses
 
+    # Maximum cosine distance for search results. text-embedding-005 distances
+    # are tightly clustered (0.95–1.12 typical range). With Gemini curation
+    # handling relevance filtering, we use a permissive threshold to pass
+    # more candidates to the curator.
+    DISTANCE_THRESHOLD = 1.1
+
     def search_videos(self, query: str, limit: int = 20) -> list[dict]:
         """Cross-video semantic search using AI.SEARCH."""
         logger.info(f"Search videos: query='{query}', limit={limit}")
         sql = f"""
-        SELECT base.video_id, base.video_filename, base.text_content,
-               base.chunk_index, base.timestamp_start, base.timestamp_end,
-               distance
-        FROM AI.SEARCH(
-            TABLE `{self.table_ref}`,
-            'text_content',
-            @query,
-            top_k => @limit
+        SELECT * FROM (
+            SELECT base.result_id, base.video_id, base.video_filename,
+                   base.text_content, base.chunk_index,
+                   base.timestamp_start, base.timestamp_end,
+                   base.result_data_json, base.gcs_path, distance
+            FROM AI.SEARCH(
+                TABLE `{self.table_ref}`,
+                'text_content',
+                @query,
+                top_k => @limit
+            )
         )
+        WHERE distance < @max_distance
         ORDER BY distance ASC
         """
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
                 bigquery.ScalarQueryParameter("query", "STRING", query),
                 bigquery.ScalarQueryParameter("limit", "INT64", limit),
+                bigquery.ScalarQueryParameter("max_distance", "FLOAT64", self.DISTANCE_THRESHOLD),
             ]
         )
         results = [dict(row) for row in self.client.query(sql, job_config=job_config).result()]
@@ -160,13 +177,16 @@ class BigQueryClient:
         """In-video semantic search. Pre-filters by video_id."""
         logger.info(f"Search within video: video_id={video_id}, query='{query}', limit={limit}")
         sql = f"""
-        SELECT base.*, distance
-        FROM AI.SEARCH(
-            (SELECT * FROM `{self.table_ref}` WHERE video_id = @video_id),
-            'text_content',
-            @query,
-            top_k => @limit
+        SELECT * FROM (
+            SELECT base.*, distance
+            FROM AI.SEARCH(
+                (SELECT * FROM `{self.table_ref}` WHERE video_id = @video_id),
+                'text_content',
+                @query,
+                top_k => @limit
+            )
         )
+        WHERE distance < @max_distance
         ORDER BY distance ASC
         """
         job_config = bigquery.QueryJobConfig(
@@ -174,6 +194,7 @@ class BigQueryClient:
                 bigquery.ScalarQueryParameter("video_id", "STRING", video_id),
                 bigquery.ScalarQueryParameter("query", "STRING", query),
                 bigquery.ScalarQueryParameter("limit", "INT64", limit),
+                bigquery.ScalarQueryParameter("max_distance", "FLOAT64", self.DISTANCE_THRESHOLD),
             ]
         )
         results = [dict(row) for row in self.client.query(sql, job_config=job_config).result()]

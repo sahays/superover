@@ -13,44 +13,108 @@ from api.models.schemas.search import (
     SearchRequest,
     VideoSearchResult,
     InVideoSearchResult,
+    SearchRecommendation,
+    CuratedSearchResponse,
 )
 from google.cloud import firestore as firestore_module
 from libs.database import get_db
 from libs.bigquery import get_bq_client
+from libs.gemini import get_search_curator
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/search", tags=["Search"])
 
 
-def _flatten_result_data(result_data: dict) -> str:
-    """Flatten result_data dict into a searchable text string.
+def _build_embedding_text(result_data: dict) -> str:
+    """Build focused embedding text from result_data for BQ text_content.
 
-    Concatenates all text fields including timestamps, camera metadata,
-    setting details, and audio cues — the rich metadata helps produce
-    precise, discriminating embeddings for clip-level search.
+    Includes classification fields (genre, type, mood, setting), summary,
+    and actor names. Excludes dialogue, camera work, and visual style noise
+    to produce a cleaner embedding signal.
     """
-    parts = []
+    parts: list[str] = []
 
-    def _extract_text(obj, depth=0):
-        """Recursively extract text values from nested dicts/lists."""
-        if depth > 5:
-            return
-        if isinstance(obj, str):
-            stripped = obj.strip()
-            if stripped:
-                parts.append(stripped)
-        elif isinstance(obj, dict):
-            for key, val in obj.items():
-                if key in ("token_usage", "gcs_path", "finish_reason"):
-                    continue
-                _extract_text(val, depth + 1)
-        elif isinstance(obj, list):
-            for item in obj:
-                _extract_text(item, depth + 1)
+    # --- Top-level classification fields ---
+    for key in ("genre", "type", "content_type", "category", "sub_category"):
+        val = result_data.get(key)
+        if val and isinstance(val, str) and val.strip():
+            label = key.replace("_", " ").title()
+            parts.append(f"{label}: {val.strip()}")
 
-    _extract_text(result_data)
-    return " ".join(parts) if parts else json.dumps(result_data)
+    # --- Chunk summary ---
+    summary = result_data.get("chunk_summary")
+    if summary and isinstance(summary, str):
+        parts.append(f"Summary: {summary.strip()}")
+
+    # --- Scene-level classification + actors ---
+    scenes = result_data.get("scenes")
+    if isinstance(scenes, list) and scenes:
+        first_scene = scenes[0] if isinstance(scenes[0], dict) else {}
+
+        mood = first_scene.get("mood", {})
+        if isinstance(mood, dict):
+            tone = mood.get("tone", "")
+            energy = mood.get("energy", "")
+            if tone or energy:
+                parts.append(f"Mood: {tone} {energy}".strip())
+
+        setting = first_scene.get("setting", {})
+        if isinstance(setting, dict):
+            location = setting.get("location", "")
+            if location:
+                parts.append(f"Setting: {location}")
+
+        # Collect actor names across all scenes
+        seen: set[str] = set()
+        for scene in scenes:
+            if not isinstance(scene, dict):
+                continue
+            # Scene summary (not detailed_description to keep it focused)
+            scene_summary = scene.get("summary")
+            if scene_summary and isinstance(scene_summary, str):
+                parts.append(scene_summary.strip())
+            for person in scene.get("people", []):
+                if isinstance(person, dict):
+                    name = person.get("label", "")
+                    if name and name not in seen and not name.startswith("Person"):
+                        seen.add(name)
+                        parts.append(f"Actor: {name}")
+
+    # --- Notable observations ---
+    observations = result_data.get("notable_observations")
+    if isinstance(observations, list):
+        for obs in observations:
+            if isinstance(obs, str) and obs.strip():
+                parts.append(obs.strip())
+
+    # --- Fallback: if nothing extracted, dump raw text ---
+    if not parts:
+        return _extract_all_text(result_data)
+
+    return " ".join(parts)
+
+
+def _extract_all_text(obj: object, depth: int = 0) -> str:
+    """Recursively extract all text values as fallback."""
+    if depth > 5:
+        return ""
+    if isinstance(obj, str):
+        return obj.strip()
+    parts: list[str] = []
+    if isinstance(obj, dict):
+        for key, val in obj.items():
+            if key in ("token_usage", "gcs_path", "finish_reason"):
+                continue
+            text = _extract_all_text(val, depth + 1)
+            if text:
+                parts.append(text)
+    elif isinstance(obj, list):
+        for item in obj:
+            text = _extract_all_text(item, depth + 1)
+            if text:
+                parts.append(text)
+    return " ".join(parts)
 
 
 # === Sync Endpoints ===
@@ -135,7 +199,7 @@ async def get_sync_status():
                 video_filenames[video_id] = video.get("filename", "") if video else ""
 
             # Build text preview from result_data
-            text = _flatten_result_data(data.get("result_data", {}))
+            text = _build_embedding_text(data.get("result_data", {}))
             preview = text[:200] + "..." if len(text) > 200 else text
 
             # Determine sync status:
@@ -155,6 +219,7 @@ async def get_sync_status():
                     sync_status=fs_status,
                     sync_error=data.get("bq_sync_error"),
                     text_preview=preview,
+                    text_content=text,
                 )
             )
 
@@ -183,7 +248,7 @@ async def sync_results(request: SyncRequest):
 
         synced_count = 0
         errors = []
-        video_filenames: dict[str, str] = {}
+        video_cache: dict[str, dict] = {}  # video_id -> {filename, gcs_path}
 
         for result_id in request.result_ids:
             try:
@@ -212,25 +277,35 @@ async def sync_results(request: SyncRequest):
                         synced_count += 1
                         continue
 
-                # Cache video filename lookups
-                if video_id and video_id not in video_filenames:
+                # Cache video lookups (filename + gcs_path)
+                if video_id and video_id not in video_cache:
                     video = db.get_video(video_id)
-                    video_filenames[video_id] = video.get("filename", "") if video else ""
+                    video_cache[video_id] = {
+                        "filename": video.get("filename", "") if video else "",
+                        "gcs_path": video.get("gcs_path", "") if video else "",
+                    }
 
-                # Flatten result_data into searchable text
-                text_content = _flatten_result_data(data.get("result_data", {}))
+                # Build focused embedding text
+                result_data = data.get("result_data", {})
+                text_content = _build_embedding_text(result_data)
                 logger.info(f"Syncing result {result_id}: video={video_id}, text_length={len(text_content)}")
+
+                # Serialize full analysis JSON for BQ storage
+                result_data_json = json.dumps(result_data) if result_data else None
+                video_info = video_cache.get(video_id, {})
 
                 # DML INSERT — returns immediately after insert completes
                 bq.sync_scene_result(
                     result_id=result_id,
                     video_id=video_id,
-                    video_filename=video_filenames.get(video_id),
+                    video_filename=video_info.get("filename"),
                     scene_job_id=data.get("scene_job_id"),
                     chunk_index=data.get("chunk_index"),
                     text_content=text_content,
                     timestamp_start=data.get("timestamp_start"),
                     timestamp_end=data.get("timestamp_end"),
+                    result_data_json=result_data_json,
+                    gcs_path=video_info.get("gcs_path"),
                 )
 
                 # Mark as "pending" in Firestore — embedding generates async
@@ -296,9 +371,59 @@ async def delete_synced_result(result_id: str):
 # === Search Endpoints ===
 
 
-@router.post("/videos", response_model=List[VideoSearchResult])
+def _extract_metadata(result_data: dict) -> dict:
+    """Extract structured metadata from a scene result's result_data."""
+    meta: dict = {}
+
+    meta["description"] = result_data.get("chunk_summary")
+    meta["genre"] = result_data.get("genre")
+    meta["content_type"] = result_data.get("type") or result_data.get("content_type")
+
+    scenes = result_data.get("scenes")
+    if isinstance(scenes, list) and scenes:
+        first = scenes[0] if isinstance(scenes[0], dict) else {}
+
+        mood = first.get("mood", {})
+        if isinstance(mood, dict):
+            parts = [mood.get("tone", ""), mood.get("energy", "")]
+            meta["mood"] = " ".join(p for p in parts if p) or None
+
+        setting = first.get("setting", {})
+        if isinstance(setting, dict):
+            meta["setting"] = setting.get("location")
+
+        # Collect all unique actor names across all scenes
+        actors: list[str] = []
+        seen: set[str] = set()
+        for scene in scenes:
+            if not isinstance(scene, dict):
+                continue
+            for person in scene.get("people", []):
+                if isinstance(person, dict):
+                    name = person.get("label", "")
+                    if name and name not in seen and not name.startswith("Person"):
+                        seen.add(name)
+                        actors.append(name)
+        if actors:
+            meta["actors"] = actors
+
+    return {k: v for k, v in meta.items() if v}
+
+
+def _parse_result_data_json(row: dict) -> dict:
+    """Parse result_data_json from a BQ row, returning empty dict on failure."""
+    raw = row.get("result_data_json")
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+@router.post("/videos", response_model=CuratedSearchResponse)
 async def search_videos(request: SearchRequest):
-    """Cross-video semantic search using AI.SEARCH."""
+    """Cross-video semantic search with Gemini curation. Zero Firestore reads."""
     try:
         bq = get_bq_client()
         raw_results = bq.search_videos(request.query, request.limit)
@@ -309,24 +434,44 @@ async def search_videos(request: SearchRequest):
             vid = row["video_id"]
             video_groups.setdefault(vid, []).append(row)
 
-        results = []
+        # Build raw_results for response (metadata from BQ, no Firestore)
+        raw_video_results = []
         for video_id, matches in video_groups.items():
-            best = matches[0]  # Already sorted by distance ASC
-            results.append(
+            best = matches[0]
+            result_data = _parse_result_data_json(best)
+            meta = _extract_metadata(result_data) if result_data else {}
+            raw_video_results.append(
                 VideoSearchResult(
                     video_id=video_id,
                     video_filename=best.get("video_filename"),
-                    top_match_text=best["text_content"][:500],
+                    top_match_text=best.get("text_content", "")[:500],
                     score=best["distance"],
                     chunk_count=len(matches),
                     timestamp_start=best.get("timestamp_start"),
                     timestamp_end=best.get("timestamp_end"),
+                    description=meta.get("description"),
+                    genre=meta.get("genre"),
+                    content_type=meta.get("content_type"),
+                    mood=meta.get("mood"),
+                    setting=meta.get("setting"),
+                    actors=meta.get("actors"),
                 )
             )
+        raw_video_results.sort(key=lambda r: r.score)
 
-        # Sort by score (lower distance = better match)
-        results.sort(key=lambda r: r.score)
-        return results
+        # Gemini curation
+        curator = get_search_curator()
+        curated = curator.curate_search_results(request.query, raw_results)
+
+        recommendations = [
+            SearchRecommendation(**rec) for rec in curated.get("recommendations", [])
+        ]
+
+        return CuratedSearchResponse(
+            response_text=curated.get("response_text", ""),
+            recommendations=recommendations,
+            raw_results=raw_video_results,
+        )
 
     except Exception as e:
         logger.error(f"Failed to search videos: {e}")

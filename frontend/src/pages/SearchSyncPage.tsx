@@ -9,6 +9,7 @@ import {
   Loader2,
   AlertCircle,
   RefreshCw,
+  Eye,
 } from 'lucide-react'
 import { searchApi } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
@@ -19,8 +20,16 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
+import { VideoSearchPlayer } from '@/components/search/video-search-player'
 
 interface SyncStatusItem {
   result_id: string
@@ -31,16 +40,17 @@ interface SyncStatusItem {
   sync_status: 'not_synced' | 'pending' | 'ready' | 'error'
   sync_error: string | null
   text_preview: string | null
+  text_content: string | null
 }
 
 export default function SearchSyncPage() {
   const queryClient = useQueryClient()
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [previewItem, setPreviewItem] = useState<SyncStatusItem | null>(null)
 
   const { data: items, isLoading } = useQuery<SyncStatusItem[]>({
     queryKey: ['search-sync-status'],
     queryFn: () => searchApi.getSyncStatus(),
-    // Auto-refresh every 5s while there are pending items
     refetchInterval: (query) => {
       const data = query.state.data
       if (data?.some((item) => item.sync_status === 'pending')) {
@@ -203,11 +213,13 @@ export default function SearchSyncPage() {
               <CardContent>
                 <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                   {notSyncedItems.map((item) => (
-                    <SyncCard
+                    <SyncItemCard
                       key={item.result_id}
                       item={item}
+                      selectable
                       selected={selected.has(item.result_id)}
                       onToggle={() => toggleSelect(item.result_id)}
+                      onPreview={() => setPreviewItem(item)}
                     />
                   ))}
                 </div>
@@ -231,38 +243,21 @@ export default function SearchSyncPage() {
               <CardContent>
                 <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                   {pendingItems.map((item) => (
-                    <Card
+                    <SyncItemCard
                       key={item.result_id}
-                      className="border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-950/20"
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {item.video_filename || item.video_id}
-                            </p>
-                            {item.chunk_index != null && (
-                              <Badge
-                                variant="secondary"
-                                className="text-xs mt-1"
-                              >
-                                Chunk {item.chunk_index}
-                              </Badge>
-                            )}
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className="border-amber-400 text-amber-700 dark:text-amber-400 shrink-0"
-                          >
-                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                            Pending
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground line-clamp-2">
-                          {item.text_preview}
-                        </p>
-                      </CardContent>
-                    </Card>
+                      item={item}
+                      cardClassName="border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-950/20"
+                      badge={
+                        <Badge
+                          variant="outline"
+                          className="border-amber-400 text-amber-700 dark:text-amber-400"
+                        >
+                          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                          Pending
+                        </Badge>
+                      }
+                      onPreview={() => setPreviewItem(item)}
+                    />
                   ))}
                 </div>
               </CardContent>
@@ -284,45 +279,20 @@ export default function SearchSyncPage() {
               <CardContent>
                 <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                   {errorItems.map((item) => (
-                    <Card
+                    <SyncItemCard
                       key={item.result_id}
-                      className="border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20"
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {item.video_filename || item.video_id}
-                            </p>
-                            {item.sync_error && (
-                              <p className="text-xs text-destructive mt-1">
-                                {item.sync_error}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <Badge variant="destructive">
-                              <AlertCircle className="mr-1 h-3 w-3" />
-                              Error
-                            </Badge>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                              onClick={() =>
-                                deleteMutation.mutate(item.result_id)
-                              }
-                              disabled={deleteMutation.isPending}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                        <p className="text-xs text-muted-foreground line-clamp-2">
-                          {item.text_preview}
-                        </p>
-                      </CardContent>
-                    </Card>
+                      item={item}
+                      cardClassName="border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20"
+                      badge={
+                        <Badge variant="destructive">
+                          <AlertCircle className="mr-1 h-3 w-3" />
+                          Error
+                        </Badge>
+                      }
+                      onPreview={() => setPreviewItem(item)}
+                      onDelete={() => deleteMutation.mutate(item.result_id)}
+                      deleteDisabled={deleteMutation.isPending}
+                    />
                   ))}
                 </div>
               </CardContent>
@@ -358,48 +328,20 @@ export default function SearchSyncPage() {
               <CardContent>
                 <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                   {readyItems.map((item) => (
-                    <Card
+                    <SyncItemCard
                       key={item.result_id}
-                      className="border-green-200 bg-green-50/50 dark:border-green-900 dark:bg-green-950/20"
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {item.video_filename || item.video_id}
-                            </p>
-                            {item.chunk_index != null && (
-                              <Badge
-                                variant="secondary"
-                                className="text-xs mt-1"
-                              >
-                                Chunk {item.chunk_index}
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <Badge className="bg-green-600">
-                              <Check className="mr-1 h-3 w-3" />
-                              Searchable
-                            </Badge>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                              onClick={() =>
-                                deleteMutation.mutate(item.result_id)
-                              }
-                              disabled={deleteMutation.isPending}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                        <p className="text-xs text-muted-foreground line-clamp-2">
-                          {item.text_preview}
-                        </p>
-                      </CardContent>
-                    </Card>
+                      item={item}
+                      cardClassName="border-green-200 bg-green-50/50 dark:border-green-900 dark:bg-green-950/20"
+                      badge={
+                        <Badge className="bg-green-600">
+                          <Check className="mr-1 h-3 w-3" />
+                          Searchable
+                        </Badge>
+                      }
+                      onPreview={() => setPreviewItem(item)}
+                      onDelete={() => deleteMutation.mutate(item.result_id)}
+                      deleteDisabled={deleteMutation.isPending}
+                    />
                   ))}
                 </div>
               </CardContent>
@@ -420,37 +362,103 @@ export default function SearchSyncPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Embedded Text Preview Dialog */}
+      <Dialog open={!!previewItem} onOpenChange={() => setPreviewItem(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="truncate">
+              {previewItem?.video_filename || previewItem?.video_id}
+            </DialogTitle>
+            <DialogDescription>
+              Text sent to BigQuery for embedding generation
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto">
+            <pre className="whitespace-pre-wrap text-sm font-mono rounded-lg bg-slate-50 dark:bg-slate-900 p-4">
+              {previewItem?.text_content || previewItem?.text_preview}
+            </pre>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
-function SyncCard({
+function SyncItemCard({
   item,
+  selectable,
   selected,
   onToggle,
+  badge,
+  cardClassName,
+  onPreview,
+  onDelete,
+  deleteDisabled,
 }: {
   item: SyncStatusItem
-  selected: boolean
-  onToggle: () => void
+  selectable?: boolean
+  selected?: boolean
+  onToggle?: () => void
+  badge?: React.ReactNode
+  cardClassName?: string
+  onPreview: () => void
+  onDelete?: () => void
+  deleteDisabled?: boolean
 }) {
   return (
     <Card
-      className={`cursor-pointer transition-colors ${
-        selected ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
-      }`}
-      onClick={onToggle}
+      className={
+        selectable
+          ? `cursor-pointer transition-colors ${selected ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`
+          : cardClassName || ''
+      }
+      onClick={selectable ? onToggle : undefined}
     >
-      <CardContent className="p-4">
+      <CardContent className="p-4 space-y-3">
+        {/* Video Player */}
+        <div className="rounded-md overflow-hidden">
+          <VideoSearchPlayer videoId={item.video_id} />
+        </div>
+
+        {/* Header row */}
         <div className="flex items-start gap-3">
-          <Checkbox checked={selected} className="mt-1" />
+          {selectable && <Checkbox checked={selected} className="mt-1" />}
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium truncate">
-              {item.video_filename || item.video_id}
-            </p>
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-sm font-medium truncate">
+                {item.video_filename || item.video_id}
+              </p>
+              <div className="flex items-center gap-1 shrink-0">
+                {badge}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onClick={(e) => { e.stopPropagation(); onPreview() }}
+                >
+                  <Eye className="h-4 w-4" />
+                </Button>
+                {onDelete && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                    onClick={(e) => { e.stopPropagation(); onDelete() }}
+                    disabled={deleteDisabled}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
             {item.chunk_index != null && (
               <Badge variant="secondary" className="text-xs mt-1">
                 Chunk {item.chunk_index}
               </Badge>
+            )}
+            {item.sync_error && (
+              <p className="text-xs text-destructive mt-1">{item.sync_error}</p>
             )}
             <p className="text-xs text-muted-foreground mt-2 line-clamp-2">
               {item.text_preview}

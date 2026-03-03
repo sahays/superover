@@ -3,9 +3,10 @@ import { videoApi } from '@/lib/api-client'
 
 interface VideoSearchPlayerProps {
   videoId: string
+  className?: string
 }
 
-export function VideoSearchPlayer({ videoId }: VideoSearchPlayerProps) {
+export function VideoSearchPlayer({ videoId, className }: VideoSearchPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -15,14 +16,7 @@ export function VideoSearchPlayer({ videoId }: VideoSearchPlayerProps) {
 
     async function loadVideo() {
       try {
-        const video = await videoApi.getVideo(videoId)
-        if (cancelled) return
-
-        // Get a signed URL for the video's GCS path
-        const { signed_url } = await videoApi.getSignedUrl(
-          video.filename,
-          video.content_type || 'video/mp4'
-        )
+        const { signed_url } = await videoApi.getPlaybackUrl(videoId)
         if (!cancelled) {
           setVideoUrl(signed_url)
         }
@@ -65,12 +59,12 @@ export function VideoSearchPlayer({ videoId }: VideoSearchPlayerProps) {
   }
 
   return (
-    <div>
+    <div className="w-full">
       <video
         ref={videoRef}
         src={videoUrl}
         controls
-        className="w-full rounded-lg"
+        className={`w-full ${className ?? ''}`}
       />
       {/* Expose seekTo via a data attribute for parent access */}
       <div data-seek-to="" ref={(el) => {

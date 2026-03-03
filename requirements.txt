@@ -8,7 +8,7 @@ python-multipart==0.0.20
 # GCP Libraries
 google-cloud-storage==2.19.0
 google-cloud-firestore==2.20.0
-google-genai>=1.47.0
+google-genai>=1.65.0
 
 # Video Processing (Transcoder API)
 google-cloud-video-transcoder>=1.0.0

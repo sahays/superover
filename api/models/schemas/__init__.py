@@ -50,6 +50,8 @@ from .search import (
     SearchRequest,
     VideoSearchResult,
     InVideoSearchResult,
+    SearchRecommendation,
+    CuratedSearchResponse,
 )
 
 __all__ = [
@@ -97,4 +99,6 @@ __all__ = [
     "SearchRequest",
     "VideoSearchResult",
     "InVideoSearchResult",
+    "SearchRecommendation",
+    "CuratedSearchResponse",
 ]

@@ -1,21 +1,35 @@
-import { useState, useRef, useCallback } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Film, Clock } from 'lucide-react'
+import {
+  Search,
+  Film,
+  Clock,
+  Sparkles,
+  Play,
+  Star,
+} from 'lucide-react'
 import { searchApi, videoApi } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { SearchResultCard } from '@/components/search/search-result-card'
-import { parseTimestamp } from '@/components/search/video-search-player'
+  VideoSearchPlayer,
+  parseTimestamp,
+} from '@/components/search/video-search-player'
+
+const LOADING_MESSAGES = [
+  'Asking the AI to binge-watch your videos real quick...',
+  'Teaching robots to appreciate cinematography...',
+  'Scanning every pixel with superhuman patience...',
+  'Our AI intern is reviewing the footage...',
+  'Convincing Gemini your videos are worth watching...',
+  'Speed-watching at 1,000,000x... almost there...',
+  'Cross-referencing scenes with impeccable taste...',
+  'Summoning the video oracle for your query...',
+  'Polishing the crystal ball of search results...',
+  'Running through your footage in flip-flops...',
+]
 
 interface VideoSearchResult {
   video_id: string
@@ -25,94 +39,100 @@ interface VideoSearchResult {
   chunk_count: number
   timestamp_start: string | null
   timestamp_end: string | null
+  description: string | null
+  genre: string | null
+  content_type: string | null
+  mood: string | null
+  setting: string | null
+  actors: string[] | null
 }
 
-interface InVideoSearchResult {
-  chunk_index: number | null
-  text_content: string
-  timestamp_start: string | null
-  timestamp_end: string | null
-  score: number
-}
-
-interface SyncStatusItem {
-  result_id: string
+interface SearchRecommendation {
   video_id: string
   video_filename: string | null
-  synced: boolean
+  gcs_path: string | null
+  recommendation_type: 'full_video' | 'clip'
+  title: string
+  reason: string
+  clip_start: string | null
+  clip_end: string | null
+  confidence: number
 }
 
-type SearchMode = 'videos' | 'in-video'
+interface CuratedSearchResponse {
+  response_text: string
+  recommendations: SearchRecommendation[]
+  raw_results: VideoSearchResult[]
+}
+
+function SearchLoadingAnimation() {
+  const [messageIndex, setMessageIndex] = useState(() =>
+    Math.floor(Math.random() * LOADING_MESSAGES.length)
+  )
+
+  useEffect(() => {
+    const scheduleNext = () => {
+      const delay = 2000 + Math.random() * 2000 // 2-4 seconds
+      return setTimeout(() => {
+        setMessageIndex((prev) => {
+          let next: number
+          do {
+            next = Math.floor(Math.random() * LOADING_MESSAGES.length)
+          } while (next === prev && LOADING_MESSAGES.length > 1)
+          return next
+        })
+        timerId = scheduleNext()
+      }, delay)
+    }
+    let timerId = scheduleNext()
+    return () => clearTimeout(timerId)
+  }, [])
+
+  const message = LOADING_MESSAGES[messageIndex]
+  const words = message.split(' ')
+
+  return (
+    <Card>
+      <CardContent className="py-16 text-center">
+        <Sparkles className="mx-auto h-10 w-10 text-primary mb-6 animate-pulse" />
+        <p className="text-lg leading-relaxed">
+          {words.map((word, i) => (
+            <span
+              key={`${messageIndex}-${i}`}
+              className="inline-block animate-glow-word mx-1"
+              style={{ animationDelay: `${i * 0.12}s` }}
+            >
+              {word}
+            </span>
+          ))}
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
 
 export default function SearchPage() {
   const navigate = useNavigate()
-  const [mode, setMode] = useState<SearchMode>('videos')
   const [query, setQuery] = useState('')
-  const [selectedVideoId, setSelectedVideoId] = useState<string>('')
-  const [videoResults, setVideoResults] = useState<VideoSearchResult[] | null>(null)
-  const [inVideoResults, setInVideoResults] = useState<InVideoSearchResult[] | null>(null)
+  const [curatedResponse, setCuratedResponse] =
+    useState<CuratedSearchResponse | null>(null)
   const [searching, setSearching] = useState(false)
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const [videoUrl, setVideoUrl] = useState<string | null>(null)
-
-  // Fetch synced videos for the video selector
-  const { data: syncStatus } = useQuery<SyncStatusItem[]>({
-    queryKey: ['search-sync-status'],
-    queryFn: () => searchApi.getSyncStatus(),
-  })
-
-  // Deduplicate synced videos
-  const syncedVideos = syncStatus
-    ? Array.from(
-        new Map(
-          syncStatus
-            .filter((s) => s.synced)
-            .map((s) => [s.video_id, s])
-        ).values()
-      )
-    : []
+  const [searchDuration, setSearchDuration] = useState<number | null>(null)
 
   const handleSearch = useCallback(async () => {
     if (!query.trim()) return
     setSearching(true)
+    setSearchDuration(null)
+    const startTime = performance.now()
 
     try {
-      if (mode === 'videos') {
-        const results = await searchApi.searchVideos(query)
-        setVideoResults(results)
-        setInVideoResults(null)
-      } else {
-        if (!selectedVideoId) return
-        const results = await searchApi.searchWithinVideo(selectedVideoId, query)
-        setInVideoResults(results)
-        setVideoResults(null)
-
-        // Load video URL for player
-        if (!videoUrl || videoUrl !== selectedVideoId) {
-          try {
-            const video = await videoApi.getVideo(selectedVideoId)
-            const { signed_url } = await videoApi.getSignedUrl(
-              video.filename,
-              video.content_type || 'video/mp4'
-            )
-            setVideoUrl(signed_url)
-          } catch {
-            setVideoUrl(null)
-          }
-        }
-      }
+      const response = await searchApi.searchVideos(query)
+      setCuratedResponse(response)
     } finally {
+      setSearchDuration(Math.round((performance.now() - startTime) / 100) / 10)
       setSearching(false)
     }
-  }, [query, mode, selectedVideoId, videoUrl])
-
-  const handleSeek = (timestampStart: string | null) => {
-    const seconds = parseTimestamp(timestampStart)
-    if (seconds != null && videoRef.current) {
-      videoRef.current.currentTime = seconds
-      videoRef.current.play().catch(() => {})
-    }
-  }
+  }, [query])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -120,130 +140,105 @@ export default function SearchPage() {
     }
   }
 
+  // Split recommendations by confidence
+  const { bestMatches, alsoLike } = useMemo(() => {
+    if (!curatedResponse) return { bestMatches: [], alsoLike: [] }
+    const best: SearchRecommendation[] = []
+    const also: SearchRecommendation[] = []
+    for (const rec of curatedResponse.recommendations) {
+      if (rec.confidence >= 0.85) best.push(rec)
+      else if (rec.confidence >= 0.60) also.push(rec)
+    }
+    return { bestMatches: best, alsoLike: also }
+  }, [curatedResponse])
+
+  const totalResults = bestMatches.length + alsoLike.length
+
   return (
     <div className="container mx-auto max-w-6xl px-4 py-8">
       {/* Page Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold">Search</h1>
         <p className="text-muted-foreground mt-1">
-          Semantic search across analyzed video content
+          AI-powered semantic search across analyzed video content
         </p>
       </div>
 
-      {/* Search Controls */}
-      <Card className="mb-8">
-        <CardContent className="p-6">
-          <div className="flex flex-col gap-4">
-            {/* Mode Toggle */}
-            <div className="flex items-center gap-4">
-              <Button
-                variant={mode === 'videos' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => {
-                  setMode('videos')
-                  setInVideoResults(null)
-                }}
-              >
-                <Film className="mr-2 h-4 w-4" />
-                All Videos
-              </Button>
-              <Button
-                variant={mode === 'in-video' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => {
-                  setMode('in-video')
-                  setVideoResults(null)
-                }}
-              >
-                <Clock className="mr-2 h-4 w-4" />
-                Within Video
-              </Button>
+      {/* Search Bar */}
+      <div className="flex gap-2 mb-8">
+        <Input
+          placeholder="Describe what you're looking for..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
+          className="flex-1"
+        />
+        <Button
+          onClick={handleSearch}
+          disabled={searching || !query.trim()}
+        >
+          <Search className="mr-2 h-4 w-4" />
+          {searching ? 'Searching...' : 'Search'}
+        </Button>
+      </div>
+
+      {/* Loading Animation */}
+      {searching && <SearchLoadingAnimation />}
+
+      {/* Results */}
+      {!searching && curatedResponse && (
+        <div className="space-y-6">
+          {/* Results summary */}
+          {searchDuration != null && totalResults > 0 && (
+            <p className="text-sm text-muted-foreground">
+              Found {totalResults} result{totalResults !== 1 ? 's' : ''} in{' '}
+              {searchDuration}s
+            </p>
+          )}
+
+          {/* Best Matches */}
+          {bestMatches.length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold mb-4">Best Matches</h2>
+              <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                {bestMatches.map((rec, idx) => (
+                  <RecommendationCard
+                    key={`${rec.video_id}-best-${idx}`}
+                    recommendation={rec}
+                    onClick={() => navigate(`/scene/${rec.video_id}`)}
+                  />
+                ))}
+              </div>
             </div>
+          )}
 
-            {/* Video selector for in-video mode */}
-            {mode === 'in-video' && (
-              <Select value={selectedVideoId} onValueChange={setSelectedVideoId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a video to search within..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {syncedVideos.map((v) => (
-                    <SelectItem key={v.video_id} value={v.video_id}>
-                      {v.video_filename || v.video_id}
-                    </SelectItem>
-                  ))}
-                  {syncedVideos.length === 0 && (
-                    <SelectItem value="_none" disabled>
-                      No synced videos available
-                    </SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-            )}
-
-            {/* Search input */}
-            <div className="flex gap-2">
-              <Input
-                placeholder="Describe what you're looking for..."
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="flex-1"
-              />
-              <Button
-                onClick={handleSearch}
-                disabled={
-                  searching ||
-                  !query.trim() ||
-                  (mode === 'in-video' && !selectedVideoId)
-                }
-              >
-                <Search className="mr-2 h-4 w-4" />
-                {searching ? 'Searching...' : 'Search'}
-              </Button>
+          {/* You May Also Like */}
+          {alsoLike.length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold mb-4 text-muted-foreground">
+                You May Also Like
+              </h2>
+              <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                {alsoLike.map((rec, idx) => (
+                  <RecommendationCard
+                    key={`${rec.video_id}-also-${idx}`}
+                    recommendation={rec}
+                    secondary
+                    onClick={() => navigate(`/scene/${rec.video_id}`)}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          )}
 
-      {/* Results: All Videos Mode */}
-      {mode === 'videos' && videoResults && (
-        <div>
-          {videoResults.length > 0 ? (
-            <>
-              {/* Best Matches (distance < 1.0) */}
-              {videoResults.filter((r) => r.score < 1.0).length > 0 && (
-                <div className="mb-8">
-                  <h2 className="text-lg font-semibold mb-4">
-                    Best Matches
-                  </h2>
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {videoResults.filter((r) => r.score < 1.0).map((result) => (
-                      <VideoResultCard key={result.video_id} result={result} onClick={() => navigate(`/scene/${result.video_id}`)} />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Also Interested (distance >= 1.0) */}
-              {videoResults.filter((r) => r.score >= 1.0).length > 0 && (
-                <div>
-                  <h2 className="text-sm font-medium text-muted-foreground mb-4">
-                    You may also be interested in
-                  </h2>
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {videoResults.filter((r) => r.score >= 1.0).map((result) => (
-                      <VideoResultCard key={result.video_id} result={result} secondary onClick={() => navigate(`/scene/${result.video_id}`)} />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
+          {/* No results */}
+          {curatedResponse.recommendations.length === 0 && (
             <Card>
               <CardContent className="py-12 text-center">
                 <Search className="mx-auto h-12 w-12 text-gray-400" />
-                <h3 className="mt-4 text-lg font-semibold">No results found</h3>
+                <h3 className="mt-4 text-lg font-semibold">
+                  No results found
+                </h3>
                 <p className="mt-2 text-sm text-muted-foreground">
                   Try a different search query or sync more results.
                 </p>
@@ -253,64 +248,17 @@ export default function SearchPage() {
         </div>
       )}
 
-      {/* Results: In-Video Mode */}
-      {mode === 'in-video' && inVideoResults && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Video Player */}
-          <div>
-            {videoUrl ? (
-              <video
-                ref={videoRef}
-                src={videoUrl}
-                controls
-                className="w-full rounded-lg"
-              />
-            ) : (
-              <div className="flex items-center justify-center rounded-lg border bg-muted/30 p-12">
-                <p className="text-sm text-muted-foreground">Loading video...</p>
-              </div>
-            )}
-          </div>
-
-          {/* Results List */}
-          <div>
-            <h2 className="text-lg font-semibold mb-4">
-              {inVideoResults.length} moment(s) found
-            </h2>
-            {inVideoResults.length > 0 ? (
-              <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
-                {inVideoResults.map((result, idx) => (
-                  <SearchResultCard
-                    key={idx}
-                    text={result.text_content}
-                    score={result.score}
-                    timestamp={result.timestamp_start}
-                    chunkIndex={result.chunk_index}
-                    onClick={() => handleSeek(result.timestamp_start)}
-                  />
-                ))}
-              </div>
-            ) : (
-              <Card>
-                <CardContent className="py-8 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    No matching moments found in this video.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Empty state when no search has been performed */}
-      {!videoResults && !inVideoResults && (
+      {!searching && !curatedResponse && (
         <Card>
           <CardContent className="py-12 text-center">
             <Search className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-4 text-lg font-semibold">Search your video content</h3>
+            <h3 className="mt-4 text-lg font-semibold">
+              Search your video content
+            </h3>
             <p className="mt-2 text-sm text-muted-foreground">
-              Use natural language to find scenes, objects, dialogues, and more across your analyzed videos.
+              Use natural language to find scenes, objects, dialogues, and more
+              across your analyzed videos.
             </p>
             <CardDescription className="mt-4">
               Make sure to sync scene results first via the Search Sync page.
@@ -322,41 +270,145 @@ export default function SearchPage() {
   )
 }
 
-function VideoResultCard({
-  result,
+function RecommendationCard({
+  recommendation,
   secondary,
-  onClick,
 }: {
-  result: VideoSearchResult
+  recommendation: SearchRecommendation
   secondary?: boolean
   onClick: () => void
 }) {
+  const isClip = recommendation.recommendation_type === 'clip'
+  const [playingClip, setPlayingClip] = useState(false)
+  const [playbackUrl, setPlaybackUrl] = useState<string | null>(null)
+  const clipVideoRef = useRef<HTMLVideoElement>(null)
+  const endTimeRef = useRef<number | null>(null)
+
+  const startPlayback = async () => {
+    if (!playbackUrl) {
+      try {
+        const { signed_url } = await videoApi.getPlaybackUrl(recommendation.video_id)
+        setPlaybackUrl(signed_url)
+      } catch {
+        return
+      }
+    }
+    setPlayingClip(true)
+  }
+
+  const handleVideoLoaded = () => {
+    if (!clipVideoRef.current) return
+    if (isClip && recommendation.clip_start) {
+      const startSec = parseTimestamp(recommendation.clip_start)
+      if (startSec != null) {
+        clipVideoRef.current.currentTime = startSec
+      }
+      endTimeRef.current = parseTimestamp(recommendation.clip_end)
+    }
+    clipVideoRef.current.play().catch(() => {})
+  }
+
+  const handleTimeUpdate = () => {
+    if (
+      clipVideoRef.current &&
+      endTimeRef.current != null &&
+      clipVideoRef.current.currentTime >= endTimeRef.current
+    ) {
+      clipVideoRef.current.pause()
+    }
+  }
+
   return (
     <Card
-      className={`cursor-pointer transition-colors hover:bg-muted/50 ${
-        secondary ? 'opacity-75' : ''
-      }`}
-      onClick={onClick}
+      className={`overflow-hidden flex flex-col ${secondary ? 'opacity-80' : ''}`}
     >
-      <CardContent className="p-4">
-        <p className="text-sm font-medium truncate mb-2">
-          {result.video_filename || result.video_id}
-        </p>
-        <div className="flex items-center gap-2 mb-2">
-          {result.timestamp_start && (
-            <Badge variant="outline" className="text-xs">
-              {result.timestamp_start}
-            </Badge>
-          )}
-          {result.chunk_count > 1 && (
-            <Badge variant="secondary" className="text-xs">
-              {result.chunk_count} matches
-            </Badge>
-          )}
+      {/* Video Player — natural aspect ratio, capped height */}
+      <div className="relative w-full bg-black">
+        {playingClip && playbackUrl ? (
+          <video
+            ref={clipVideoRef}
+            src={playbackUrl}
+            controls
+            onLoadedMetadata={handleVideoLoaded}
+            onTimeUpdate={handleTimeUpdate}
+            className="w-full max-h-64 object-contain"
+          />
+        ) : (
+          <>
+            <VideoSearchPlayer
+              videoId={recommendation.video_id}
+              className="object-contain max-h-64"
+            />
+            {isClip && recommendation.clip_start && (
+              <button
+                onClick={startPlayback}
+                className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/40 transition-colors group"
+              >
+                <div className="rounded-full bg-white/90 p-3 group-hover:scale-110 transition-transform">
+                  <Play className="h-6 w-6 text-black fill-black" />
+                </div>
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      <CardContent className="p-4 space-y-2 flex-1 flex flex-col min-h-0">
+        {/* Title + type badge */}
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-sm font-semibold line-clamp-1">
+            {recommendation.title}
+          </p>
+          <Badge
+            variant={isClip ? 'secondary' : 'default'}
+            className="text-xs shrink-0 cursor-pointer hover:opacity-80"
+            onClick={startPlayback}
+          >
+            {isClip ? (
+              <>
+                <Play className="mr-1 h-3 w-3" />
+                Clip
+              </>
+            ) : (
+              <>
+                <Film className="mr-1 h-3 w-3" />
+                Full Video
+              </>
+            )}
+          </Badge>
         </div>
-        <p className="text-xs text-muted-foreground line-clamp-3">
-          {result.top_match_text}
+
+        {/* Filename */}
+        {recommendation.video_filename && (
+          <p className="text-xs text-muted-foreground truncate">
+            {recommendation.video_filename}
+          </p>
+        )}
+
+        {/* Reason */}
+        <p className="text-sm text-muted-foreground line-clamp-3 flex-1">
+          {recommendation.reason}
         </p>
+
+        {/* Clip timestamps + confidence */}
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          {isClip && recommendation.clip_start && (
+            <button
+              onClick={startPlayback}
+              className="flex items-center gap-1 hover:text-foreground transition-colors"
+            >
+              <Clock className="h-3 w-3" />
+              <span>
+                {recommendation.clip_start}
+                {recommendation.clip_end && ` - ${recommendation.clip_end}`}
+              </span>
+            </button>
+          )}
+          <div className="flex items-center gap-1">
+            <Star className="h-3 w-3" />
+            <span>{Math.round(recommendation.confidence * 100)}% match</span>
+          </div>
+        </div>
       </CardContent>
     </Card>
   )

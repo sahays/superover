@@ -2,9 +2,8 @@
 
 import uuid
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from api.models.schemas import SignedUrlRequest, SignedUrlResponse
-from api.middleware.rate_limit import rate_limit
 from libs.storage import get_storage
 
 logger = logging.getLogger(__name__)
@@ -16,7 +15,6 @@ def register_upload_routes(router: APIRouter) -> None:
     @router.post(
         "/signed-url",
         response_model=SignedUrlResponse,
-        dependencies=[Depends(rate_limit("upload", max_requests=20, window_minutes=1440))],
     )
     async def get_signed_upload_url(request: Request, body: SignedUrlRequest):
         """Generate a signed URL for direct video upload to GCS."""
@@ -43,7 +41,6 @@ def register_upload_routes(router: APIRouter) -> None:
     @router.post(
         "/context/signed-url",
         response_model=SignedUrlResponse,
-        dependencies=[Depends(rate_limit("upload", max_requests=20, window_minutes=1440))],
     )
     async def get_context_signed_upload_url(request: Request, body: SignedUrlRequest):
         """Generate a signed URL for direct context file upload to GCS."""

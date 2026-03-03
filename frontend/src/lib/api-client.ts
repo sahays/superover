@@ -96,6 +96,11 @@ export const videoApi = {
     return response.data
   },
 
+  getPlaybackUrl: async (videoId: string) => {
+    const response = await apiClient.get(`/api/scenes/${videoId}/playback-url`)
+    return response.data
+  },
+
   getManifest: async (videoId: string) => {
     const response = await apiClient.get(`/api/scenes/${videoId}/manifest`)
     return response.data

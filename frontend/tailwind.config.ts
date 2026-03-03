@@ -54,6 +54,15 @@ const config: Config = {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',
   			sm: 'calc(var(--radius) - 4px)'
+  		},
+  		keyframes: {
+  			'glow-word': {
+  				'0%, 100%': { opacity: '0.3' },
+  				'50%': { opacity: '1' },
+  			},
+  		},
+  		animation: {
+  			'glow-word': 'glow-word 1.5s ease-in-out infinite',
   		}
   	}
   },

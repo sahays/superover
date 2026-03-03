@@ -58,12 +58,34 @@ class GCSStorage:
         logger.info(f"Generated signed upload URL for: {gcs_path}")
         return url, gcs_path
 
-    def generate_signed_download_url(self, gcs_path: str, expiration_minutes: int = 60) -> str:
-        """Generate a signed URL for downloading a file."""
+    def generate_signed_download_url(
+        self,
+        gcs_path: str,
+        expiration_minutes: int = 60,
+        response_content_type: Optional[str] = None,
+    ) -> str:
+        """Generate a signed URL for downloading a file.
+
+        Args:
+            gcs_path: GCS path (gs://bucket/path)
+            expiration_minutes: URL validity duration
+            response_content_type: If set, overrides the Content-Type response
+                header. Prevents CORB blocking when loading media cross-origin.
+        """
         bucket_name, blob_name = self._parse_gcs_path(gcs_path)
         bucket = self.client.bucket(bucket_name)
         blob = bucket.blob(blob_name)
-        url = self._sign(blob, datetime.timedelta(minutes=expiration_minutes), "GET")
+        self.credentials.refresh(auth_requests.Request())
+        kwargs = {
+            "version": "v4",
+            "expiration": datetime.timedelta(minutes=expiration_minutes),
+            "method": "GET",
+            "service_account_email": self.credentials.service_account_email,
+            "access_token": self.credentials.token,
+        }
+        if response_content_type:
+            kwargs["response_type"] = response_content_type
+        url = blob.generate_signed_url(**kwargs)
         logger.info(f"Generated signed download URL for: {gcs_path}")
         return url
 

@@ -62,6 +62,45 @@ def register_video_routes(router: APIRouter) -> None:
                 detail=f"Failed to get video: {str(e)}",
             )
 
+    @router.get("/{video_id}/playback-url")
+    async def get_playback_url(video_id: str):
+        """Get a signed download URL for video playback."""
+        try:
+            db = get_db()
+            video = db.get_video(video_id)
+
+            if not video:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Video not found: {video_id}",
+                )
+
+            gcs_path = video.get("gcs_path")
+            if not gcs_path:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Video has no GCS path: {video_id}",
+                )
+
+            storage = get_storage()
+            content_type = video.get("content_type", "video/mp4")
+            signed_url = storage.generate_signed_download_url(
+                gcs_path=gcs_path,
+                expiration_minutes=60,
+                response_content_type=content_type,
+            )
+
+            return {"signed_url": signed_url, "content_type": content_type}
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to get playback URL for {video_id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to get playback URL: {str(e)}",
+            )
+
     @router.get("", response_model=List[VideoResponse])
     async def list_videos(limit: int = 50, status_filter: SceneJobStatus = None):
         """List scene jobs with their associated video information."""
