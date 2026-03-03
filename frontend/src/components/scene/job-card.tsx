@@ -83,30 +83,6 @@ export function SceneJobCard({ job, videoFilename, onDelete, onArchive }: SceneJ
     }
   }
 
-  const getProgressInfo = () => {
-    if (job.status === SceneJobStatus.PROCESSING && job.results?.progress) {
-      const { completed_chunks, total_chunks } = job.results.progress
-      if (total_chunks > 0) {
-        const percentage = Math.round((completed_chunks / total_chunks) * 100)
-        return (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span>Analyzing chunks</span>
-              <span>{completed_chunks} / {total_chunks}</span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-gray-200">
-              <div
-                className="h-full bg-primary transition-all duration-300"
-                style={{ width: `${percentage}%` }}
-              />
-            </div>
-          </div>
-        )
-      }
-    }
-    return null
-  }
-
   const getSourceLabel = () => {
     const path = job.config.compressed_video_path?.toLowerCase()
     if (!path) return 'Processed Media'
@@ -164,8 +140,8 @@ export function SceneJobCard({ job, videoFilename, onDelete, onArchive }: SceneJ
             )}
           </div>
           
-          {/* Cost and Tokens (for completed jobs) or Chunk Duration (for others) */}
-          {job.status === SceneJobStatus.COMPLETED ? (
+          {/* Cost and Tokens (for completed jobs) */}
+          {job.status === SceneJobStatus.COMPLETED && (
             <>
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Est. Cost:</span>
@@ -187,15 +163,6 @@ export function SceneJobCard({ job, videoFilename, onDelete, onArchive }: SceneJ
                 </span>
               </div>
             </>
-          ) : (
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Chunk Duration:</span>
-              <span className="font-medium">
-                {job.config.chunk_duration > 0
-                  ? `${job.config.chunk_duration}s`
-                  : 'No chunking'}
-              </span>
-            </div>
           )}
 
           {job.config.compressed_video_path && (
@@ -207,27 +174,6 @@ export function SceneJobCard({ job, videoFilename, onDelete, onArchive }: SceneJ
             </div>
           )}
         </div>
-
-        {/* Progress */}
-        {job.status === SceneJobStatus.PROCESSING && getProgressInfo()}
-
-        {/* Results */}
-        {job.status === SceneJobStatus.COMPLETED && job.results && (
-          <div className="space-y-2 rounded-lg bg-gray-50 p-3 text-sm">
-            {job.results.chunks_analyzed !== undefined && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Chunks Analyzed:</span>
-                <span className="font-medium">{job.results.chunks_analyzed}</span>
-              </div>
-            )}
-            {job.results.manifest_created && (
-              <div className="flex items-center gap-2 text-green-600">
-                <CheckCircle className="h-4 w-4" />
-                <span>Manifest created</span>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Error */}
         {job.status === SceneJobStatus.FAILED && job.error_message && (

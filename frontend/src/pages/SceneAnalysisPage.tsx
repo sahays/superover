@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { Video as VideoIcon, FileVideo } from 'lucide-react'
 import { videoApi, sceneJobApi } from '@/lib/api-client'
 import { SceneJob, SceneJobStatus, ContextItem } from '@/lib/types'
+import type { SelectedVideoState } from '@/components/video-picker'
 import { VideoPicker } from '@/components/video-picker'
 import { SceneJobCard } from '@/components/scene/job-card'
 import { Button } from '@/components/ui/button'
@@ -90,30 +91,38 @@ export default function SceneAnalysisPage() {
   })
 
   const handleVideoSelect = async (
-    videoId: string,
-    isCompressed: boolean,
-    gcsPath: string,
-    chunkDuration: number,
+    selections: SelectedVideoState[],
     promptId: string,
     contextItems?: ContextItem[]
   ) => {
-    try {
-      await videoApi.processVideo(videoId, {
-        prompt_id: promptId,
-        compressed_video_path: isCompressed ? gcsPath : undefined,
-        chunk_duration: chunkDuration,
-        chunk: chunkDuration > 0,
-        compress: false,
-        extract_audio: false,
-        context_items: contextItems,
-      })
-      setShowPicker(false)
-      refetch()
-    } catch (error) {
-      console.error('Failed to start scene analysis:', error)
-      toast.error('Failed to start scene analysis', {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      })
+    setShowPicker(false)
+    let queued = 0
+    let failed = 0
+
+    for (const sel of selections) {
+      try {
+        await videoApi.processVideo(sel.videoId, {
+          prompt_id: promptId,
+          compressed_video_path: sel.isCompressed ? sel.gcsPath : undefined,
+          chunk_duration: 0,
+          chunk: false,
+          compress: false,
+          extract_audio: false,
+          context_items: contextItems,
+        })
+        queued++
+      } catch (error) {
+        failed++
+        console.error(`Failed to queue analysis for ${sel.videoId}:`, error)
+      }
+    }
+
+    refetch()
+    if (queued > 0) {
+      toast.success(`Queued ${queued} analysis job${queued > 1 ? 's' : ''}`)
+    }
+    if (failed > 0) {
+      toast.error(`Failed to queue ${failed} job${failed > 1 ? 's' : ''}`)
     }
   }
 

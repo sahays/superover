@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Video, ExternalLink, Loader2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -12,10 +12,7 @@ import { SceneConfigPanel } from '@/components/scene/scene-config-panel'
 
 interface VideoPickerProps {
   onSelect: (
-    videoId: string,
-    isCompressed: boolean,
-    gcsPath: string,
-    chunkDuration: number,
+    selections: SelectedVideoState[],
     promptId: string,
     contextItems?: ContextItem[]
   ) => void
@@ -51,7 +48,7 @@ export interface SelectedVideoState {
 }
 
 export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
-  const [selectedVideo, setSelectedVideo] = useState<SelectedVideoState | null>(null)
+  const [selectedVideos, setSelectedVideos] = useState<Map<string, SelectedVideoState>>(new Map())
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null)
 
   const contextUpload = useContextUpload()
@@ -70,6 +67,18 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
 
   const videosWithJobs = allVideosWithJobs
   const isEmpty = !isLoadingVideos && (!videosWithJobs || videosWithJobs.length === 0)
+
+  const handleToggleVideo = useCallback((key: string, state: SelectedVideoState) => {
+    setSelectedVideos((prev) => {
+      const next = new Map(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.set(key, state)
+      }
+      return next
+    })
+  }, [])
 
   if (isLoadingVideos) {
     return (
@@ -111,20 +120,26 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
 
   return (
     <div className="space-y-4">
+      {selectedVideos.size > 0 && (
+        <p className="text-sm text-muted-foreground">
+          {selectedVideos.size} file{selectedVideos.size > 1 ? 's' : ''} selected
+        </p>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2">
         {videosWithJobs?.map((video) => (
           <VideoCard
             key={video.video_id}
             video={video}
-            selectedVideo={selectedVideo}
-            onSelectVideo={setSelectedVideo}
+            selectedVideos={selectedVideos}
+            onToggleVideo={handleToggleVideo}
           />
         ))}
       </div>
 
-      {selectedVideo && (
+      {selectedVideos.size > 0 && (
         <SceneConfigPanel
-          selectedVideo={selectedVideo}
+          selectedCount={selectedVideos.size}
           selectedPromptId={selectedPromptId}
           onPromptChange={setSelectedPromptId}
           selectedPrompt={selectedPrompt}
@@ -139,10 +154,7 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
           onSubmit={() => {
             if (selectedPromptId) {
               onSelect(
-                selectedVideo.videoId,
-                selectedVideo.isCompressed,
-                selectedVideo.gcsPath,
-                0,
+                Array.from(selectedVideos.values()),
                 selectedPromptId,
                 contextUpload.uploadedContextItems.length > 0
                   ? contextUpload.uploadedContextItems
