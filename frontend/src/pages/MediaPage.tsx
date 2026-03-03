@@ -90,7 +90,7 @@ export default function MediaProcessingPage() {
               <CardHeader>
                 <CardTitle>Upload Media for Processing</CardTitle>
                 <CardDescription>
-                  Upload a video or audio file to process
+                  Upload video or audio files to process
                 </CardDescription>
               </CardHeader>
               <CardContent>

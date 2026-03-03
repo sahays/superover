@@ -1,6 +1,5 @@
-import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { Upload, X, CheckCircle, AlertCircle } from 'lucide-react'
+import { useState, useCallback } from 'react'
+import { Upload, X, CheckCircle, AlertCircle, FileVideo } from 'lucide-react'
 import { videoApi, uploadToGCS } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { formatBytes } from '@/lib/utils'
@@ -24,185 +23,236 @@ function extractMediaDuration(file: File): Promise<number | null> {
   })
 }
 
+type FileStatus = 'pending' | 'uploading' | 'done' | 'error'
+
+interface TrackedFile {
+  file: File
+  status: FileStatus
+  progress: number
+  error?: string
+}
+
 interface UploadVideoProps {
   onComplete: () => void
   onCancel: () => void
 }
 
 export function UploadVideo({ onComplete, onCancel }: UploadVideoProps) {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [uploadProgress, setUploadProgress] = useState(0)
-
-  const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
-      // Step 1: Get signed URL
-      setUploadProgress(10)
-      const { signed_url, gcs_path } = await videoApi.getSignedUrl(
-        file.name,
-        file.type
-      )
-
-      // Step 2: Upload to GCS and extract duration in parallel
-      setUploadProgress(30)
-      const [, duration] = await Promise.all([
-        uploadToGCS(signed_url, file),
-        extractMediaDuration(file),
-      ])
-      setUploadProgress(70)
-
-      // Step 3: Create video record
-      const video = await videoApi.createVideo({
-        filename: file.name,
-        gcs_path,
-        content_type: file.type,
-        size_bytes: file.size,
-        ...(duration ? { metadata: { duration } } : {}),
-      })
-
-      setUploadProgress(100)
-
-      return video
-    },
-    onSuccess: () => {
-      setTimeout(() => {
-        onComplete()
-      }, 1000)
-    },
-  })
+  const [files, setFiles] = useState<TrackedFile[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [allDone, setAllDone] = useState(false)
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setSelectedFile(file)
-    }
+    const selected = e.target.files
+    if (!selected || selected.length === 0) return
+    const tracked: TrackedFile[] = Array.from(selected).map((file) => ({
+      file,
+      status: 'pending' as FileStatus,
+      progress: 0,
+    }))
+    setFiles((prev) => [...prev, ...tracked])
   }
 
-  const handleUpload = () => {
-    if (selectedFile) {
-      uploadMutation.mutate(selectedFile)
-    }
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index))
   }
+
+  const uploadSingleFile = useCallback(
+    async (
+      tracked: TrackedFile,
+      index: number,
+      updateFile: (index: number, patch: Partial<TrackedFile>) => void
+    ) => {
+      const { file } = tracked
+      try {
+        updateFile(index, { status: 'uploading', progress: 10 })
+
+        const { signed_url, gcs_path } = await videoApi.getSignedUrl(
+          file.name,
+          file.type
+        )
+        updateFile(index, { progress: 30 })
+
+        const [, duration] = await Promise.all([
+          uploadToGCS(signed_url, file),
+          extractMediaDuration(file),
+        ])
+        updateFile(index, { progress: 70 })
+
+        await videoApi.createVideo({
+          filename: file.name,
+          gcs_path,
+          content_type: file.type,
+          size_bytes: file.size,
+          ...(duration ? { metadata: { duration } } : {}),
+        })
+
+        updateFile(index, { status: 'done', progress: 100 })
+      } catch (err) {
+        updateFile(index, {
+          status: 'error',
+          error: err instanceof Error ? err.message : 'Upload failed',
+        })
+      }
+    },
+    []
+  )
+
+  const handleUpload = useCallback(async () => {
+    setUploading(true)
+
+    const updateFile = (index: number, patch: Partial<TrackedFile>) => {
+      setFiles((prev) =>
+        prev.map((f, i) => (i === index ? { ...f, ...patch } : f))
+      )
+    }
+
+    // Upload all files concurrently (max 3 at a time)
+    const concurrency = 3
+    const queue = files.map((f, i) => i).filter((i) => files[i].status === 'pending')
+
+    const runBatch = async (indices: number[]) => {
+      await Promise.all(
+        indices.map((i) => uploadSingleFile(files[i], i, updateFile))
+      )
+    }
+
+    for (let i = 0; i < queue.length; i += concurrency) {
+      const batch = queue.slice(i, i + concurrency)
+      await runBatch(batch)
+    }
+
+    setUploading(false)
+    setAllDone(true)
+    setTimeout(() => onComplete(), 1500)
+  }, [files, uploadSingleFile, onComplete])
+
+  const hasFiles = files.length > 0
+  const pendingCount = files.filter((f) => f.status === 'pending').length
 
   return (
     <div className="space-y-6">
-      {/* File Selection */}
-      {!selectedFile && !uploadMutation.isPending && (
-        <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 p-12 transition hover:border-primary">
-          <Upload className="h-12 w-12 text-gray-400" />
-          <h3 className="mt-4 text-lg font-semibold">Upload Media</h3>
-          <p className="mt-2 text-sm text-gray-500">
-            Select a video or audio file (up to 500MB)
-          </p>
-          <label htmlFor="file-upload" className="mt-4">
-            <Button type="button" onClick={() => document.getElementById('file-upload')?.click()}>
-              Select File
-            </Button>
-          </label>
-          <input
-            id="file-upload"
-            type="file"
-            accept="video/*,audio/*"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
-        </div>
-      )}
-
-      {/* File Selected */}
-      {selectedFile && !uploadMutation.isPending && !uploadMutation.isSuccess && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between rounded-lg border p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                <Upload className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="font-medium">{selectedFile.name}</p>
-                <p className="text-sm text-gray-500">{formatBytes(selectedFile.size)}</p>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSelectedFile(null)}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-
-          <div className="flex gap-2">
-            <Button onClick={handleUpload} className="flex-1">
-              Upload and Process
-            </Button>
-            <Button variant="outline" onClick={onCancel}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Uploading */}
-      {uploadMutation.isPending && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-              <div>
-                <p className="font-medium">Uploading...</p>
-                <p className="text-sm text-gray-500">{uploadProgress}%</p>
-              </div>
-            </div>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-gray-200">
-            <div
-              className="h-full bg-primary transition-all duration-300"
-              style={{ width: `${uploadProgress}%` }}
+      {/* File Selection Area */}
+      {!uploading && !allDone && (
+        <>
+          <div
+            className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 p-8 transition hover:border-primary cursor-pointer"
+            onClick={() => document.getElementById('file-upload')?.click()}
+          >
+            <Upload className="h-10 w-10 text-gray-400" />
+            <h3 className="mt-3 text-lg font-semibold">Upload Media</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              Select one or more video/audio files (up to 500MB each)
+            </p>
+            <input
+              id="file-upload"
+              type="file"
+              accept="video/*,audio/*"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
             />
           </div>
+
+          {/* Selected Files List */}
+          {hasFiles && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">
+                {files.length} file{files.length > 1 ? 's' : ''} selected
+              </p>
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {files.map((tracked, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between rounded-lg border p-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <FileVideo className="h-5 w-5 text-muted-foreground shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {tracked.file.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatBytes(tracked.file.size)}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0"
+                      onClick={() => removeFile(index)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button onClick={handleUpload} className="flex-1" disabled={pendingCount === 0}>
+                  Upload {pendingCount} File{pendingCount > 1 ? 's' : ''}
+                </Button>
+                <Button variant="outline" onClick={onCancel}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Uploading Progress */}
+      {uploading && (
+        <div className="space-y-3">
+          <p className="text-sm font-medium">Uploading files...</p>
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {files.map((tracked, index) => (
+              <div key={index} className="rounded-lg border p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium truncate">{tracked.file.name}</p>
+                  {tracked.status === 'done' && (
+                    <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+                  )}
+                  {tracked.status === 'error' && (
+                    <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />
+                  )}
+                  {tracked.status === 'uploading' && (
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {tracked.progress}%
+                    </span>
+                  )}
+                </div>
+                {(tracked.status === 'uploading' || tracked.status === 'done') && (
+                  <div className="h-1.5 overflow-hidden rounded-full bg-gray-200">
+                    <div
+                      className={`h-full transition-all duration-300 ${
+                        tracked.status === 'done' ? 'bg-green-600' : 'bg-primary'
+                      }`}
+                      style={{ width: `${tracked.progress}%` }}
+                    />
+                  </div>
+                )}
+                {tracked.status === 'error' && tracked.error && (
+                  <p className="text-xs text-red-600">{tracked.error}</p>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Success */}
-      {uploadMutation.isSuccess && (
+      {/* All Done */}
+      {allDone && (
         <div className="flex items-center justify-center rounded-lg border border-green-200 bg-green-50 p-8">
           <div className="text-center">
             <CheckCircle className="mx-auto h-12 w-12 text-green-600" />
-            <h3 className="mt-4 text-lg font-semibold text-green-900">Upload Complete!</h3>
+            <h3 className="mt-4 text-lg font-semibold text-green-900">
+              Upload Complete!
+            </h3>
             <p className="mt-2 text-sm text-green-700">
-              Media file uploaded successfully
+              {files.filter((f) => f.status === 'done').length} of {files.length} file
+              {files.length > 1 ? 's' : ''} uploaded successfully
             </p>
-          </div>
-        </div>
-      )}
-
-      {/* Error */}
-      {uploadMutation.isError && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-center rounded-lg border border-red-200 bg-red-50 p-8">
-            <div className="text-center">
-              <AlertCircle className="mx-auto h-12 w-12 text-red-600" />
-              <h3 className="mt-4 text-lg font-semibold text-red-900">Upload Failed</h3>
-              <p className="mt-2 text-sm text-red-700">
-                {uploadMutation.error instanceof Error
-                  ? uploadMutation.error.message
-                  : 'Unknown error'}
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={() => {
-                uploadMutation.reset()
-                setSelectedFile(null)
-              }}
-              className="flex-1"
-              variant="outline"
-            >
-              Try Again
-            </Button>
-            <Button variant="outline" onClick={onCancel}>
-              Cancel
-            </Button>
           </div>
         </div>
       )}

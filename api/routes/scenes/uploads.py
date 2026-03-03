@@ -16,7 +16,7 @@ def register_upload_routes(router: APIRouter) -> None:
     @router.post(
         "/signed-url",
         response_model=SignedUrlResponse,
-        dependencies=[Depends(rate_limit("upload"))],
+        dependencies=[Depends(rate_limit("upload", max_requests=20, window_minutes=1440))],
     )
     async def get_signed_upload_url(request: Request, body: SignedUrlRequest):
         """Generate a signed URL for direct video upload to GCS."""
@@ -43,7 +43,7 @@ def register_upload_routes(router: APIRouter) -> None:
     @router.post(
         "/context/signed-url",
         response_model=SignedUrlResponse,
-        dependencies=[Depends(rate_limit("upload"))],
+        dependencies=[Depends(rate_limit("upload", max_requests=20, window_minutes=1440))],
     )
     async def get_context_signed_upload_url(request: Request, body: SignedUrlRequest):
         """Generate a signed URL for direct context file upload to GCS."""
