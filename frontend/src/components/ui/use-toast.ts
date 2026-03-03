@@ -1,14 +1,19 @@
-// This is a placeholder file. The actual implementation of the Toast component
-// would be provided by the shadcn/ui library.
+import { toast } from 'sonner'
 
-const ToastAction: React.FC<any> = () => null
-
+/**
+ * Compatibility wrapper that maps the old { title, description } API
+ * to sonner's toast() function. New code should import { toast } from 'sonner' directly.
+ */
 const useToast = () => {
   return {
-    toast: (props: any) => {
-      console.log("Toast:", props)
+    toast: (props: { title?: string; description?: string; variant?: string }) => {
+      if (props.variant === 'destructive') {
+        toast.error(props.title, { description: props.description })
+      } else {
+        toast(props.title, { description: props.description })
+      }
     },
   }
 }
 
-export { useToast, ToastAction }
+export { useToast, toast }

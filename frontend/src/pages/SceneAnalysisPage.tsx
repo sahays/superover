@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { Video as VideoIcon, FileVideo } from 'lucide-react'
 import { videoApi, sceneJobApi } from '@/lib/api-client'
 import { SceneJob, SceneJobStatus, ContextItem } from '@/lib/types'
@@ -65,7 +66,9 @@ export default function SceneAnalysisPage() {
       refetch()
     } catch (error) {
       console.error('Failed to start scene analysis:', error)
-      // TODO: Show error toast
+      toast.error('Failed to start scene analysis', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
     }
   }
 

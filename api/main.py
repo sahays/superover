@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from config import settings
 from api.routes import scenes, media, prompts, images
 from api.models.schemas import HealthResponse
@@ -79,6 +79,16 @@ if settings.is_local():
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+@app.exception_handler(429)
+async def rate_limit_handler(request: Request, exc: HTTPException):
+    """Return structured JSON for rate limit errors."""
+    return JSONResponse(
+        status_code=429,
+        content={"detail": exc.detail},
+        headers={"Retry-After": str(exc.detail.get("retry_after", 600))},
+    )
+
 
 # Include routers
 app.include_router(scenes.router, prefix="/api")

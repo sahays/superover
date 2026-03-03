@@ -3,13 +3,14 @@
 import uuid
 import logging
 from typing import List
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from api.models.schemas import (
     ProcessVideoRequest,
     ProcessingJobResponse,
     SceneJobResponse,
     ResultResponse,
 )
+from api.middleware.rate_limit import rate_limit
 from libs.database import get_db, SceneJobStatus
 
 logger = logging.getLogger(__name__)
@@ -133,18 +134,24 @@ def register_job_routes(router: APIRouter) -> None:
                 detail=f"Failed to get scene job: {str(e)}",
             )
 
-    @router.post("/{video_id}/process", response_model=ProcessingJobResponse)
-    async def process_video(video_id: str, request: ProcessVideoRequest):
+    @router.post(
+        "/{video_id}/process",
+        response_model=ProcessingJobResponse,
+        dependencies=[Depends(rate_limit("scene_analysis"))],
+    )
+    async def process_video(video_id: str, request: Request, body: ProcessVideoRequest):
         """Start scene processing with user-selected prompt."""
         try:
             db = get_db()
 
             logger.info("=== process_video API called ===")
             logger.info(f"video_id: {video_id}")
-            logger.info(f"request.chunk_duration: {request.chunk_duration} (type: {type(request.chunk_duration).__name__})")
-            logger.info(f"request.chunk: {request.chunk}")
-            logger.info(f"request.compressed_video_path: {request.compressed_video_path}")
-            logger.info(f"request.prompt_id: {request.prompt_id}")
+            logger.info(
+                f"body.chunk_duration: {body.chunk_duration} (type: {type(body.chunk_duration).__name__})"
+            )
+            logger.info(f"body.chunk: {body.chunk}")
+            logger.info(f"body.compressed_video_path: {body.compressed_video_path}")
+            logger.info(f"body.prompt_id: {body.prompt_id}")
 
             video = db.get_video(video_id)
             if not video:
@@ -153,11 +160,11 @@ def register_job_routes(router: APIRouter) -> None:
                     detail=f"Video not found: {video_id}",
                 )
 
-            prompt = db.get_prompt(request.prompt_id)
+            prompt = db.get_prompt(body.prompt_id)
             if not prompt:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Prompt not found: {request.prompt_id}. Please select a valid prompt.",
+                    detail=f"Prompt not found: {body.prompt_id}. Please select a valid prompt.",
                 )
 
             prompt_category = prompt.get("type", "custom")
@@ -167,14 +174,14 @@ def register_job_routes(router: APIRouter) -> None:
             job_id = str(uuid.uuid4())
 
             config = {
-                "compressed_video_path": request.compressed_video_path,
-                "chunk_duration": request.chunk_duration,
-                "chunk": request.chunk,
+                "compressed_video_path": body.compressed_video_path,
+                "chunk_duration": body.chunk_duration,
+                "chunk": body.chunk,
             }
 
-            if request.context_items:
-                config["context_items"] = [item.dict() for item in request.context_items]
-                logger.info(f"Added {len(request.context_items)} context items to job config")
+            if body.context_items:
+                config["context_items"] = [item.dict() for item in body.context_items]
+                logger.info(f"Added {len(body.context_items)} context items to job config")
 
             logger.info(f"Creating job with config: {config}")
 
@@ -182,7 +189,7 @@ def register_job_routes(router: APIRouter) -> None:
                 job_id=job_id,
                 video_id=video_id,
                 config=config,
-                prompt_id=request.prompt_id,
+                prompt_id=body.prompt_id,
                 prompt_text=prompt["prompt_text"],
                 prompt_type=prompt.get("type", "custom"),
                 prompt_name=prompt.get("name"),

@@ -160,7 +160,9 @@ def register_video_routes(router: APIRouter) -> None:
                 logger.info(f"Deleted {deleted_count} results for video {video_id}")
 
             db.delete_scene_job(video_id)
-            logger.info(f"Deleted scene analysis data for {video_id}, preserved source video at {video.get('gcs_path')}")
+            logger.info(
+                f"Deleted scene analysis data for {video_id}, preserved source video at {video.get('gcs_path')}"
+            )
             return None
 
         except HTTPException:

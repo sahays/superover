@@ -28,16 +28,27 @@ def client():
 
 @pytest.fixture
 def mock_db():
-    """Mock database — patch get_db in all scene sub-modules."""
+    """Mock database — patch get_db in all scene sub-modules and rate limiter."""
     with (
         patch("api.routes.scenes.jobs.get_db") as mock_jobs,
         patch("api.routes.scenes.videos.get_db") as mock_videos,
         patch("api.routes.scenes.results.get_db") as mock_results,
+        patch("api.middleware.rate_limit.get_db") as mock_rate_limit,
     ):
         db = MagicMock()
         mock_jobs.return_value = db
         mock_videos.return_value = db
         mock_results.return_value = db
+        mock_rate_limit.return_value = db
+
+        # Rate limiter queries db.client.collection().where().where().where().stream()
+        # Must return an iterable so sum(1 for _ in docs) works
+        db.client.collection.return_value \
+            .where.return_value \
+            .where.return_value \
+            .where.return_value \
+            .stream.return_value = []
+
         yield db
 
 
@@ -193,7 +204,10 @@ class TestNoLegacyCode:
             "config": {},
         }
 
-        response = client.post("/api/scenes/video-123/process", json={"chunk_duration": 30})
+        response = client.post(
+            "/api/scenes/video-123/process",
+            json={"prompt_id": "prompt-1", "chunk_duration": 30},
+        )
 
         assert response.status_code == 200
         # Should NOT have called update_video_status (method removed)
@@ -219,6 +233,7 @@ class TestWorkflowSeparation:
         response = client.post(
             "/api/scenes/video-123/process",
             json={
+                "prompt_id": "prompt-1",
                 "compressed_video_path": "gs://bucket/compressed.mp4",
                 "chunk_duration": 30,
             },

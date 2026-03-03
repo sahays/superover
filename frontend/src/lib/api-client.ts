@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { toast } from 'sonner'
 
 export const apiClient = axios.create({
   baseURL: '',
@@ -6,6 +7,21 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
 })
+
+// Global 429 rate limit handler
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 429) {
+      const data = error.response.data?.detail || error.response.data
+      const retryMinutes = Math.ceil((data?.retry_after || 600) / 60)
+      toast.error('Rate limit reached', {
+        description: `Maximum requests exceeded. Try again in ${retryMinutes} minutes.`,
+      })
+    }
+    return Promise.reject(error)
+  }
+)
 
 // Scene endpoints
 export const videoApi = {

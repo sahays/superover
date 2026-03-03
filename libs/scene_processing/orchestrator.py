@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 from config import settings
 from libs.database import get_db, SceneJobStatus
@@ -49,8 +49,14 @@ class SceneOrchestrator:
 
         # Chunking via Transcoder API
         chunks = self._resolve_chunks(
-            db, job_id, video_id, video, video_path_to_process,
-            should_chunk, chunk_duration, manifest_data,
+            db,
+            job_id,
+            video_id,
+            video,
+            video_path_to_process,
+            should_chunk,
+            chunk_duration,
+            manifest_data,
         )
 
         db.create_manifest(video_id, manifest_data)

@@ -3,12 +3,13 @@
 import uuid
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from api.models.schemas import (
     CreateMediaJobRequest,
     MediaJobResponse,
     MediaPresetResponse,
 )
+from api.middleware.rate_limit import rate_limit
 from libs.database import get_db, MediaJobStatus
 
 logger = logging.getLogger(__name__)
@@ -21,8 +22,13 @@ def _is_media_file(video: dict) -> bool:
     return ct.startswith("video/") or ct.startswith("audio/")
 
 
-@router.post("/jobs", response_model=MediaJobResponse, status_code=status.HTTP_201_CREATED)
-async def create_media_job(request: CreateMediaJobRequest):
+@router.post(
+    "/jobs",
+    response_model=MediaJobResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit("media_processing"))],
+)
+async def create_media_job(request: Request, body: CreateMediaJobRequest):
     """
     Create a new media processing job.
 
@@ -32,16 +38,16 @@ async def create_media_job(request: CreateMediaJobRequest):
         db = get_db()
 
         # Verify video exists
-        video = db.get_video(request.video_id)
+        video = db.get_video(body.video_id)
         if not video:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Video not found: {request.video_id}",
+                detail=f"Video not found: {body.video_id}",
             )
 
         # Create job
         job_id = str(uuid.uuid4())
-        job_data = db.create_media_job(job_id=job_id, video_id=request.video_id, config=request.config.model_dump())
+        job_data = db.create_media_job(job_id=job_id, video_id=body.video_id, config=body.config.model_dump())
 
         return MediaJobResponse(**job_data)
 
