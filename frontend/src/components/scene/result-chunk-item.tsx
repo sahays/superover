@@ -18,7 +18,7 @@ export function ResultChunkItem({ result, index, totalResults }: ResultChunkItem
           <span>{(totalResults ?? 2) > 1 ? `Result ${index + 1}` : 'Result'}</span>
           {result.result_data?.token_usage?.estimated_cost_usd !== undefined && (
             <span className="text-xs font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-              ${result.result_data.token_usage.estimated_cost_usd.toFixed(4)}
+              <span className="font-mono">${result.result_data.token_usage.estimated_cost_usd.toFixed(4)}</span>
             </span>
           )}
           {isSubtitle && <span className="text-xs text-muted-foreground">(Subtitles)</span>}
@@ -30,13 +30,13 @@ export function ResultChunkItem({ result, index, totalResults }: ResultChunkItem
             <div>
               Prompt Tokens: <span className="font-mono">{result.result_data.token_usage.prompt_tokens?.toLocaleString()}</span>
               {result.result_data.token_usage.applied_input_rate && (
-                <span className="ml-1 opacity-70">(@ ${result.result_data.token_usage.applied_input_rate.toFixed(2)}/1M)</span>
+                <span className="ml-1 opacity-70 font-mono">(@ ${result.result_data.token_usage.applied_input_rate.toFixed(2)}/1M)</span>
               )}
             </div>
             <div>
               Output Tokens: <span className="font-mono">{result.result_data.token_usage.candidates_tokens?.toLocaleString()}</span>
               {result.result_data.token_usage.applied_output_rate && (
-                <span className="ml-1 opacity-70">(@ ${result.result_data.token_usage.applied_output_rate.toFixed(2)}/1M)</span>
+                <span className="ml-1 opacity-70 font-mono">(@ ${result.result_data.token_usage.applied_output_rate.toFixed(2)}/1M)</span>
               )}
             </div>
             <div>Total: <span className="font-mono">{result.result_data.token_usage.total_tokens?.toLocaleString()}</span></div>

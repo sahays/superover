@@ -9,11 +9,18 @@ import {
   Star,
   Mic,
   Square,
+  Sword,
+  ShoppingCart,
+  Music,
+  Trophy,
+  Heart,
+  Languages,
+  Clapperboard,
 } from 'lucide-react'
 import { searchApi, videoApi } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Card, CardContent, CardDescription } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
   VideoSearchPlayer,
@@ -181,6 +188,44 @@ export default function SearchPage() {
     }
   }
 
+  const sampleSearchGroups = [
+    {
+      label: 'Example searches',
+      searches: [
+        { icon: Sword, text: 'I am in the mood for some action movies today' },
+        { icon: Heart, text: 'I am heartbroken, can you suggest some action or comedy movies' },
+        { icon: Languages, text: 'मैं बहुत दुखी महसूस कर रहा हूँ, क्या आप कुछ एक्शन या कॉमेडी फिल्मों के सुझाव दे सकते हैं?' },
+      ],
+    },
+    {
+      label: 'Find clips in videos',
+      searches: [
+        { icon: ShoppingCart, text: 'Show me clips where people are haggling' },
+        { icon: Music, text: 'Amaze me with some cool dance moves' },
+        { icon: Trophy, text: 'Free kick in a soccer match' },
+        { icon: Clapperboard, text: 'आप मुझे वो सीन दिखाइये जहाँ टोनी स्टार्क उदास बैठा है स्पेस में' },
+      ],
+    },
+  ]
+
+  // Trigger search when query is set from a sample pill
+  const pendingSearchRef = useRef(false)
+
+  const handleSampleSearch = useCallback(
+    (text: string) => {
+      setQuery(text)
+      pendingSearchRef.current = true
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (pendingSearchRef.current && query) {
+      pendingSearchRef.current = false
+      handleSearch()
+    }
+  }, [query, handleSearch])
+
   // Split recommendations by confidence
   const { bestMatches, alsoLike } = useMemo(() => {
     if (!curatedResponse) return { bestMatches: [], alsoLike: [] }
@@ -198,21 +243,35 @@ export default function SearchPage() {
   return (
     <div className="container mx-auto max-w-6xl px-4 py-8">
       {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold">Search</h1>
+      <div className="mb-8 animate-slide-up">
+        <h1 className="text-3xl font-bold font-heading">Search</h1>
         <p className="text-muted-foreground mt-1">
           AI-powered semantic search across analyzed video content
         </p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+            <Film className="h-3.5 w-3.5" />
+            Seamless full video and clips search
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+            <Languages className="h-3.5 w-3.5" />
+            Conversational voice and text search in 50+ languages
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+            <Sparkles className="h-3.5 w-3.5" />
+            Don&apos;t fight the search box, find what you are looking for
+          </span>
+        </div>
       </div>
 
       {/* Search Bar */}
-      <div className="flex gap-2 mb-8">
+      <div className="input-glow rounded-xl border-2 border-primary/30 p-2 card-surface animate-slide-up flex gap-2 mb-8 shadow-lg shadow-primary/5">
         <Input
           placeholder="Describe what you're looking for (any language)..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="flex-1"
+          className="flex-1 border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 text-base h-11"
         />
         <Button
           variant={isRecording ? 'destructive' : 'outline'}
@@ -220,16 +279,18 @@ export default function SearchPage() {
           onClick={handleMicClick}
           disabled={searching}
           title={isRecording ? 'Stop recording' : 'Voice search'}
+          className="btn-icon-spring"
         >
           {isRecording ? (
-            <Square className="h-4 w-4" />
+            <span className="btn-icon"><Square className="h-4 w-4" /></span>
           ) : (
-            <Mic className="h-4 w-4" />
+            <span className="btn-icon"><Mic className="h-4 w-4" /></span>
           )}
         </Button>
         <Button
           onClick={() => handleSearch()}
           disabled={searching || !query.trim()}
+          className="btn-primary"
         >
           <Search className="mr-2 h-4 w-4" />
           {searching ? 'Searching...' : 'Search'}
@@ -260,9 +321,9 @@ export default function SearchPage() {
         <div className="space-y-6">
           {/* Results summary */}
           {searchDuration != null && totalResults > 0 && (
-            <p className="text-sm text-muted-foreground">
-              Found {totalResults} result{totalResults !== 1 ? 's' : ''} in{' '}
-              {searchDuration}s
+            <p className="text-sm text-muted-foreground animate-fade-in">
+              Found <span className="font-mono">{totalResults}</span> result{totalResults !== 1 ? 's' : ''} in{' '}
+              <span className="font-mono">{searchDuration}s</span>
             </p>
           )}
 
@@ -275,9 +336,9 @@ export default function SearchPage() {
 
           {/* Best Matches */}
           {bestMatches.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold mb-4">Best Matches</h2>
-              <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+            <div className="animate-slide-up">
+              <h2 className="text-lg font-semibold font-heading mb-4 line-sweep">Best Matches</h2>
+              <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 stagger-children">
                 {bestMatches.map((rec, idx) => (
                   <RecommendationCard
                     key={`${rec.video_id}-best-${idx}`}
@@ -291,11 +352,11 @@ export default function SearchPage() {
 
           {/* You May Also Like */}
           {alsoLike.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold mb-4 text-muted-foreground">
+            <div className="animate-slide-up">
+              <h2 className="text-lg font-semibold font-heading mb-4 text-muted-foreground line-sweep">
                 You May Also Like
               </h2>
-              <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 stagger-children">
                 {alsoLike.map((rec, idx) => (
                   <RecommendationCard
                     key={`${rec.video_id}-also-${idx}`}
@@ -310,7 +371,7 @@ export default function SearchPage() {
 
           {/* No results */}
           {curatedResponse.recommendations.length === 0 && (
-            <Card>
+            <Card className="animate-spring-in">
               <CardContent className="py-12 text-center">
                 <Search className="mx-auto h-12 w-12 text-gray-400" />
                 <h3 className="mt-4 text-lg font-semibold">
@@ -327,21 +388,28 @@ export default function SearchPage() {
 
       {/* Empty state when no search has been performed */}
       {!searching && !curatedResponse && (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Search className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-4 text-lg font-semibold">
-              Search your video content
-            </h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Use natural language to find scenes, objects, dialogues, and more
-              across your analyzed videos.
-            </p>
-            <CardDescription className="mt-4">
-              Make sure to sync scene results first via the Search Sync page.
-            </CardDescription>
-          </CardContent>
-        </Card>
+        <div className="space-y-6 animate-fade-in">
+          {sampleSearchGroups.map((group) => (
+            <div key={group.label}>
+              <p className="text-sm font-medium text-muted-foreground mb-3">{group.label}</p>
+              <div className="flex flex-wrap gap-2 stagger-children">
+                {group.searches.map((sample) => {
+                  const Icon = sample.icon
+                  return (
+                    <button
+                      key={sample.text}
+                      onClick={() => handleSampleSearch(sample.text)}
+                      className="group badge-glow btn-press inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-accent/50 transition-colors"
+                    >
+                      <Icon className="h-4 w-4 shrink-0 group-hover:text-primary transition-colors" />
+                      <span className="line-clamp-1">{sample.text}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -397,8 +465,9 @@ function RecommendationCard({
 
   return (
     <Card
-      className={`overflow-hidden flex flex-col ${secondary ? 'opacity-80' : ''}`}
+      className={`card-interactive relative overflow-hidden flex flex-col ${secondary ? 'opacity-80' : ''}`}
     >
+      <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${secondary ? 'from-sky-500/10' : 'from-orange-500/10'} to-transparent rounded-bl-full pointer-events-none`} />
       {/* Video Player — natural aspect ratio, capped height */}
       <div className="relative w-full bg-black">
         {playingClip && playbackUrl ? (
@@ -438,7 +507,7 @@ function RecommendationCard({
           </p>
           <Badge
             variant={isClip ? 'secondary' : 'default'}
-            className="text-xs shrink-0 cursor-pointer hover:opacity-80"
+            className="text-xs shrink-0 cursor-pointer hover:opacity-80 badge-glow"
             onClick={startPlayback}
           >
             {isClip ? (
@@ -483,7 +552,7 @@ function RecommendationCard({
           )}
           <div className="flex items-center gap-1">
             <Star className="h-3 w-3" />
-            <span>{Math.round(recommendation.confidence * 100)}% match</span>
+            <span className="font-mono">{Math.round(recommendation.confidence * 100)}%</span> match
           </div>
         </div>
       </CardContent>

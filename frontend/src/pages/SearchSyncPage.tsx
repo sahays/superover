@@ -10,6 +10,7 @@ import {
   AlertCircle,
   RefreshCw,
   Eye,
+  Clock,
 } from 'lucide-react'
 import { searchApi } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
@@ -41,6 +42,7 @@ interface SyncStatusItem {
   sync_error: string | null
   text_preview: string | null
   text_content: string | null
+  created_at: string | null
 }
 
 export default function SearchSyncPage() {
@@ -136,7 +138,7 @@ export default function SearchSyncPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold">Search Sync</h1>
+          <h1 className="text-3xl font-bold font-heading">Search Sync</h1>
           <p className="text-muted-foreground mt-1">
             Manage which scene results are indexed for semantic search
           </p>
@@ -164,13 +166,13 @@ export default function SearchSyncPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Total Results</CardDescription>
-            <CardTitle className="text-3xl">{items?.length || 0}</CardTitle>
+            <CardTitle className="text-3xl font-mono">{items?.length || 0}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Searchable</CardDescription>
-            <CardTitle className="text-3xl text-green-600">
+            <CardTitle className="text-3xl font-mono text-green-600">
               {readyItems.length}
             </CardTitle>
           </CardHeader>
@@ -178,7 +180,7 @@ export default function SearchSyncPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Generating Embeddings</CardDescription>
-            <CardTitle className="text-3xl text-amber-600">
+            <CardTitle className="text-3xl font-mono text-amber-600">
               {pendingItems.length}
             </CardTitle>
           </CardHeader>
@@ -186,7 +188,7 @@ export default function SearchSyncPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Not Synced</CardDescription>
-            <CardTitle className="text-3xl text-gray-500">
+            <CardTitle className="text-3xl font-mono text-gray-500">
               {notSyncedItems.length}
             </CardTitle>
           </CardHeader>
@@ -452,11 +454,21 @@ function SyncItemCard({
                 )}
               </div>
             </div>
-            {item.chunk_index != null && (
-              <Badge variant="secondary" className="text-xs mt-1">
-                Chunk {item.chunk_index}
-              </Badge>
-            )}
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {item.chunk_index != null && (
+                <Badge variant="secondary" className="text-xs">
+                  Chunk {item.chunk_index}
+                </Badge>
+              )}
+              {item.created_at && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  {new Date(item.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                  {' '}
+                  {new Date(item.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
             {item.sync_error && (
               <p className="text-xs text-destructive mt-1">{item.sync_error}</p>
             )}

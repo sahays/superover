@@ -140,7 +140,7 @@ export function UploadVideo({ onComplete, onCancel }: UploadVideoProps) {
             onClick={() => document.getElementById('file-upload')?.click()}
           >
             <Upload className="h-10 w-10 text-gray-400" />
-            <h3 className="mt-3 text-lg font-semibold">Upload Media</h3>
+            <h3 className="mt-3 text-lg font-semibold font-heading">Upload Media</h3>
             <p className="mt-1 text-sm text-gray-500">
               Select one or more video/audio files (up to 500MB each)
             </p>
@@ -218,7 +218,7 @@ export function UploadVideo({ onComplete, onCancel }: UploadVideoProps) {
                   )}
                   {tracked.status === 'uploading' && (
                     <span className="text-xs text-muted-foreground shrink-0">
-                      {tracked.progress}%
+                      <span className="font-mono">{tracked.progress}%</span>
                     </span>
                   )}
                 </div>

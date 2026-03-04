@@ -45,10 +45,10 @@ export function SceneJobInfoCard({
                 <>
                   <div className="flex items-center gap-1">
                     <Coins className="h-3.5 w-3.5" />
-                    ${totalCost.toFixed(4)}
+                    <span className="font-mono">${totalCost.toFixed(4)}</span>
                   </div>
                   {(totalInputCost > 0 || totalOutputCost > 0) && (
-                    <span className="text-xs font-normal text-muted-foreground ml-1">
+                    <span className="text-xs font-normal text-muted-foreground ml-1 font-mono">
                       (In: ${totalInputCost.toFixed(4)} | Out: ${totalOutputCost.toFixed(4)})
                     </span>
                   )}
@@ -61,7 +61,7 @@ export function SceneJobInfoCard({
           <div>
             <dt className="text-sm font-medium text-muted-foreground">Total Tokens</dt>
             <dd className="mt-1 text-sm">
-              {totalTokens > 0 ? totalTokens.toLocaleString() : <span className="text-muted-foreground">N/A</span>}
+              {totalTokens > 0 ? <span className="font-mono">{totalTokens.toLocaleString()}</span> : <span className="text-muted-foreground">N/A</span>}
             </dd>
           </div>
           {sceneJob.config.compressed_video_path && (

@@ -78,7 +78,7 @@ export default function MediaJobDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+    <div className="min-h-screen bg-[var(--color-bg-primary)]">
       <div className="container mx-auto max-w-4xl px-4 py-8">
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
@@ -96,7 +96,7 @@ export default function MediaJobDetailPage() {
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div>
-                  <CardTitle className="text-2xl">Media Processing Job</CardTitle>
+                  <CardTitle className="text-2xl font-heading">Media Processing Job</CardTitle>
                   <CardDescription className="mt-2">
                     Created {new Date(job.created_at || '').toLocaleString()}
                   </CardDescription>
@@ -182,7 +182,7 @@ export default function MediaJobDetailPage() {
           {video?.source_type === 'image' && job.status === MediaJobStatus.COMPLETED && (
             <div className="space-y-6 pt-4">
               <div className="border-t pt-6">
-                <h2 className="mb-4 text-2xl font-bold">Image Adaptation</h2>
+                <h2 className="mb-4 text-2xl font-bold font-heading">Image Adaptation</h2>
                 <CreateAdapts
                   videoId={job.video_id}
                   onJobCreated={() => refetchImageJobs()}

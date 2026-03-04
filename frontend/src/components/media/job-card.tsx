@@ -45,7 +45,7 @@ export function JobCard({ job, videoFilename, onDelete }: JobCardProps) {
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="capitalize">{job.progress.step?.replace('_', ' ')}</span>
-            <span>{job.progress.percent}%</span>
+            <span className="font-mono">{job.progress.percent}%</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-gray-200">
             <div
@@ -123,7 +123,7 @@ export function JobCard({ job, videoFilename, onDelete }: JobCardProps) {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Reduction:</span>
                   <span className="font-medium text-green-600">
-                    {job.results.compression_ratio.toFixed(1)}%
+                    <span className="font-mono">{job.results.compression_ratio.toFixed(1)}%</span>
                   </span>
                 </div>
               </>

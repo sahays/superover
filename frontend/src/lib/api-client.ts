@@ -326,6 +326,19 @@ export const searchApi = {
   },
 }
 
+// Branding endpoints
+export const brandingApi = {
+  getBranding: async () => {
+    const response = await apiClient.get('/api/branding')
+    return response.data
+  },
+
+  updateBranding: async (data: { app_title?: string; subtitle?: string; logo_url?: string }) => {
+    const response = await apiClient.put('/api/branding', data)
+    return response.data
+  },
+}
+
 // Upload file to GCS using signed URL
 export const uploadToGCS = async (signedUrl: string, file: File) => {
   await axios.put(signedUrl, file, {

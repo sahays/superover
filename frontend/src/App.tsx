@@ -9,6 +9,7 @@ import PromptsPage from '@/pages/PromptsPage'
 import EditPromptPage from '@/pages/EditPromptPage'
 import SearchPage from '@/pages/SearchPage'
 import SearchSyncPage from '@/pages/SearchSyncPage'
+import BrandingPage from '@/pages/BrandingPage'
 
 export function App() {
   return (
@@ -23,6 +24,7 @@ export function App() {
         <Route path="/prompts/:promptId" element={<EditPromptPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/search/sync" element={<SearchSyncPage />} />
+        <Route path="/branding" element={<BrandingPage />} />
       </Routes>
     </AppLayout>
   )

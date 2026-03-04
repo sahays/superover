@@ -20,7 +20,7 @@ export function SceneVideoMetadataCard({ scene }: SceneVideoMetadataCardProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-2xl">{scene.filename}</CardTitle>
+        <CardTitle className="text-2xl font-heading">{scene.filename}</CardTitle>
         <CardDescription>
           Status: {scene.status}
           {scene.size_bytes && ` • ${formatBytes(scene.size_bytes)}`}
@@ -46,7 +46,7 @@ export function SceneVideoMetadataCard({ scene }: SceneVideoMetadataCardProps) {
             <div>
               <dt className="text-sm font-medium text-muted-foreground">Resolution</dt>
               <dd className="mt-1 text-sm">
-                {scene.metadata.video.width} x {scene.metadata.video.height}
+                <span className="font-mono">{scene.metadata.video.width} x {scene.metadata.video.height}</span>
               </dd>
             </div>
           )}

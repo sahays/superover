@@ -26,6 +26,7 @@ class SyncStatusItem(BaseModel):
     sync_error: Optional[str] = None
     text_preview: Optional[str] = None
     text_content: Optional[str] = None
+    created_at: Optional[str] = None
 
 
 class SyncRequest(BaseModel):

@@ -75,7 +75,7 @@ export default function SceneDetailPage() {
       <div className="container mx-auto px-4 py-8">
         <Card>
           <CardContent className="py-12 text-center">
-            <h2 className="text-xl font-semibold">Scene not found</h2>
+            <h2 className="text-xl font-semibold font-heading">Scene not found</h2>
             <Link to="/">
               <Button className="mt-4" variant="outline">
                 <ArrowLeft className="mr-2 h-4 w-4" />

@@ -75,7 +75,7 @@ export default function EditPromptPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+    <div className="min-h-screen bg-[var(--color-bg-primary)]">
       {/* Header */}
       <header className="border-b bg-white/50 backdrop-blur-sm dark:bg-slate-900/50">
         <div className="container mx-auto max-w-6xl px-4 py-6">
@@ -85,7 +85,7 @@ export default function EditPromptPage() {
                 <BotMessageSquare className="h-6 w-6" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold">Edit Prompt</h1>
+                <h1 className="text-2xl font-bold font-heading">Edit Prompt</h1>
                 <p className="text-sm text-muted-foreground">{prompt.prompt_name}</p>
               </div>
             </div>

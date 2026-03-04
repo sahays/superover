@@ -43,6 +43,10 @@ from .category import (
     CategorySchemaResponse,
     SetCategorySchemaRequest,
 )
+from .branding import (
+    BrandingResponse,
+    UpdateBrandingRequest,
+)
 from .search import (
     SyncStatusItem,
     SyncRequest,
@@ -92,6 +96,9 @@ __all__ = [
     # Category
     "CategorySchemaResponse",
     "SetCategorySchemaRequest",
+    # Branding
+    "BrandingResponse",
+    "UpdateBrandingRequest",
     # Search
     "SyncStatusItem",
     "SyncRequest",

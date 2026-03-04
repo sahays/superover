@@ -27,7 +27,7 @@ export function SceneResultsCard({
           <div>
             <CardTitle>{isSubtitleJob ? 'Subtitles' : 'Scene Analysis'}</CardTitle>
             <CardDescription>
-              {results.length} result(s)
+              <span className="font-mono">{results.length}</span> result(s)
               {isSubtitleJob && results.length > 0 && (
                 <span className="ml-2">
                   • {results.reduce((sum: number, r: any) =>

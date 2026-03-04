@@ -149,7 +149,7 @@ export function SceneJobCard({ job, videoFilename, onDelete, onArchive }: SceneJ
                   {job.results?.token_usage ? (
                     <>
                       <Coins className="h-3 w-3" />
-                      ${job.results.token_usage.estimated_cost_usd.toFixed(4)}
+                      <span className="font-mono">${job.results.token_usage.estimated_cost_usd.toFixed(4)}</span>
                     </>
                   ) : (
                     <span className="text-xs">DNC</span>
@@ -159,7 +159,7 @@ export function SceneJobCard({ job, videoFilename, onDelete, onArchive }: SceneJ
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Tokens:</span>
                 <span className="font-medium text-xs text-muted-foreground">
-                  {job.results?.token_usage ? job.results.token_usage.total_tokens.toLocaleString() : 'DNC'}
+                  {job.results?.token_usage ? <span className="font-mono">{job.results.token_usage.total_tokens.toLocaleString()}</span> : 'DNC'}
                 </span>
               </div>
             </>

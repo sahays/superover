@@ -11,6 +11,7 @@ from .media import MediaMixin
 from .images import ImagesMixin
 from .prompts import PromptsMixin
 from .category_schemas import CategorySchemasMixin
+from .branding import BrandingMixin
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ class FirestoreDB(
     ImagesMixin,
     PromptsMixin,
     CategorySchemasMixin,
+    BrandingMixin,
 ):
     """Firestore database operations."""
 
@@ -40,6 +42,7 @@ class FirestoreDB(
         self.image_results = self.client.collection(f"{prefix}image_results")
         self.prompts = self.client.collection(f"{prefix}prompts")
         self.category_schemas = self.client.collection(f"{prefix}category_schemas")
+        self.branding_settings = self.client.collection(f"{prefix}branding_settings")
 
     def seed_default_prompts(self):
         """Seed default prompts if they don't exist."""

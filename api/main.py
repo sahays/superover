@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from config import settings
-from api.routes import scenes, media, prompts, images, search
+from api.routes import scenes, media, prompts, images, search, branding
 from api.models.schemas import HealthResponse
 
 # Configure logging
@@ -92,6 +92,7 @@ app.include_router(media.router, prefix="/api")
 app.include_router(prompts.router, prefix="/api")
 app.include_router(images.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
+app.include_router(branding.router, prefix="/api")
 
 
 @app.get("/health", response_model=HealthResponse)

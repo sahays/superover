@@ -108,7 +108,7 @@ export default function PromptsPage() {
     <div className="container mx-auto max-w-6xl px-4 py-8">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold">Prompt Management</h1>
+          <h1 className="text-3xl font-bold font-heading">Prompt Management</h1>
           <p className="text-muted-foreground mt-1">Create and manage analysis prompts</p>
         </div>
         <Button onClick={() => { resetForm(); setShowCreateDialog(true) }} size="lg">
@@ -156,7 +156,7 @@ export default function PromptsPage() {
 
       {/* Category Schemas Section */}
       <div className="mt-12">
-        <h2 className="text-2xl font-bold mb-2">Category Schemas</h2>
+        <h2 className="text-2xl font-bold font-heading mb-2">Category Schemas</h2>
         <p className="text-muted-foreground mb-6">
           Define JSON response schemas per prompt category. Categories with a schema get structured Gemini output; others get free text.
         </p>

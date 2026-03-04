@@ -29,7 +29,7 @@ export function SceneManifestCard({ manifest }: SceneManifestCardProps) {
               <AccordionContent>
                 <div className="space-y-2">
                   <p className="text-sm text-muted-foreground">
-                    {manifest.chunks.count} chunks x {manifest.chunks.duration_per_chunk}s each
+                    <span className="font-mono">{manifest.chunks.count}</span> chunks x <span className="font-mono">{manifest.chunks.duration_per_chunk}s</span> each
                   </p>
                   {manifest.chunks.items && (
                     <div className="space-y-1">

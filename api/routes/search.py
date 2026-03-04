@@ -135,10 +135,20 @@ async def get_sync_status():
         all_docs = list(db.scene_results.stream())
 
         SEARCHABLE_PROMPT_TYPES = {"scene_analysis", "custom"}
+        EXCLUDED_JOB_STATUSES = {"archived", "failed"}
         job_cache: dict[str, dict | None] = {}
         docs = []
         for doc in all_docs:
             data = doc.to_dict()
+
+            # Look up parent job (cached) to filter out archived/failed
+            job_id = data.get("scene_job_id")
+            if job_id:
+                if job_id not in job_cache:
+                    job_cache[job_id] = db.get_scene_job(job_id)
+                job = job_cache[job_id]
+                if job and job.get("status") in EXCLUDED_JOB_STATUSES:
+                    continue
 
             # Check prompt_type on result_data first (new results)
             prompt_type = data.get("result_data", {}).get("prompt_type")
@@ -148,12 +158,9 @@ async def get_sync_status():
                 continue
 
             # Fallback: look up the parent job (old results without prompt_type)
-            job_id = data.get("scene_job_id")
             if not job_id:
                 continue
-            if job_id not in job_cache:
-                job_cache[job_id] = db.get_scene_job(job_id)
-            job = job_cache[job_id]
+            job = job_cache.get(job_id)
             if not job or job.get("status") != "completed":
                 continue
             if job.get("prompt_type", "") not in SEARCHABLE_PROMPT_TYPES:
@@ -210,6 +217,15 @@ async def get_sync_status():
             if fs_status == "pending" and doc.id in embedding_statuses:
                 fs_status = embedding_statuses[doc.id]
 
+            # Format created_at timestamp
+            created_at_val = data.get("created_at")
+            created_at_str = None
+            if created_at_val:
+                try:
+                    created_at_str = created_at_val.isoformat()
+                except (AttributeError, TypeError):
+                    created_at_str = str(created_at_val)
+
             items.append(
                 SyncStatusItem(
                     result_id=doc.id,
@@ -221,6 +237,7 @@ async def get_sync_status():
                     sync_error=data.get("bq_sync_error"),
                     text_preview=preview,
                     text_content=text,
+                    created_at=created_at_str,
                 )
             )
 

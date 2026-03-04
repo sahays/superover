@@ -131,7 +131,7 @@ export default function SceneAnalysisPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold">Scene Analysis</h1>
+          <h1 className="text-3xl font-bold font-heading">Scene Analysis</h1>
           <p className="text-muted-foreground mt-1">AI-Powered Scene Analysis with Gemini</p>
         </div>
         {!showPicker && (
@@ -172,13 +172,13 @@ export default function SceneAnalysisPage() {
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Total Jobs</CardDescription>
-                  <CardTitle className="text-3xl">{filteredJobs.length}</CardTitle>
+                  <CardTitle className="text-3xl font-mono">{filteredJobs.length}</CardTitle>
                 </CardHeader>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Pending</CardDescription>
-                  <CardTitle className="text-3xl text-yellow-600">
+                  <CardTitle className="text-3xl font-mono text-yellow-600">
                     {filteredJobs.filter((job) => job.status === SceneJobStatus.PENDING).length}
                   </CardTitle>
                 </CardHeader>
@@ -186,7 +186,7 @@ export default function SceneAnalysisPage() {
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Processing</CardDescription>
-                  <CardTitle className="text-3xl text-blue-600">
+                  <CardTitle className="text-3xl font-mono text-blue-600">
                     {filteredJobs.filter((job) => job.status === SceneJobStatus.PROCESSING).length}
                   </CardTitle>
                 </CardHeader>
@@ -194,7 +194,7 @@ export default function SceneAnalysisPage() {
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Completed</CardDescription>
-                  <CardTitle className="text-3xl text-green-600">
+                  <CardTitle className="text-3xl font-mono text-green-600">
                     {filteredJobs.filter((job) => job.status === SceneJobStatus.COMPLETED).length}
                   </CardTitle>
                 </CardHeader>

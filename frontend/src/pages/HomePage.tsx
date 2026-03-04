@@ -7,22 +7,22 @@ export default function HomePage() {
   return (
     <div className="container mx-auto max-w-6xl px-4 py-8">
       <div className="text-center mb-12">
-        <h2 className="text-4xl font-bold mb-4">Choose Your Workflow</h2>
+        <h2 className="text-4xl font-bold font-heading mb-4">Choose Your Workflow</h2>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
           Select the video processing workflow that fits your needs
         </p>
       </div>
 
-      <div className="grid gap-8 md:grid-cols-2 max-w-5xl mx-auto">
+      <div className="stagger-children grid gap-8 md:grid-cols-2 max-w-5xl mx-auto">
         {/* Scene Analysis Workflow */}
-        <Card className="relative overflow-hidden transition hover:shadow-lg">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-500/20 to-transparent rounded-bl-full" />
+        <Card className="card-interactive relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-orange-500/20 to-transparent rounded-bl-full" />
           <CardHeader>
             <div className="flex items-center gap-3 mb-2">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-300">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-300">
                 <Sparkles className="h-6 w-6" />
               </div>
-              <CardTitle className="text-2xl">Scene Analysis</CardTitle>
+              <CardTitle className="text-2xl font-heading">Scene Analysis</CardTitle>
             </div>
             <CardDescription className="text-base">
               AI-powered scene analysis with Gemini
@@ -31,24 +31,24 @@ export default function HomePage() {
           <CardContent className="space-y-4">
             <ul className="space-y-3 text-sm text-muted-foreground">
               <li className="flex items-start gap-2">
-                <ArrowRight className="h-4 w-4 mt-0.5 text-purple-600 flex-shrink-0" />
+                <ArrowRight className="h-4 w-4 mt-0.5 text-orange-500 flex-shrink-0" />
                 <span>Upload videos for intelligent scene analysis</span>
               </li>
               <li className="flex items-start gap-2">
-                <ArrowRight className="h-4 w-4 mt-0.5 text-purple-600 flex-shrink-0" />
+                <ArrowRight className="h-4 w-4 mt-0.5 text-orange-500 flex-shrink-0" />
                 <span>Automatic video chunking and processing</span>
               </li>
               <li className="flex items-start gap-2">
-                <ArrowRight className="h-4 w-4 mt-0.5 text-purple-600 flex-shrink-0" />
+                <ArrowRight className="h-4 w-4 mt-0.5 text-orange-500 flex-shrink-0" />
                 <span>Gemini AI analyzes each scene for content</span>
               </li>
               <li className="flex items-start gap-2">
-                <ArrowRight className="h-4 w-4 mt-0.5 text-purple-600 flex-shrink-0" />
+                <ArrowRight className="h-4 w-4 mt-0.5 text-orange-500 flex-shrink-0" />
                 <span>Get structured scene analysis results</span>
               </li>
             </ul>
             <Link to="/scene-analysis" className="block">
-              <Button className="w-full mt-4" size="lg">
+              <Button className="w-full mt-4 btn-press" size="lg">
                 Start Scene Analysis
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
@@ -57,14 +57,14 @@ export default function HomePage() {
         </Card>
 
         {/* Media Processing Workflow */}
-        <Card className="relative overflow-hidden transition hover:shadow-lg">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/20 to-transparent rounded-bl-full" />
+        <Card className="card-interactive relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-sky-500/20 to-transparent rounded-bl-full" />
           <CardHeader>
             <div className="flex items-center gap-3 mb-2">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-300">
                 <Film className="h-6 w-6" />
               </div>
-              <CardTitle className="text-2xl">Media Processing</CardTitle>
+              <CardTitle className="text-2xl font-heading">Media Processing</CardTitle>
             </div>
             <CardDescription className="text-base">
               Professional video compression and audio extraction
@@ -73,24 +73,24 @@ export default function HomePage() {
           <CardContent className="space-y-4">
             <ul className="space-y-3 text-sm text-muted-foreground">
               <li className="flex items-start gap-2">
-                <ArrowRight className="h-4 w-4 mt-0.5 text-blue-600 flex-shrink-0" />
+                <ArrowRight className="h-4 w-4 mt-0.5 text-sky-600 flex-shrink-0" />
                 <span>Extract comprehensive video metadata</span>
               </li>
               <li className="flex items-start gap-2">
-                <ArrowRight className="h-4 w-4 mt-0.5 text-blue-600 flex-shrink-0" />
+                <ArrowRight className="h-4 w-4 mt-0.5 text-sky-600 flex-shrink-0" />
                 <span>Compress videos to multiple resolutions (480p, 720p, 1080p)</span>
               </li>
               <li className="flex items-start gap-2">
-                <ArrowRight className="h-4 w-4 mt-0.5 text-blue-600 flex-shrink-0" />
+                <ArrowRight className="h-4 w-4 mt-0.5 text-sky-600 flex-shrink-0" />
                 <span>Extract audio in MP3, AAC, or WAV format</span>
               </li>
               <li className="flex items-start gap-2">
-                <ArrowRight className="h-4 w-4 mt-0.5 text-blue-600 flex-shrink-0" />
+                <ArrowRight className="h-4 w-4 mt-0.5 text-sky-600 flex-shrink-0" />
                 <span>Track processing jobs with real-time progress</span>
               </li>
             </ul>
             <Link to="/media" className="block">
-              <Button className="w-full mt-4" size="lg" variant="outline">
+              <Button className="w-full mt-4 btn-press" size="lg" variant="outline">
                 Start Media Processing
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
@@ -101,14 +101,14 @@ export default function HomePage() {
 
       {/* Prompt Management Card */}
       <div className="max-w-5xl mx-auto mt-8">
-        <Card className="relative overflow-hidden transition hover:shadow-lg">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-500/20 to-transparent rounded-bl-full" />
+        <Card className="card-interactive relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-teal-500/20 to-transparent rounded-bl-full" />
           <CardHeader>
             <div className="flex items-center gap-3 mb-2">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-teal-100 text-teal-600 dark:bg-teal-900/40 dark:text-teal-300">
                 <BotMessageSquare className="h-6 w-6" />
               </div>
-              <CardTitle className="text-2xl">Prompt Management</CardTitle>
+              <CardTitle className="text-2xl font-heading">Prompt Management</CardTitle>
             </div>
             <CardDescription className="text-base">
               Configure the prompts used by the Gemini AI models
@@ -119,7 +119,7 @@ export default function HomePage() {
               Centrally manage the prompts for different analysis types to ensure consistency and allow for easy experimentation and tuning.
             </p>
             <Link to="/prompts" className="block">
-              <Button className="w-full mt-4" size="lg" variant="outline">
+              <Button className="w-full mt-4 btn-press" size="lg" variant="outline">
                 Manage Prompts
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>

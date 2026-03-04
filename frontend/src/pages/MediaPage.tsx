@@ -76,7 +76,7 @@ export default function MediaProcessingPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold">Media Processing</h1>
+          <h1 className="text-3xl font-bold font-heading">Media Processing</h1>
           <p className="text-muted-foreground mt-1">Video Compression & Audio Extraction</p>
         </div>
         <Button onClick={() => setShowUpload(true)} size="lg">
@@ -108,13 +108,13 @@ export default function MediaProcessingPage() {
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Total Jobs</CardDescription>
-                  <CardTitle className="text-3xl">{allMediaJobs?.length || 0}</CardTitle>
+                  <CardTitle className="text-3xl font-mono">{allMediaJobs?.length || 0}</CardTitle>
                 </CardHeader>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Processing</CardDescription>
-                  <CardTitle className="text-3xl text-yellow-600">
+                  <CardTitle className="text-3xl font-mono text-yellow-600">
                     {processingJobs.length + pendingJobs.length}
                   </CardTitle>
                 </CardHeader>
@@ -122,7 +122,7 @@ export default function MediaProcessingPage() {
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Completed</CardDescription>
-                  <CardTitle className="text-3xl text-green-600">
+                  <CardTitle className="text-3xl font-mono text-green-600">
                     {completedJobs.length}
                   </CardTitle>
                 </CardHeader>
@@ -130,7 +130,7 @@ export default function MediaProcessingPage() {
               <Card>
                 <CardHeader className="pb-2">
                   <CardDescription>Failed</CardDescription>
-                  <CardTitle className="text-3xl text-red-600">
+                  <CardTitle className="text-3xl font-mono text-red-600">
                     {failedJobs.length}
                   </CardTitle>
                 </CardHeader>

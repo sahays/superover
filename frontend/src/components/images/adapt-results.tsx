@@ -77,7 +77,7 @@ export function AdaptResults({ jobId, status }: AdaptResultsProps) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-xl font-semibold">Generated Variations</h3>
+        <h3 className="text-xl font-semibold font-heading">Generated Variations</h3>
         <Badge variant="outline" className="font-mono">
           {results?.length || 0} Assets
         </Badge>
