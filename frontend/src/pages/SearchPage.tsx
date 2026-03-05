@@ -129,6 +129,7 @@ export default function SearchPage() {
     useState<CuratedSearchResponse | null>(null)
   const [searching, setSearching] = useState(false)
   const [searchDuration, setSearchDuration] = useState<number | null>(null)
+  const hasSearchedRef = useRef(false)
 
   const {
     isRecording,
@@ -155,6 +156,7 @@ export default function SearchPage() {
           audioMime,
         )
         setCuratedResponse(response)
+        hasSearchedRef.current = true
       } finally {
         setSearchDuration(
           Math.round((performance.now() - startTime) / 100) / 10,
@@ -183,6 +185,8 @@ export default function SearchPage() {
     if (isRecording) {
       stopRecording()
     } else {
+      setQuery('')
+      hasSearchedRef.current = false
       resetAudio()
       startRecording()
     }
@@ -204,6 +208,7 @@ export default function SearchPage() {
         { icon: Music, text: 'Amaze me with some cool dance moves' },
         { icon: Trophy, text: 'Free kick in a soccer match' },
         { icon: Clapperboard, text: 'आप मुझे वो सीन दिखाइये जहाँ टोनी स्टार्क उदास बैठा है स्पेस में' },
+        { icon: Heart, text: 'Kiara Advani in pink saree' },
       ],
     },
   ]
@@ -244,9 +249,13 @@ export default function SearchPage() {
     <div className="container mx-auto max-w-6xl px-4 py-8">
       {/* Page Header */}
       <div className="mb-8 animate-slide-up">
-        <h1 className="text-3xl font-bold font-heading">Search</h1>
-        <p className="text-muted-foreground mt-1">
-          AI-powered semantic search across analyzed video content
+        <h1 className="text-3xl font-bold font-heading">Conversational Search</h1>
+        <p className="text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
+          <span>Powered by</span>
+          <img src="/gemini-logo.svg" alt="Gemini" className="h-5 inline-block dark:invert" />
+          <span>&amp;</span>
+          <img src="/bigquery-logo.svg" alt="BigQuery" className="h-5 inline-block" />
+          <span>BigQuery</span>
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
@@ -271,6 +280,12 @@ export default function SearchPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={() => {
+            if (hasSearchedRef.current) {
+              setQuery('')
+              hasSearchedRef.current = false
+            }
+          }}
           className="flex-1 border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 text-base h-11"
         />
         <Button
@@ -383,34 +398,51 @@ export default function SearchPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Sample searches after results */}
+          <SampleSearchPills groups={sampleSearchGroups} onSelect={handleSampleSearch} />
         </div>
       )}
 
       {/* Empty state when no search has been performed */}
       {!searching && !curatedResponse && (
         <div className="space-y-6 animate-fade-in">
-          {sampleSearchGroups.map((group) => (
-            <div key={group.label}>
-              <p className="text-sm font-medium text-muted-foreground mb-3">{group.label}</p>
-              <div className="flex flex-wrap gap-2 stagger-children">
-                {group.searches.map((sample) => {
-                  const Icon = sample.icon
-                  return (
-                    <button
-                      key={sample.text}
-                      onClick={() => handleSampleSearch(sample.text)}
-                      className="group badge-glow btn-press inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-accent/50 transition-colors"
-                    >
-                      <Icon className="h-4 w-4 shrink-0 group-hover:text-primary transition-colors" />
-                      <span className="line-clamp-1">{sample.text}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
+          <SampleSearchPills groups={sampleSearchGroups} onSelect={handleSampleSearch} />
         </div>
       )}
+    </div>
+  )
+}
+
+function SampleSearchPills({
+  groups,
+  onSelect,
+}: {
+  groups: { label: string; searches: { icon: React.ElementType; text: string }[] }[]
+  onSelect: (text: string) => void
+}) {
+  return (
+    <div className="space-y-6">
+      {groups.map((group) => (
+        <div key={group.label}>
+          <p className="text-sm font-medium text-muted-foreground mb-3">{group.label}</p>
+          <div className="flex flex-wrap gap-2 stagger-children">
+            {group.searches.map((sample) => {
+              const Icon = sample.icon
+              return (
+                <button
+                  key={sample.text}
+                  onClick={() => onSelect(sample.text)}
+                  className="group badge-glow btn-press inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-accent/50 transition-colors"
+                >
+                  <Icon className="h-4 w-4 shrink-0 group-hover:text-primary transition-colors" />
+                  <span className="line-clamp-1">{sample.text}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

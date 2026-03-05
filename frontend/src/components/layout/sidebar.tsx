@@ -56,7 +56,7 @@ const configItems: NavItem[] = [
     description: 'Manage analysis prompts',
   },
   {
-    title: 'Search Sync',
+    title: 'Embeddings',
     href: '/search/sync',
     icon: DatabaseZap,
     description: 'Sync results to search index',
