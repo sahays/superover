@@ -104,7 +104,7 @@ class ImageAnalyzer:
                 contents=[full_prompt, image_part],
                 config=types.GenerateContentConfig(
                     max_output_tokens=settings.gemini_image_output_tokens,
-                    temperature=0.7,
+                    temperature=settings.gemini_temperature,
                 ),
             )
 

@@ -136,7 +136,7 @@ class SearchQueryInterpreter:
                 config=types.GenerateContentConfig(
                     system_instruction=INTERPRETER_SYSTEM_PROMPT,
                     max_output_tokens=256,
-                    temperature=0.1,
+                    temperature=settings.gemini_temperature,
                     response_mime_type="application/json",
                     response_schema=RESPONSE_SCHEMA,
                     thinking_config=types.ThinkingConfig(

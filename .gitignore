@@ -62,4 +62,4 @@ frontend/.next/
 *.tsbuildinfo
 
 # v0 (old version)
-v0/
+gemini-key

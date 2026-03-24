@@ -183,7 +183,7 @@ class SearchCurator:
                 config=types.GenerateContentConfig(
                     system_instruction=CURATOR_SYSTEM_PROMPT,
                     max_output_tokens=settings.gemini_search_output_tokens,
-                    temperature=0.3,
+                    temperature=settings.gemini_temperature,
                     response_mime_type="application/json",
                     response_schema=RESPONSE_SCHEMA,
                     thinking_config=types.ThinkingConfig(
