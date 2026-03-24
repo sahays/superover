@@ -14,6 +14,7 @@ class MediaProcessingConfigRequest(BaseModel):
     audio_format: str = Field("mp3", description="Audio format (mp3, aac, wav)")
     audio_bitrate: str = Field("128k", description="Audio bitrate (128k, 192k, 256k)")
     crf: int = Field(23, description="Constant Rate Factor for video compression (0-51)")
+    dialog_mode: bool = Field(False, description="Dialog extraction mode: mono, 16kHz, speech-optimized")
 
 
 class CreateMediaJobRequest(BaseModel):
@@ -29,10 +30,14 @@ class MediaJobResultsResponse(BaseModel):
     metadata: Dict[str, Any]
     compressed_video_path: Optional[str] = None
     audio_path: Optional[str] = None
+    vocals_path: Optional[str] = None
+    dialog_mode: bool = False
     original_size_bytes: int = 0
     compressed_size_bytes: int = 0
     compression_ratio: float = 0.0
     audio_size_bytes: int = 0
+    vocals_size_bytes: int = 0
+    vocals_error: Optional[str] = None
 
 
 class MediaJobResponse(BaseModel):

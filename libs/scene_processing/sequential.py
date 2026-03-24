@@ -57,6 +57,24 @@ class SequentialSceneProcessor(SceneProcessor):
         if context_text:
             logger.info(f"[SEQUENTIAL] Loaded context text ({len(context_text)} chars) - will be reused for all chunks")
 
+        # Determine if Chirp 3 pre-processing is needed (subtitle/transcription jobs)
+        use_chirp = prompt_type in ("subtitling", "transcription") and self.speech_client is not None
+        if use_chirp:
+            logger.info(f"[SEQUENTIAL] Chirp 3 enabled for prompt_type={prompt_type}")
+
+        # For Chirp, try to find an extracted audio file (Chirp works better with audio-only)
+        chirp_audio_gcs = None
+        if use_chirp:
+            try:
+                media_jobs = self.db.list_media_jobs_for_video(video_id)
+                for mj in media_jobs:
+                    if mj.get("status") == "completed" and mj.get("results", {}).get("audio_path"):
+                        chirp_audio_gcs = mj["results"]["audio_path"]
+                        logger.info(f"[SEQUENTIAL] Using extracted audio for Chirp 3: {chirp_audio_gcs}")
+                        break
+            except Exception as e:
+                logger.warning(f"[SEQUENTIAL] Could not find extracted audio: {e}")
+
         for chunk in chunks:
             chunk_index = chunk["index"]
             chunk_gcs = chunk["gcs_path"]
@@ -68,7 +86,7 @@ class SequentialSceneProcessor(SceneProcessor):
                 job_id,
                 SceneJobStatus.PROCESSING,
                 results={
-                    "step": "analyzing",
+                    "step": "transcribing" if use_chirp else "analyzing",
                     "progress": {
                         "completed_chunks": chunk_index,
                         "total_chunks": len(chunks),
@@ -77,6 +95,43 @@ class SequentialSceneProcessor(SceneProcessor):
             )
 
             try:
+                # Chirp 3 pre-processing: transcribe audio before Gemini
+                chunk_context = context_text or ""
+                chirp_metadata = None
+                if use_chirp:
+                    chirp_input = chirp_audio_gcs or chunk_gcs
+                    logger.info(f"Chirp 3 input for chunk {chunk_index}: {chirp_input}")
+                    chirp_result = self.speech_client.transcribe_gcs(chirp_input)
+                    chirp_text = self.speech_client.format_as_context(chirp_result)
+                    if not chirp_text:
+                        raise ValueError(
+                            f"Chirp 3 returned empty transcription for chunk {chunk_index}. "
+                            f"Ensure an extracted audio file is available (not raw video)."
+                        )
+                    chunk_context = chirp_text + ("\n\n" + chunk_context if chunk_context else "")
+                    logger.info(
+                        f"Chirp 3 transcription for chunk {chunk_index}: {chirp_result.get('word_count', 0)} words"
+                    )
+                    chirp_metadata = {
+                        "utterance_count": len(chirp_result.get("utterances", [])),
+                        "detected_language": chirp_result.get("detected_language", ""),
+                        "timestamps": chirp_text,
+                    }
+
+                # Update progress to analyzing phase
+                if use_chirp:
+                    self.db.update_scene_job_status(
+                        job_id,
+                        SceneJobStatus.PROCESSING,
+                        results={
+                            "step": "analyzing",
+                            "progress": {
+                                "completed_chunks": chunk_index,
+                                "total_chunks": len(chunks),
+                            },
+                        },
+                    )
+
                 # Analyze with Gemini — pass GCS URI directly, no local file needed
                 result = self.analyzer.analyze_chunk(
                     media_path=None,
@@ -84,10 +139,14 @@ class SequentialSceneProcessor(SceneProcessor):
                     chunk_duration=chunk["duration"],
                     prompt_text=prompt_text,
                     prompt_type=prompt_type,
-                    context_text=context_text,
+                    context_text=chunk_context or None,
                     gcs_path=chunk_gcs,
                     response_schema=response_schema,
                 )
+
+                # Attach Chirp metadata to result
+                if chirp_metadata:
+                    result["chirp_transcription"] = chirp_metadata
 
                 # Tag result with prompt_type for filtering
                 result["prompt_type"] = prompt_type

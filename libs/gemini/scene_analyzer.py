@@ -168,7 +168,7 @@ class SceneAnalyzer:
 
             # Build generation config — structured output if schema provided, free text otherwise
             gen_config_kwargs = {
-                "temperature": 0.1,
+                "temperature": settings.gemini_temperature,
                 "max_output_tokens": max_tokens,
             }
             if response_schema is not None:
@@ -183,56 +183,119 @@ class SceneAnalyzer:
                     f"Analyzing chunk {chunk_index} with {self.model_name} (free text), max_output_tokens={max_tokens}"
                 )
 
-            # Generate analysis
-            response = self._retry_with_backoff(
-                self.client.models.generate_content,
-                model=self.model_name,
-                contents=contents,
-                config=types.GenerateContentConfig(**gen_config_kwargs),
-            )
+            # Generate analysis with continuation loop for truncated responses
+            max_continuations = 5
+            accumulated_text = ""
+            continuation_count = 0
+            total_usage_stats = {}
+            final_finish_reason = "UNKNOWN"
 
-            # Check if response was blocked
-            if not response.candidates or not response.candidates[0].content.parts:
-                finish_reason = response.candidates[0].finish_reason if response.candidates else "UNKNOWN"
-                logger.warning(f"Gemini response blocked for chunk {chunk_index}. Finish reason: {finish_reason}")
-                return {
-                    "summary": f"Analysis blocked (reason: {finish_reason})",
-                    "blocked": True,
-                    "finish_reason": str(finish_reason),
-                    "chunk_index": chunk_index,
-                    "chunk_duration": chunk_duration,
-                }
+            for iteration in range(max_continuations + 1):
+                if iteration == 0:
+                    call_contents = contents
+                else:
+                    # Continuation: send original prompt + media + accumulated text so far
+                    continuation_prompt = (
+                        f"Continue exactly where you left off. "
+                        f"Here is what you have generated so far:\n\n{accumulated_text}\n\n"
+                        f"Continue from the exact point where this was cut off. "
+                        f"Do not repeat any content already generated."
+                    )
+                    call_contents = contents + [continuation_prompt]
+                    logger.info(
+                        f"Chunk {chunk_index}: continuation {continuation_count + 1}, "
+                        f"accumulated {len(accumulated_text)} chars so far"
+                    )
 
-            # Parse response — structured JSON if schema was provided, free text otherwise
+                response = self._retry_with_backoff(
+                    self.client.models.generate_content,
+                    model=self.model_name,
+                    contents=call_contents,
+                    config=types.GenerateContentConfig(**gen_config_kwargs),
+                )
+
+                # Check if response was blocked
+                if not response.candidates or not response.candidates[0].content.parts:
+                    finish_reason = response.candidates[0].finish_reason if response.candidates else "UNKNOWN"
+                    if iteration == 0:
+                        logger.warning(
+                            f"Gemini response blocked for chunk {chunk_index}. Finish reason: {finish_reason}"
+                        )
+                        return {
+                            "summary": f"Analysis blocked (reason: {finish_reason})",
+                            "blocked": True,
+                            "finish_reason": str(finish_reason),
+                            "chunk_index": chunk_index,
+                            "chunk_duration": chunk_duration,
+                        }
+                    else:
+                        logger.warning(f"Continuation {continuation_count + 1} blocked for chunk {chunk_index}")
+                        break
+
+                # Accumulate token usage across continuations
+                if response.usage_metadata:
+                    iter_usage = self._calculate_cost(response.usage_metadata)
+                    if not total_usage_stats:
+                        total_usage_stats = iter_usage.copy()
+                    else:
+                        for key in ["prompt_tokens", "candidates_tokens", "total_tokens"]:
+                            total_usage_stats[key] = total_usage_stats.get(key, 0) + iter_usage.get(key, 0)
+                        for key in ["input_cost_usd", "output_cost_usd", "estimated_cost_usd"]:
+                            total_usage_stats[key] = round(total_usage_stats.get(key, 0) + iter_usage.get(key, 0), 6)
+
+                accumulated_text += response.text
+                final_finish_reason = str(response.candidates[0].finish_reason)
+
+                # Check if response is complete
+                if final_finish_reason != "MAX_TOKENS":
+                    if iteration > 0:
+                        logger.info(
+                            f"Chunk {chunk_index}: completed after {continuation_count + 1} continuation(s), "
+                            f"total {len(accumulated_text)} chars"
+                        )
+                    break
+
+                continuation_count += 1
+                logger.warning(
+                    f"Chunk {chunk_index}: response truncated (MAX_TOKENS) at iteration {iteration + 1}, "
+                    f"{len(accumulated_text)} chars so far. Continuing..."
+                )
+
+            # Parse the accumulated response
             if response_schema is not None:
                 try:
-                    result = json.loads(response.text)
-                    result["finish_reason"] = str(response.candidates[0].finish_reason)
+                    result = json.loads(accumulated_text)
+                    result["finish_reason"] = final_finish_reason
                     logger.info(f"Successfully analyzed chunk {chunk_index} (structured)")
                 except Exception as e:
                     logger.warning(f"Failed to parse structured output: {e}")
                     result = {
-                        "raw_response": response.text,
+                        "raw_response": accumulated_text,
                         "parse_error": str(e),
-                        "finish_reason": str(response.candidates[0].finish_reason),
+                        "finish_reason": final_finish_reason,
                     }
             else:
                 result = {
-                    "raw_text": response.text,
-                    "finish_reason": str(response.candidates[0].finish_reason),
+                    "raw_text": accumulated_text,
+                    "finish_reason": final_finish_reason,
                 }
                 logger.info(f"Successfully analyzed chunk {chunk_index} (free text)")
 
-            # Calculate cost and usage
-            if response.usage_metadata:
-                usage_stats = self._calculate_cost(response.usage_metadata)
-                result["token_usage"] = usage_stats
+            if continuation_count > 0:
+                result["continuation_count"] = continuation_count
+            if final_finish_reason == "MAX_TOKENS":
+                result["is_truncated"] = True
+
+            # Calculate cost and usage (aggregated across all continuations)
+            if total_usage_stats:
+                result["token_usage"] = total_usage_stats
                 logger.info(
-                    f"Chunk {chunk_index} usage: "
-                    f"Prompt={usage_stats.get('prompt_tokens', 0)}, "
-                    f"Output={usage_stats.get('candidates_tokens', 0)}, "
-                    f"Total={usage_stats.get('total_tokens', 0)} | "
-                    f"Cost=${usage_stats.get('estimated_cost_usd', 0):.6f}"
+                    f"Chunk {chunk_index} total usage: "
+                    f"Prompt={total_usage_stats.get('prompt_tokens', 0)}, "
+                    f"Output={total_usage_stats.get('candidates_tokens', 0)}, "
+                    f"Total={total_usage_stats.get('total_tokens', 0)} | "
+                    f"Cost=${total_usage_stats.get('estimated_cost_usd', 0):.6f}"
+                    + (f" (across {continuation_count + 1} calls)" if continuation_count > 0 else "")
                 )
 
             # Add metadata

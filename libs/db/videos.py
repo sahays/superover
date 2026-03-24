@@ -1,7 +1,8 @@
 """Video operations mixin for FirestoreDB."""
 
 import logging
-from typing import Optional, Dict, Any, List
+from datetime import datetime
+from typing import Optional, Dict, Any, List, Tuple
 from google.cloud import firestore
 
 logger = logging.getLogger(__name__)
@@ -81,3 +82,30 @@ class VideosMixin:
         """List all videos."""
         query = self.videos.order_by("created_at", direction=firestore.Query.DESCENDING).limit(limit)
         return [doc.to_dict() for doc in query.stream()]
+
+    def list_videos_paginated(
+        self,
+        limit: int = 10,
+        cursor: Optional[datetime] = None,
+    ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+        """List videos with cursor-based pagination.
+
+        Returns (items, next_cursor) where next_cursor is an ISO timestamp string or None.
+        """
+        query = self.videos.order_by("created_at", direction=firestore.Query.DESCENDING)
+
+        if cursor:
+            query = query.start_after({"created_at": cursor})
+
+        query = query.limit(limit + 1)
+        docs = [doc.to_dict() for doc in query.stream()]
+
+        has_more = len(docs) > limit
+        items = docs[:limit]
+        next_cursor = None
+        if has_more and items:
+            last_created = items[-1].get("created_at")
+            if last_created:
+                next_cursor = last_created.isoformat() if hasattr(last_created, "isoformat") else str(last_created)
+
+        return items, next_cursor

@@ -2,16 +2,19 @@
 
 import uuid
 import logging
-from typing import List
+from datetime import datetime
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from api.models.schemas import (
     ProcessVideoRequest,
     ProcessingJobResponse,
     SceneJobResponse,
     ResultResponse,
+    PaginatedResponse,
 )
 from api.middleware.rate_limit import rate_limit
 from libs.database import get_db, SceneJobStatus
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -120,20 +123,30 @@ def register_job_routes(router: APIRouter) -> None:
     # IMPORTANT: Static path routes (/jobs, /jobs/{job_id}) MUST come before
     # parameterized routes (/{video_id}) — otherwise FastAPI matches "jobs" as a video_id.
 
-    @router.get("/jobs", response_model=List[SceneJobResponse])
-    async def list_scene_jobs(limit: int = 50, status_filter: SceneJobStatus = None):
-        """List all scene jobs."""
+    @router.get("/jobs", response_model=PaginatedResponse)
+    async def list_scene_jobs(
+        limit: int = 10,
+        cursor: Optional[str] = None,
+        status_filter: Optional[SceneJobStatus] = None,
+    ):
+        """List scene jobs with cursor-based pagination."""
         try:
             db = get_db()
-            if status_filter:
-                query = db.scene_jobs.where("status", "==", status_filter.value)
-            else:
-                query = db.scene_jobs
+            cursor_dt = None
+            if cursor:
+                cursor_dt = datetime.fromisoformat(cursor)
 
-            query = query.order_by("created_at", direction="DESCENDING").limit(limit)
-            jobs = [doc.to_dict() for doc in query.stream()]
+            items, next_cursor = db.list_scene_jobs_paginated(
+                limit=limit,
+                cursor=cursor_dt,
+                status=status_filter,
+            )
 
-            return [SceneJobResponse(**job) for job in jobs]
+            return PaginatedResponse(
+                items=[SceneJobResponse(**job) for job in items],
+                next_cursor=next_cursor,
+                has_more=next_cursor is not None,
+            )
 
         except Exception as e:
             logger.error(f"Failed to list scene jobs: {e}")
@@ -197,7 +210,8 @@ def register_job_routes(router: APIRouter) -> None:
                 )
 
             prompt_category = prompt.get("type", "custom")
-            category_schema_doc = db.get_category_schema(prompt_category)
+            schema_name = prompt.get("schema_name", "default")
+            category_schema_doc = db.get_category_schema(prompt_category, schema_name)
             response_schema = category_schema_doc.get("response_schema") if category_schema_doc else None
 
             job_id = str(uuid.uuid4())
@@ -206,6 +220,8 @@ def register_job_routes(router: APIRouter) -> None:
                 "compressed_video_path": body.compressed_video_path,
                 "chunk_duration": body.chunk_duration,
                 "chunk": body.chunk,
+                "model": settings.gemini_default_model,
+                "temperature": settings.gemini_temperature,
             }
 
             if body.context_items:

@@ -26,8 +26,9 @@ class Settings(BaseSettings):
 
     # Gemini API (uses ADC — no API key needed on Cloud Run)
     gemini_region: str = "global"  # Gemini endpoint region (separate from gcp_region)
-    gemini_default_model: str = "gemini-3-pro-preview"
+    gemini_default_model: str = "gemini-3.1-pro-preview"
     gemini_default_output_tokens: int = 65536
+    gemini_temperature: float = 1.0
     gemini_image_model: str = "gemini-3-pro-image-preview"
     gemini_image_output_tokens: int = 32768
 
@@ -49,6 +50,10 @@ class Settings(BaseSettings):
     chunk_duration_seconds: int = 30
     compress_resolution: str = "480p"  # 480p for faster processing
     temp_storage_path: Path = Path("./storage/temp")
+
+    # Speech-to-Text (Chirp 3)
+    chirp_model: str = "chirp_3"
+    chirp_language: str = "auto"  # "auto" for auto-detect, or e.g. "en-US"
 
     # Transcoder API
     transcoder_location: str = "asia-south1"  # Must match GCS bucket region

@@ -15,6 +15,8 @@ import { PROMPT_TYPE_OPTIONS } from '@/lib/prompt-constants'
 
 interface SchemaEditDialogProps {
   editingCategory: string | null
+  schemaName: string
+  onSchemaNameChange: (name: string) => void
   schemaText: string
   onSchemaTextChange: (text: string) => void
   schemaError: string | null
@@ -27,6 +29,8 @@ interface SchemaEditDialogProps {
 
 export function SchemaEditDialog({
   editingCategory,
+  schemaName,
+  onSchemaNameChange,
   schemaText,
   onSchemaTextChange,
   schemaError,
@@ -47,9 +51,20 @@ export function SchemaEditDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
-          <div className="space-y-2">
-            <Label>Category</Label>
-            <Input value={editingCategory || ''} disabled />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Input value={editingCategory || ''} disabled />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="schema_name">Schema Name</Label>
+              <Input
+                id="schema_name"
+                value={schemaName}
+                onChange={(e) => onSchemaNameChange(e.target.value)}
+                placeholder="default"
+              />
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="schema_json">JSON Schema</Label>

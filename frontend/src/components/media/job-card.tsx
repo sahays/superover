@@ -1,8 +1,9 @@
 import { MediaJob, MediaJobStatus } from '@/lib/types'
 import { formatBytes, truncateFilename } from '@/lib/utils'
+import { mediaApi } from '@/lib/api-client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Trash2, Clock } from 'lucide-react'
+import { Trash2, Clock, Download, Mic, Film } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { getMediaStatusBadge } from '@/lib/media-status'
 
@@ -94,7 +95,9 @@ export function JobCard({ job, videoFilename, onDelete }: JobCardProps) {
             <div className="flex justify-between">
               <span className="text-muted-foreground">Audio:</span>
               <span className="font-medium">
-                {job.config.audio_format?.toUpperCase()} @ {job.config.audio_bitrate}
+                {job.config.dialog_mode
+                  ? 'Dialog (Mono 16kHz)'
+                  : `${job.config.audio_format?.toUpperCase()} @ ${job.config.audio_bitrate}`}
               </span>
             </div>
           )}
@@ -105,37 +108,132 @@ export function JobCard({ job, videoFilename, onDelete }: JobCardProps) {
 
         {/* Results */}
         {job.status === MediaJobStatus.COMPLETED && job.results && (
-          <div className="space-y-2 rounded-lg bg-gray-50 p-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Original Size:</span>
-              <span className="font-medium">
-                {formatBytes(job.results.original_size_bytes)}
-              </span>
-            </div>
-            {job.results.compressed_video_path && (
-              <>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Compressed Size:</span>
-                  <span className="font-medium">
-                    {formatBytes(job.results.compressed_size_bytes)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Reduction:</span>
-                  <span className="font-medium text-green-600">
-                    <span className="font-mono">{job.results.compression_ratio.toFixed(1)}%</span>
-                  </span>
-                </div>
-              </>
-            )}
-            {job.results.audio_path && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Audio Size:</span>
-                <span className="font-medium">
-                  {formatBytes(job.results.audio_size_bytes)}
-                </span>
+          <div className="space-y-3">
+            {/* Stream Info */}
+            {job.results.metadata && (
+              <div className="space-y-1.5 rounded-lg bg-slate-50 dark:bg-slate-900 p-3 text-xs">
+                <p className="font-medium text-xs text-muted-foreground uppercase tracking-wide mb-1.5">Streams</p>
+                {job.results.metadata.video_codec && (
+                  <div className="flex items-center gap-2">
+                    <Film className="h-3 w-3 text-blue-500 flex-shrink-0" />
+                    <span className="font-mono">
+                      Video: {job.results.metadata.video_codec}
+                      {job.results.metadata.video_resolution && ` ${job.results.metadata.video_resolution}`}
+                      {job.results.metadata.video_bitrate && ` @ ${Math.round(job.results.metadata.video_bitrate / 1000)}kbps`}
+                    </span>
+                  </div>
+                )}
+                {job.results.metadata.audio_codec && (
+                  <div className="flex items-center gap-2">
+                    <Mic className="h-3 w-3 text-green-500 flex-shrink-0" />
+                    <span className="font-mono">
+                      Audio: {job.results.metadata.audio_codec}
+                      {job.results.metadata.audio_channels && ` ${job.results.metadata.audio_channels}ch`}
+                      {job.results.metadata.audio_sample_rate && ` ${job.results.metadata.audio_sample_rate}Hz`}
+                      {job.results.metadata.audio_bitrate && ` @ ${Math.round(job.results.metadata.audio_bitrate / 1000)}kbps`}
+                    </span>
+                  </div>
+                )}
+                {job.results.metadata.duration && (
+                  <div className="text-muted-foreground">
+                    Duration: {Math.round(job.results.metadata.duration)}s
+                  </div>
+                )}
               </div>
             )}
+
+            {/* Size Info */}
+            <div className="space-y-2 rounded-lg bg-gray-50 dark:bg-gray-900 p-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Original Size:</span>
+                <span className="font-medium">
+                  {formatBytes(job.results.original_size_bytes)}
+                </span>
+              </div>
+              {job.results.compressed_video_path && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Compressed Size:</span>
+                    <span className="font-medium">
+                      {formatBytes(job.results.compressed_size_bytes)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Reduction:</span>
+                    <span className="font-medium text-green-600">
+                      <span className="font-mono">{job.results.compression_ratio.toFixed(1)}%</span>
+                    </span>
+                  </div>
+                </>
+              )}
+              {job.results.audio_path && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Audio Size:</span>
+                  <span className="font-medium">
+                    {formatBytes(job.results.audio_size_bytes)}
+                  </span>
+                </div>
+              )}
+              {job.results.vocals_path && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Vocals (Dialog):</span>
+                  <span className="font-medium">
+                    {formatBytes(job.results.vocals_size_bytes)}
+                  </span>
+                </div>
+              )}
+              {job.results.vocals_error && (
+                <div className="text-xs text-amber-600">
+                  Vocal extraction failed: {job.results.vocals_error}
+                </div>
+              )}
+            </div>
+
+            {/* Download Buttons */}
+            <div className="flex gap-2">
+              {job.results.audio_path && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={async () => {
+                    const { url } = await mediaApi.getDownloadUrl(job.job_id, 'audio')
+                    window.open(url, '_blank')
+                  }}
+                >
+                  <Download className="mr-2 h-3.5 w-3.5" />
+                  Audio
+                </Button>
+              )}
+              {job.results.vocals_path && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={async () => {
+                    const { url } = await mediaApi.getDownloadUrl(job.job_id, 'vocals')
+                    window.open(url, '_blank')
+                  }}
+                >
+                  <Download className="mr-2 h-3.5 w-3.5" />
+                  Vocals
+                </Button>
+              )}
+              {job.results.compressed_video_path && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={async () => {
+                    const { url } = await mediaApi.getDownloadUrl(job.job_id, 'video')
+                    window.open(url, '_blank')
+                  }}
+                >
+                  <Download className="mr-2 h-3.5 w-3.5" />
+                  Video
+                </Button>
+              )}
+            </div>
           </div>
         )}
 

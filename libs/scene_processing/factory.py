@@ -13,6 +13,19 @@ from .parallel import ParallelSceneProcessor
 logger = logging.getLogger(__name__)
 
 
+def _init_speech_client():
+    """Initialize Speech-to-Text client, returning None if unavailable."""
+    try:
+        from libs.speech import get_speech_client
+
+        client = get_speech_client()
+        logger.info("Speech-to-Text (Chirp 3) client initialized")
+        return client
+    except Exception as e:
+        logger.warning(f"Speech-to-Text client not available (Chirp 3 disabled): {e}")
+        return None
+
+
 def get_scene_processor(db, storage, analyzer, temp_dir: Path) -> SceneProcessor:
     """
     Create and return appropriate scene processor based on configuration.
@@ -27,6 +40,7 @@ def get_scene_processor(db, storage, analyzer, temp_dir: Path) -> SceneProcessor
         SceneProcessor instance (either Sequential or Parallel)
     """
     mode = settings.scene_processing_mode.lower()
+    speech_client = _init_speech_client()
 
     if mode == "parallel":
         processor = ParallelSceneProcessor(
@@ -35,10 +49,17 @@ def get_scene_processor(db, storage, analyzer, temp_dir: Path) -> SceneProcessor
             analyzer=analyzer,
             temp_dir=temp_dir,
             max_workers=settings.max_gemini_workers,
+            speech_client=speech_client,
         )
         logger.info("Scene processor initialized: PARALLEL mode")
     elif mode == "sequential":
-        processor = SequentialSceneProcessor(db=db, storage=storage, analyzer=analyzer, temp_dir=temp_dir)
+        processor = SequentialSceneProcessor(
+            db=db,
+            storage=storage,
+            analyzer=analyzer,
+            temp_dir=temp_dir,
+            speech_client=speech_client,
+        )
         logger.info("Scene processor initialized: SEQUENTIAL mode")
     else:
         # Default to parallel if invalid mode specified
@@ -51,6 +72,7 @@ def get_scene_processor(db, storage, analyzer, temp_dir: Path) -> SceneProcessor
             analyzer=analyzer,
             temp_dir=temp_dir,
             max_workers=settings.max_gemini_workers,
+            speech_client=speech_client,
         )
 
     # Log processor info

@@ -27,6 +27,7 @@ class PromptResponse(BaseModel):
     context_description: Optional[str] = None
     required_context_types: Optional[List[str]] = None
     max_context_items: Optional[int] = 5
+    schema_name: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     jobs_count: Optional[int] = 0
@@ -43,6 +44,7 @@ class CreatePromptRequest(BaseModel):
     )
     type: str = Field(..., description="Type of the prompt")
     prompt_text: str = Field(..., min_length=10, max_length=50000, description="The full text of the prompt")
+    schema_name: Optional[str] = Field(None, description="Named schema variant to use for this prompt's category")
     supports_context: bool = Field(False, description="Whether this prompt supports additional context files")
     context_description: Optional[str] = Field(None, description="Description of what context is expected")
     required_context_types: Optional[List[str]] = Field(
@@ -68,6 +70,7 @@ class UpdatePromptRequest(BaseModel):
     )
     type: Optional[str] = Field(None, description="Type of the prompt")
     prompt_text: Optional[str] = Field(None, min_length=10, max_length=50000, description="The full text of the prompt")
+    schema_name: Optional[str] = Field(None, description="Named schema variant to use for this prompt's category")
     supports_context: Optional[bool] = Field(None, description="Whether this prompt supports additional context files")
     context_description: Optional[str] = Field(None, description="Description of what context is expected")
     required_context_types: Optional[List[str]] = Field(None, description="List of required context types")

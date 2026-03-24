@@ -22,6 +22,7 @@ export function StartProcessing({ videoId, onSuccess, onCancel }: StartProcessin
     audio_format: 'aac',
     audio_bitrate: '96k',
     crf: 23,
+    dialog_mode: false,
   })
 
   const { data: presets } = useQuery({
@@ -102,7 +103,7 @@ export function StartProcessing({ videoId, onSuccess, onCancel }: StartProcessin
                 <Switch
                   id="audio"
                   checked={config.extract_audio}
-                  onCheckedChange={(checked) => setConfig({ ...config, extract_audio: checked })}
+                  onCheckedChange={(checked) => setConfig({ ...config, extract_audio: checked, dialog_mode: false })}
                 />
               </div>
 
@@ -110,16 +111,26 @@ export function StartProcessing({ videoId, onSuccess, onCancel }: StartProcessin
                 <div className="space-y-2 pl-4">
                   <Label htmlFor="audio-profile">Audio Profile</Label>
                   <Select
-                    value={`${config.audio_format}-${config.audio_bitrate}`}
+                    value={config.dialog_mode ? 'dialog' : `${config.audio_format}-${config.audio_bitrate}`}
                     onValueChange={(value) => {
-                      const [format, bitrate] = value.split('-')
-                      setConfig({ ...config, audio_format: format, audio_bitrate: bitrate })
+                      if (value === 'dialog') {
+                        setConfig({ ...config, dialog_mode: true, audio_format: 'aac', audio_bitrate: '96k' })
+                      } else {
+                        const [format, bitrate] = value.split('-')
+                        setConfig({ ...config, dialog_mode: false, audio_format: format, audio_bitrate: bitrate })
+                      }
                     }}
                   >
                     <SelectTrigger id="audio-profile">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="dialog">
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">Dialog Extraction</span>
+                          <span className="text-xs text-muted-foreground">Mono 16kHz — dialog/speech only for transcription</span>
+                        </div>
+                      </SelectItem>
                       <SelectItem value="aac-96k">
                         <div className="flex flex-col items-start">
                           <span className="font-medium">AAC 96kbps Mono</span>
@@ -137,6 +148,7 @@ export function StartProcessing({ videoId, onSuccess, onCancel }: StartProcessin
                 </div>
               )}
             </div>
+
           </div>
 
           <div className="flex gap-2">

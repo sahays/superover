@@ -54,6 +54,7 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
     prompt_type = chunk_data.get("prompt_type", "scene_analysis")
     context_text = chunk_data.get("context_text")
     response_schema = chunk_data.get("response_schema")
+    use_chirp = chunk_data.get("use_chirp", False)
     job_id = chunk_data["job_id"]
     video_id = chunk_data["video_id"]
     total_chunks = chunk_data["total_chunks"]
@@ -66,6 +67,31 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"[Process-{process_id}] Analyzing chunk {chunk_index + 1}/{total_chunks} from {chunk_gcs_path}")
 
     try:
+        # Chirp 3 pre-processing for subtitle jobs
+        chunk_context = context_text or ""
+        chirp_metadata = None
+        if use_chirp:
+            from libs.speech import get_speech_client
+
+            speech_client = get_speech_client()
+            chirp_input = chunk_data.get("chirp_audio_gcs") or chunk_gcs_path
+            chirp_result = speech_client.transcribe_gcs(chirp_input)
+            chirp_text = speech_client.format_as_context(chirp_result)
+            if not chirp_text:
+                raise ValueError(
+                    f"Chirp 3 returned empty transcription for chunk {chunk_index}. "
+                    f"Ensure an extracted audio file is available (not raw video)."
+                )
+            chunk_context = chirp_text + ("\n\n" + chunk_context if chunk_context else "")
+            chirp_metadata = {
+                "utterance_count": len(chirp_result.get("utterances", [])),
+                "detected_language": chirp_result.get("detected_language", ""),
+                "timestamps": chirp_text,
+            }
+            logger.info(
+                f"[Process-{process_id}] Chirp 3 for chunk {chunk_index}: {chirp_result.get('word_count', 0)} words"
+            )
+
         # Analyze with Gemini — GCS URI passed directly, no local file
         result = analyzer.analyze_chunk(
             media_path=None,
@@ -73,10 +99,13 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
             chunk_duration=chunk_duration,
             prompt_text=prompt_text,
             prompt_type=prompt_type,
-            context_text=context_text,
+            context_text=chunk_context or None,
             gcs_path=chunk_gcs_path,
             response_schema=response_schema,
         )
+
+        if chirp_metadata:
+            result["chirp_transcription"] = chirp_metadata
 
         # Tag result with prompt_type for filtering
         result["prompt_type"] = prompt_type
@@ -141,8 +170,8 @@ def _analyze_chunk_worker(chunk_data: Dict[str, Any]) -> Dict[str, Any]:
 class ParallelSceneProcessor(SceneProcessor):
     """Processes scene chunks in parallel using multiple processes."""
 
-    def __init__(self, db, storage, analyzer, temp_dir: Path, max_workers: int = None):
-        super().__init__(db, storage, analyzer, temp_dir)
+    def __init__(self, db, storage, analyzer, temp_dir: Path, max_workers: int = None, speech_client=None):
+        super().__init__(db, storage, analyzer, temp_dir, speech_client=speech_client)
         self.cpu_count = multiprocessing.cpu_count()
 
         if max_workers is None:
@@ -206,6 +235,21 @@ class ParallelSceneProcessor(SceneProcessor):
         if context_text:
             logger.info(f"[PARALLEL] Loaded context text ({len(context_text)} chars)")
 
+        # Determine if Chirp 3 pre-processing is needed
+        use_chirp = prompt_type in ("subtitling", "transcription") and self.speech_client is not None
+        chirp_audio_gcs = None
+        if use_chirp:
+            logger.info(f"[PARALLEL] Chirp 3 enabled for prompt_type={prompt_type}")
+            try:
+                media_jobs = self.db.list_media_jobs_for_video(video_id)
+                for mj in media_jobs:
+                    if mj.get("status") == "completed" and mj.get("results", {}).get("audio_path"):
+                        chirp_audio_gcs = mj["results"]["audio_path"]
+                        logger.info(f"[PARALLEL] Using extracted audio for Chirp 3: {chirp_audio_gcs}")
+                        break
+            except Exception as e:
+                logger.warning(f"[PARALLEL] Could not find extracted audio: {e}")
+
         # Prepare tasks — no file downloads needed
         gemini_tasks = [
             {
@@ -216,6 +260,8 @@ class ParallelSceneProcessor(SceneProcessor):
                 "prompt_type": prompt_type,
                 "context_text": context_text,
                 "response_schema": response_schema,
+                "use_chirp": use_chirp,
+                "chirp_audio_gcs": chirp_audio_gcs,
                 "job_id": job_id,
                 "video_id": video_id,
                 "total_chunks": total_chunks,

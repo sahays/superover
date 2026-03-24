@@ -60,6 +60,7 @@ class SceneJobResponse(BaseModel):
     prompt_type: Optional[str] = "custom"
     prompt_name: Optional[str] = None
     results: Optional[Dict[str, Any]] = None
+    stop_reason: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     error_message: Optional[str] = None

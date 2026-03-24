@@ -10,6 +10,7 @@ from .shared import (
     ManifestResponse,
     ProcessingJobResponse,
     ResultResponse,
+    PaginatedResponse,
     HealthResponse,
 )
 from .media import (
@@ -69,6 +70,7 @@ __all__ = [
     "ManifestResponse",
     "ProcessingJobResponse",
     "ResultResponse",
+    "PaginatedResponse",
     "HealthResponse",
     # Media
     "MediaProcessingConfigRequest",

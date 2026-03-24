@@ -13,6 +13,9 @@ google-genai>=1.65.0
 # Video Processing (Transcoder API)
 google-cloud-video-transcoder>=1.0.0
 
+# Speech-to-Text (Chirp 3)
+google-cloud-speech>=2.25.0
+
 # BigQuery (Natural Language Search)
 google-cloud-bigquery>=3.25.0
 

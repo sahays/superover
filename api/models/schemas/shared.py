@@ -121,6 +121,14 @@ class ResultResponse(BaseModel):
     created_at: Optional[datetime] = None
 
 
+class PaginatedResponse(BaseModel):
+    """Paginated list response with cursor-based navigation."""
+
+    items: List[Any]
+    next_cursor: Optional[str] = None
+    has_more: bool = False
+
+
 class HealthResponse(BaseModel):
     """Health check response."""
 

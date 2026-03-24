@@ -5,9 +5,10 @@ interface SceneJobInfoCardProps {
   sceneJob: {
     job_id: string
     status: string
-    config: { compressed_video_path?: string }
+    config: { compressed_video_path?: string; model?: string; temperature?: number }
     results?: Record<string, any>
     error_message?: string
+    stop_reason?: string
   }
   totalCost: number
   totalInputCost: number
@@ -64,10 +65,28 @@ export function SceneJobInfoCard({
               {totalTokens > 0 ? <span className="font-mono">{totalTokens.toLocaleString()}</span> : <span className="text-muted-foreground">N/A</span>}
             </dd>
           </div>
+          <div>
+            <dt className="text-sm font-medium text-muted-foreground">Model</dt>
+            <dd className="mt-1 text-sm font-mono">
+              {sceneJob.config.model || <span className="text-muted-foreground font-sans">N/A</span>}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-sm font-medium text-muted-foreground">Temperature</dt>
+            <dd className="mt-1 text-sm font-mono">
+              {sceneJob.config.temperature != null ? sceneJob.config.temperature : <span className="text-muted-foreground font-sans">N/A</span>}
+            </dd>
+          </div>
           {sceneJob.config.compressed_video_path && (
             <div>
               <dt className="text-sm font-medium text-muted-foreground">Source</dt>
               <dd className="mt-1 text-sm">Compressed video from media workflow</dd>
+            </div>
+          )}
+          {sceneJob.stop_reason && sceneJob.stop_reason !== 'STOP' && sceneJob.stop_reason !== 'completed' && (
+            <div>
+              <dt className="text-sm font-medium text-amber-600">Stop Reason</dt>
+              <dd className="mt-1 text-sm text-amber-600 font-mono">{sceneJob.stop_reason}</dd>
             </div>
           )}
           {sceneJob.error_message && (

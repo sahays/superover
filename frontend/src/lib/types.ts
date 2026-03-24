@@ -47,6 +47,7 @@ export const sceneJobSchema = z.object({
   prompt_type: z.string().optional(),
   prompt_name: z.string().optional(),
   results: z.record(z.any()).optional(),
+  stop_reason: z.string().optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
   error_message: z.string().optional(),
@@ -150,16 +151,21 @@ export const mediaProcessingConfigSchema = z.object({
   audio_format: z.string().default('mp3'),
   audio_bitrate: z.string().default('128k'),
   crf: z.number().default(23),
+  dialog_mode: z.boolean().default(false),
 })
 
 export const mediaJobResultsSchema = z.object({
   metadata: z.record(z.any()),
   compressed_video_path: z.string().optional(),
   audio_path: z.string().optional(),
+  vocals_path: z.string().optional(),
+  dialog_mode: z.boolean().default(false),
   original_size_bytes: z.number().default(0),
   compressed_size_bytes: z.number().default(0),
   compression_ratio: z.number().default(0),
   audio_size_bytes: z.number().default(0),
+  vocals_size_bytes: z.number().default(0),
+  vocals_error: z.string().optional(),
 })
 
 export const mediaJobSchema = z.object({
@@ -196,6 +202,7 @@ export const promptSchema = z.object({
   name: z.string(),
   type: z.string(),
   prompt_text: z.string(),
+  schema_name: z.string().nullable().optional(),
   supports_context: z.boolean().default(false),
   context_description: z.string().optional(),
   required_context_types: z.array(z.string()).optional(),
@@ -222,6 +229,7 @@ export type ContextItem = z.infer<typeof contextItemSchema>
 // Category Schema Types
 export const categorySchemaSchema = z.object({
   category: z.string(),
+  schema_name: z.string().default('default'),
   response_schema: z.record(z.any()).nullable(),
   updated_at: z.string().optional(),
 })

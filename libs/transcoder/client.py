@@ -35,6 +35,7 @@ class TranscoderClient:
         extract_audio: bool = True,
         audio_format: str = "aac",
         audio_bitrate: str = "128k",
+        dialog_mode: bool = False,
     ) -> str:
         """
         Submit a media processing job (compression + optional audio extraction).
@@ -51,6 +52,7 @@ class TranscoderClient:
             extract_audio=extract_audio,
             audio_format=audio_format,
             audio_bitrate=audio_bitrate,
+            dialog_mode=dialog_mode,
         )
 
         response = self.client.create_job(parent=self.parent, job=job)

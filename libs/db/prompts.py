@@ -16,6 +16,7 @@ class PromptsMixin:
         name: str,
         type: str,
         prompt_text: str,
+        schema_name: Optional[str] = None,
         supports_context: bool = False,
         context_description: Optional[str] = None,
         required_context_types: Optional[List[str]] = None,
@@ -32,6 +33,9 @@ class PromptsMixin:
             "created_at": firestore.SERVER_TIMESTAMP,
             "updated_at": firestore.SERVER_TIMESTAMP,
         }
+
+        if schema_name:
+            prompt_data["schema_name"] = schema_name
 
         if supports_context:
             prompt_data["context_description"] = context_description or "Upload additional context files"
@@ -81,6 +85,7 @@ class PromptsMixin:
         name: Optional[str] = None,
         type: Optional[str] = None,
         prompt_text: Optional[str] = None,
+        schema_name: Optional[str] = None,
         supports_context: Optional[bool] = None,
         context_description: Optional[str] = None,
         required_context_types: Optional[List[str]] = None,
@@ -99,6 +104,8 @@ class PromptsMixin:
             update_data["type"] = type
         if prompt_text is not None:
             update_data["prompt_text"] = prompt_text
+        if schema_name is not None:
+            update_data["schema_name"] = schema_name
         if supports_context is not None:
             update_data["supports_context"] = supports_context
         if context_description is not None:

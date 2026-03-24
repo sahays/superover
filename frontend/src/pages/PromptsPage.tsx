@@ -65,8 +65,8 @@ export default function PromptsPage() {
   })
 
   const setSchemaMutation = useMutation({
-    mutationFn: ({ category, response_schema }: { category: string; response_schema: Record<string, unknown> | null }) =>
-      promptApi.setSchema(category, { response_schema }),
+    mutationFn: ({ category, schema_name, response_schema }: { category: string; schema_name: string; response_schema: Record<string, unknown> | null }) =>
+      promptApi.setSchema(category, { schema_name, response_schema }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categorySchemas'] })
       schemaEditor.closeEditor()
@@ -92,17 +92,22 @@ export default function PromptsPage() {
     if (!schemaEditor.editingCategory) return
     const result = schemaEditor.parseSchema()
     if (result.valid) {
-      setSchemaMutation.mutate({ category: schemaEditor.editingCategory, response_schema: result.schema })
+      setSchemaMutation.mutate({
+        category: schemaEditor.editingCategory,
+        schema_name: schemaEditor.editingSchemaName,
+        response_schema: result.schema,
+      })
     }
   }
 
   const handleClearSchema = () => {
     if (!schemaEditor.editingCategory) return
-    setSchemaMutation.mutate({ category: schemaEditor.editingCategory, response_schema: null })
+    promptApi.deleteSchema(schemaEditor.editingCategory, schemaEditor.editingSchemaName)
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ['categorySchemas'] })
+        schemaEditor.closeEditor()
+      })
   }
-
-  const getSchemaForCategory = (category: string) =>
-    categorySchemas?.find(s => s.category === category)
 
   return (
     <div className="container mx-auto max-w-6xl px-4 py-8">
@@ -166,8 +171,8 @@ export default function PromptsPage() {
               key={option.value}
               label={option.label}
               value={option.value}
-              hasSchema={getSchemaForCategory(option.value)?.response_schema != null}
-              onEditSchema={(cat) => schemaEditor.openEditor(cat, categorySchemas)}
+              schemas={categorySchemas || []}
+              onEditSchema={(cat, schemaName) => schemaEditor.openEditor(cat, categorySchemas, schemaName)}
             />
           ))}
         </div>
@@ -175,6 +180,8 @@ export default function PromptsPage() {
 
       <SchemaEditDialog
         editingCategory={schemaEditor.editingCategory}
+        schemaName={schemaEditor.editingSchemaName}
+        onSchemaNameChange={schemaEditor.setEditingSchemaName}
         schemaText={schemaEditor.schemaText}
         onSchemaTextChange={schemaEditor.setSchemaText}
         schemaError={schemaEditor.schemaError}

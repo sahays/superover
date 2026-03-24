@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Mic } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { videoApi, sceneJobApi } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
@@ -51,6 +51,9 @@ export default function SceneDetailPage() {
   const totalCost = results?.reduce((acc: number, r: any) => acc + (r.result_data?.token_usage?.estimated_cost_usd || 0), 0) || 0
   const totalInputCost = results?.reduce((acc: number, r: any) => acc + (r.result_data?.token_usage?.input_cost_usd || 0), 0) || 0
   const totalOutputCost = results?.reduce((acc: number, r: any) => acc + (r.result_data?.token_usage?.output_cost_usd || 0), 0) || 0
+
+  // Extract Chirp 3 transcription from results (if available)
+  const chirpTranscription = results?.find((r: any) => r.result_data?.chirp_transcription)?.result_data?.chirp_transcription
 
   const { isSubtitleJob, downloadAsJSON, downloadAsCSV, downloadAsSRT } = useSceneExport({
     results,
@@ -111,6 +114,27 @@ export default function SceneDetailPage() {
                 downloadAsCSV={downloadAsCSV}
                 downloadAsSRT={downloadAsSRT}
               />
+            )}
+
+            {/* Chirp 3 Timestamps */}
+            {chirpTranscription && chirpTranscription.timestamps && (
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Mic className="h-4 w-4 text-amber-600" />
+                    <h3 className="font-semibold text-sm">Chirp 3 Speech Timestamps</h3>
+                    <span className="text-xs text-muted-foreground">
+                      {chirpTranscription.utterance_count} segments
+                      {chirpTranscription.detected_language && ` • ${chirpTranscription.detected_language}`}
+                    </span>
+                  </div>
+                  <div className="rounded bg-slate-100 dark:bg-slate-800 p-4 max-h-[300px] overflow-y-auto">
+                    <pre className="whitespace-pre-wrap text-sm font-mono">
+                      {chirpTranscription.timestamps}
+                    </pre>
+                  </div>
+                </CardContent>
+              </Card>
             )}
 
             {/* Metadata in collapsible accordion */}

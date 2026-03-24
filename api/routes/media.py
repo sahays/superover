@@ -2,12 +2,14 @@
 
 import uuid
 import logging
+from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from api.models.schemas import (
     CreateMediaJobRequest,
     MediaJobResponse,
     MediaPresetResponse,
+    PaginatedResponse,
 )
 from api.middleware.rate_limit import rate_limit
 from libs.database import get_db, MediaJobStatus
@@ -180,26 +182,91 @@ async def delete_media_job(job_id: str):
         )
 
 
-@router.get("/videos")
-async def list_all_videos(limit: int = 50):
+@router.get("/videos", response_model=PaginatedResponse)
+async def list_all_videos(limit: int = 10, cursor: Optional[str] = None):
     """
-    List all uploaded videos (for media workflow).
+    List all uploaded videos with cursor-based pagination.
 
-    Returns ALL videos regardless of processing status - this is used by the media page
+    Returns videos regardless of processing status - used by the media page
     to show videos available for media processing.
     """
     try:
         db = get_db()
-        videos = db.list_videos(limit=limit)
+        cursor_dt = None
+        if cursor:
+            cursor_dt = datetime.fromisoformat(cursor)
+
+        items, next_cursor = db.list_videos_paginated(limit=limit, cursor=cursor_dt)
         # Filter out non-audio/video files (e.g. images)
-        videos = [v for v in videos if _is_media_file(v)]
-        return videos
+        items = [v for v in items if _is_media_file(v)]
+
+        return PaginatedResponse(
+            items=items,
+            next_cursor=next_cursor,
+            has_more=next_cursor is not None,
+        )
 
     except Exception as e:
         logger.error(f"Failed to list videos: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to list videos: {str(e)}",
+        )
+
+
+@router.get("/jobs/{job_id}/download/{file_type}")
+async def get_media_download_url(job_id: str, file_type: str):
+    """Generate a signed download URL for a media job output file.
+
+    file_type: 'audio' or 'video'
+    """
+    try:
+        from libs.storage import get_storage
+
+        db = get_db()
+        job = db.get_media_job(job_id)
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Media job not found: {job_id}",
+            )
+
+        if job["status"] != MediaJobStatus.COMPLETED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Job is not completed yet",
+            )
+
+        results = job.get("results", {})
+        if file_type == "audio":
+            gcs_path = results.get("audio_path")
+        elif file_type == "video":
+            gcs_path = results.get("compressed_video_path")
+        elif file_type == "vocals":
+            gcs_path = results.get("vocals_path")
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid file_type: {file_type}. Must be 'audio', 'video', or 'vocals'.",
+            )
+
+        if not gcs_path:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No {file_type} file available for this job",
+            )
+
+        storage = get_storage()
+        url = storage.generate_signed_download_url(gcs_path, expiration_minutes=60)
+        return {"url": url, "gcs_path": gcs_path}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate download URL for job {job_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate download URL: {str(e)}",
         )
 
 

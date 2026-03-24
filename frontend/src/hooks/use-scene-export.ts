@@ -18,9 +18,10 @@ export function useSceneExport({ results, sceneJob, jobId, filename }: UseSceneE
     return `${baseFilename}_${promptName}_${timestamp}.${extension}`
   }, [filename, sceneJob])
 
-  const isSubtitleJob = results && results.length > 0 &&
+  const isSubtitleJob = (results && results.length > 0 &&
     (results[0].result_data?.prompt_type === 'subtitling' ||
-     results[0].result_data?.prompt_type === 'transcription')
+     results[0].result_data?.prompt_type === 'transcription')) ||
+    (sceneJob?.prompt_type === 'subtitling' || sceneJob?.prompt_type === 'transcription')
 
   const downloadAsJSON = useCallback(() => {
     if (!results || !sceneJob || !jobId) return
@@ -39,7 +40,7 @@ export function useSceneExport({ results, sceneJob, jobId, filename }: UseSceneE
   const downloadAsSRT = useCallback(() => {
     if (!results) return
     const srtContent = results
-      .map((result: any) => result.result_data?.subtitle_text)
+      .map((result: any) => result.result_data?.subtitle_text || result.result_data?.raw_text || '')
       .filter((text: string) => text)
       .join('\n\n')
     downloadFile(srtContent, getDownloadFilename('srt'), 'srt')

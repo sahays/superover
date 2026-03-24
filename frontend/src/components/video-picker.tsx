@@ -133,6 +133,7 @@ export function VideoPicker({ onSelect, onCancel }: VideoPickerProps) {
             video={video}
             selectedVideos={selectedVideos}
             onToggleVideo={handleToggleVideo}
+            audioOnly={selectedPrompt?.type === 'subtitling' || selectedPrompt?.type === 'transcription'}
           />
         ))}
       </div>

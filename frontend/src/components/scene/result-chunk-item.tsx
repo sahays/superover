@@ -22,6 +22,15 @@ export function ResultChunkItem({ result, index, totalResults }: ResultChunkItem
             </span>
           )}
           {isSubtitle && <span className="text-xs text-muted-foreground">(Subtitles)</span>}
+          {result.result_data?.is_truncated && (
+            <span className="text-xs font-medium text-amber-600 bg-amber-50 dark:bg-amber-950 px-1.5 py-0.5 rounded">Truncated</span>
+          )}
+          {result.result_data?.finish_reason && result.result_data.finish_reason !== 'STOP' && !result.result_data.is_truncated && (
+            <span className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950 px-1.5 py-0.5 rounded">{result.result_data.finish_reason}</span>
+          )}
+          {result.result_data?.continuation_count > 0 && (
+            <span className="text-xs text-muted-foreground">{result.result_data.continuation_count} continuation(s)</span>
+          )}
         </div>
       </AccordionTrigger>
       <AccordionContent>

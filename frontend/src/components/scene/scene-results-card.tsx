@@ -31,7 +31,7 @@ export function SceneResultsCard({
               {isSubtitleJob && results.length > 0 && (
                 <span className="ml-2">
                   • {results.reduce((sum: number, r: any) =>
-                    sum + (r.result_data?.subtitle_text?.length || 0), 0).toLocaleString()} characters
+                    sum + (r.result_data?.subtitle_text?.length || r.result_data?.raw_text?.length || 0), 0).toLocaleString()} characters
                 </span>
               )}
             </CardDescription>

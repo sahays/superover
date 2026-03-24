@@ -5,6 +5,7 @@ export interface PromptFormData {
   name: string
   type: string
   prompt_text: string
+  schema_name?: string
   supports_context?: boolean
   context_description?: string
 }
@@ -13,6 +14,7 @@ const INITIAL_FORM: PromptFormData = {
   name: '',
   type: 'scene_analysis',
   prompt_text: '',
+  schema_name: undefined,
   supports_context: false,
   context_description: '',
 }
@@ -31,6 +33,7 @@ export function usePromptForm() {
       name: prompt.name,
       type: prompt.type,
       prompt_text: prompt.prompt_text,
+      schema_name: prompt.schema_name || undefined,
       supports_context: prompt.supports_context || false,
       context_description: prompt.context_description || '',
     })

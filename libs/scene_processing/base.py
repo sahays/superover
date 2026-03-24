@@ -11,7 +11,7 @@ from pathlib import Path
 class SceneProcessor(ABC):
     """Abstract base class for scene processing implementations."""
 
-    def __init__(self, db, storage, analyzer, temp_dir: Path):
+    def __init__(self, db, storage, analyzer, temp_dir: Path, speech_client=None):
         """
         Initialize the scene processor.
 
@@ -20,11 +20,13 @@ class SceneProcessor(ABC):
             storage: Storage client
             analyzer: Scene analyzer (Gemini)
             temp_dir: Temporary directory for file operations
+            speech_client: Optional Speech-to-Text client for Chirp 3 pre-processing
         """
         self.db = db
         self.storage = storage
         self.analyzer = analyzer
         self.temp_dir = temp_dir
+        self.speech_client = speech_client
 
     def load_context_text(self, context_items: List[Dict[str, Any]]) -> str:
         """

@@ -18,12 +18,18 @@ def build_media_job_config(
     extract_audio: bool = True,
     audio_format: str = "aac",
     audio_bitrate: str = "128k",
+    dialog_mode: bool = False,
 ) -> transcoder_types.Job:
-    """Build a Transcoder Job proto for media compression + audio extraction."""
+    """Build a Transcoder Job proto for media compression + audio extraction.
+
+    Args:
+        dialog_mode: If True, extracts dialog-optimized mono audio (1 channel,
+            center channel, 16kHz sample rate). Skips video compression.
+    """
     elementary_streams = []
     mux_streams = []
 
-    if compress:
+    if compress and not dialog_mode:
         height = get_target_height(resolution)
         bitrate = crf_to_bitrate(crf, resolution)
         elementary_streams.append(
@@ -48,9 +54,19 @@ def build_media_job_config(
             )
         )
 
-    if extract_audio:
+    if extract_audio or dialog_mode:
         audio_codec = get_audio_codec(audio_format)
         audio_bps = get_audio_bitrate_bps(audio_bitrate)
+
+        if dialog_mode:
+            # Dialog mode: mono center channel, 16kHz, speech-optimized
+            channel_count = 1
+            channel_layout = ["fc"]
+            sample_rate = 16000
+        else:
+            channel_count = 2
+            channel_layout = ["fl", "fr"]
+            sample_rate = 48000
 
         elementary_streams.append(
             transcoder_types.ElementaryStream(
@@ -58,13 +74,14 @@ def build_media_job_config(
                 audio_stream=transcoder_types.AudioStream(
                     codec=audio_codec,
                     bitrate_bps=audio_bps,
-                    channel_count=2,
-                    channel_layout=["fl", "fr"],
-                    sample_rate_hertz=48000,
+                    channel_count=channel_count,
+                    channel_layout=channel_layout,
+                    sample_rate_hertz=sample_rate,
                 ),
             )
         )
 
+        file_label = "media_dialog" if dialog_mode else "media_audio"
         audio_ext = "m4a" if audio_format == "aac" else audio_format
         audio_container = "mp4" if audio_format == "aac" else audio_format
         mux_streams.append(
@@ -72,7 +89,7 @@ def build_media_job_config(
                 key="audio-mux",
                 container=audio_container,
                 elementary_streams=["audio-stream0"],
-                file_name=f"media_audio.{audio_ext}",
+                file_name=f"{file_label}.{audio_ext}",
             )
         )
 

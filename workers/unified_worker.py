@@ -157,15 +157,23 @@ class UnifiedWorker:
                 except Exception:
                     results_data["compressed_size_bytes"] = 0
 
-            if config_dict.get("extract_audio", True):
+            if config_dict.get("extract_audio", True) or config_dict.get("dialog_mode", False):
                 audio_format = config_dict.get("audio_format", "aac")
                 audio_ext = "m4a" if audio_format == "aac" else audio_format
-                audio_path = f"{output_prefix}media_audio.{audio_ext}"
+                is_dialog = config_dict.get("dialog_mode", False)
+                file_label = "media_dialog" if is_dialog else "media_audio"
+                audio_path = f"{output_prefix}{file_label}.{audio_ext}"
                 results_data["audio_path"] = audio_path
+                if is_dialog:
+                    results_data["dialog_mode"] = True
+                    # Dialog mode also produces a vocals_path for the scene analysis picker
+                    results_data["vocals_path"] = audio_path
 
                 try:
                     meta = self.storage.get_file_metadata(audio_path)
                     results_data["audio_size_bytes"] = meta.get("size", 0)
+                    if is_dialog:
+                        results_data["vocals_size_bytes"] = meta.get("size", 0)
                 except Exception:
                     results_data["audio_size_bytes"] = 0
 
@@ -238,6 +246,7 @@ class UnifiedWorker:
             extract_audio=config_dict.get("extract_audio", True),
             audio_format=config_dict.get("audio_format", "aac"),
             audio_bitrate=config_dict.get("audio_bitrate", "128k"),
+            dialog_mode=config_dict.get("dialog_mode", False),
         )
 
         # Update job to TRANSCODING state with reference

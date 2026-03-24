@@ -1,7 +1,8 @@
 """Scene operations mixin for FirestoreDB."""
 
 import logging
-from typing import Optional, Dict, Any, List
+from datetime import datetime
+from typing import Optional, Dict, Any, List, Tuple
 from google.cloud import firestore
 
 from .enums import SceneJobStatus
@@ -182,6 +183,39 @@ class ScenesMixin:
         query = self.scene_jobs.where("status", "==", SceneJobStatus.PENDING).limit(limit)
         jobs = [doc.to_dict() for doc in query.stream()]
         return sorted(jobs, key=lambda x: x.get("created_at", 0))
+
+    def list_scene_jobs_paginated(
+        self,
+        limit: int = 10,
+        cursor: Optional[datetime] = None,
+        status: Optional[SceneJobStatus] = None,
+    ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+        """List scene jobs with cursor-based pagination.
+
+        Returns (items, next_cursor) where next_cursor is an ISO timestamp string or None.
+        """
+        query = self.scene_jobs
+
+        if status:
+            query = query.where("status", "==", status)
+
+        query = query.order_by("created_at", direction=firestore.Query.DESCENDING)
+
+        if cursor:
+            query = query.start_after({"created_at": cursor})
+
+        query = query.limit(limit + 1)
+        docs = [doc.to_dict() for doc in query.stream()]
+
+        has_more = len(docs) > limit
+        items = docs[:limit]
+        next_cursor = None
+        if has_more and items:
+            last_created = items[-1].get("created_at")
+            if last_created:
+                next_cursor = last_created.isoformat() if hasattr(last_created, "isoformat") else str(last_created)
+
+        return items, next_cursor
 
     def delete_scene_job(self, job_id: str) -> None:
         """Delete a scene job."""

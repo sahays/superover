@@ -48,6 +48,7 @@ async def create_prompt(request: CreatePromptRequest):
             name=request.name,
             type=request.type,
             prompt_text=request.prompt_text,
+            schema_name=request.schema_name,
             supports_context=request.supports_context,
             context_description=request.context_description,
             required_context_types=request.required_context_types,
@@ -83,18 +84,33 @@ async def list_category_schemas():
         )
 
 
+@router.get("/schemas/{category}", response_model=List[CategorySchemaResponse])
+async def list_schemas_for_category(category: str):
+    """List all named schemas for a category."""
+    try:
+        db = get_db()
+        schemas = db.list_schemas_for_category(category)
+        return [CategorySchemaResponse(**s) for s in schemas]
+    except Exception as e:
+        logger.error(f"Failed to list schemas for category '{category}': {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list schemas: {str(e)}",
+        )
+
+
 @router.put("/schemas/{category}", response_model=CategorySchemaResponse)
 async def set_category_schema(category: str, request: SetCategorySchemaRequest):
-    """Set or update the JSON response schema for a prompt category.
+    """Set or update a named JSON response schema for a prompt category.
 
-    Pass response_schema=null to make the category free text (no structured output).
+    Pass response_schema=null to make the schema free text (no structured output).
     """
     try:
         db = get_db()
-        schema_doc = db.set_category_schema(category, request.response_schema)
+        schema_doc = db.set_category_schema(category, request.response_schema, request.schema_name)
         return CategorySchemaResponse(**schema_doc)
     except Exception as e:
-        logger.error(f"Failed to set category schema for '{category}': {e}")
+        logger.error(f"Failed to set category schema for '{category}/{request.schema_name}': {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to set category schema: {str(e)}",
@@ -102,22 +118,22 @@ async def set_category_schema(category: str, request: SetCategorySchemaRequest):
 
 
 @router.delete("/schemas/{category}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_category_schema(category: str):
-    """Delete the response schema for a prompt category (reverts to free text)."""
+async def delete_category_schema(category: str, schema_name: str = "default"):
+    """Delete a named response schema for a prompt category."""
     try:
         db = get_db()
-        existing = db.get_category_schema(category)
+        existing = db.get_category_schema(category, schema_name)
         if not existing:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No schema found for category: {category}",
+                detail=f"No schema found for category: {category}/{schema_name}",
             )
-        db.delete_category_schema(category)
+        db.delete_category_schema(category, schema_name)
         return None
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to delete category schema for '{category}': {e}")
+        logger.error(f"Failed to delete category schema for '{category}/{schema_name}': {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete category schema: {str(e)}",
@@ -161,6 +177,7 @@ async def update_prompt(prompt_id: str, request: UpdatePromptRequest):
                 request.name is None,
                 request.type is None,
                 request.prompt_text is None,
+                request.schema_name is None,
                 request.supports_context is None,
                 request.context_description is None,
                 request.required_context_types is None,
@@ -177,6 +194,7 @@ async def update_prompt(prompt_id: str, request: UpdatePromptRequest):
             name=request.name,
             type=request.type,
             prompt_text=request.prompt_text,
+            schema_name=request.schema_name,
             supports_context=request.supports_context,
             context_description=request.context_description,
             required_context_types=request.required_context_types,

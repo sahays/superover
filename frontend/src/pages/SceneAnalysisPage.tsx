@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Video as VideoIcon, FileVideo } from 'lucide-react'
+import { Video as VideoIcon, FileVideo, ChevronDown } from 'lucide-react'
 import { videoApi, sceneJobApi } from '@/lib/api-client'
 import { SceneJob, SceneJobStatus, ContextItem } from '@/lib/types'
 import type { SelectedVideoState } from '@/components/video-picker'
@@ -16,20 +16,36 @@ export default function SceneAnalysisPage() {
   const [promptTypeFilter, setPromptTypeFilter] = useState('all')
   const [videoFilenames, setVideoFilenames] = useState<Record<string, string>>({})
 
-  const { data: sceneJobs, isLoading, refetch } = useQuery<SceneJob[]>({
+  const {
+    data: sceneJobsData,
+    isLoading,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ['scene-jobs'],
-    queryFn: () => sceneJobApi.listJobs(),
+    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
+      sceneJobApi.listJobs(10, undefined, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     refetchInterval: (query) => {
       const activeStatuses = [
         SceneJobStatus.PENDING,
         SceneJobStatus.PROCESSING,
       ]
-      const hasActiveJobs = query.state.data?.some(
+      const allJobs = query.state.data?.pages.flatMap((p) => p.items) ?? []
+      const hasActiveJobs = allJobs.some(
         (job: SceneJob) => activeStatuses.includes(job.status)
       )
       return hasActiveJobs ? 3000 : false
     },
   })
+
+  const sceneJobs = useMemo(
+    () => sceneJobsData?.pages.flatMap((p) => p.items) as SceneJob[] | undefined,
+    [sceneJobsData]
+  )
 
   // Batch-fetch video filenames for all jobs
   useEffect(() => {
@@ -245,6 +261,22 @@ export default function SceneAnalysisPage() {
                       />
                     ))}
                   </div>
+                  {hasNextPage && (
+                    <div className="mt-6 text-center">
+                      <Button
+                        variant="outline"
+                        onClick={() => fetchNextPage()}
+                        disabled={isFetchingNextPage}
+                      >
+                        {isFetchingNextPage ? 'Loading...' : (
+                          <>
+                            <ChevronDown className="mr-2 h-4 w-4" />
+                            Load More
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ) : (

@@ -121,11 +121,11 @@ export const videoApi = {
 
 // Scene job endpoints
 export const sceneJobApi = {
-  listJobs: async (limit = 50, status?: string) => {
+  listJobs: async (limit = 10, status?: string, cursor?: string) => {
     const response = await apiClient.get('/api/scenes/jobs', {
-      params: { limit, status_filter: status },
+      params: { limit, status_filter: status, cursor },
     })
-    return response.data
+    return response.data as { items: any[]; next_cursor: string | null; has_more: boolean }
   },
 
   getJob: async (jobId: string) => {
@@ -195,11 +195,16 @@ export const mediaApi = {
     return response.data
   },
 
-  listVideos: async (limit = 50) => {
+  getDownloadUrl: async (jobId: string, fileType: 'audio' | 'video' | 'vocals') => {
+    const response = await apiClient.get(`/api/media/jobs/${jobId}/download/${fileType}`)
+    return response.data as { url: string; gcs_path: string }
+  },
+
+  listVideos: async (limit = 10, cursor?: string) => {
     const response = await apiClient.get('/api/media/videos', {
-      params: { limit },
+      params: { limit, cursor },
     })
-    return response.data
+    return response.data as { items: any[]; next_cursor: string | null; has_more: boolean }
   },
 }
 
@@ -272,13 +277,20 @@ export const promptApi = {
     return response.data
   },
 
-  setSchema: async (category: string, data: { response_schema: Record<string, unknown> | null }) => {
+  listSchemasForCategory: async (category: string) => {
+    const response = await apiClient.get(`/api/prompts/schemas/${category}`)
+    return response.data
+  },
+
+  setSchema: async (category: string, data: { schema_name?: string; response_schema: Record<string, unknown> | null }) => {
     const response = await apiClient.put(`/api/prompts/schemas/${category}`, data)
     return response.data
   },
 
-  deleteSchema: async (category: string) => {
-    const response = await apiClient.delete(`/api/prompts/schemas/${category}`)
+  deleteSchema: async (category: string, schemaName: string = 'default') => {
+    const response = await apiClient.delete(`/api/prompts/schemas/${category}`, {
+      params: { schema_name: schemaName },
+    })
     return response.data
   },
 }

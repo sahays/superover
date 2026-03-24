@@ -75,6 +75,18 @@ export function PromptFormDialog({
             {formErrors.type && <p className="text-sm text-red-500">{formErrors.type}</p>}
           </div>
           <div className="space-y-2">
+            <Label htmlFor="schema_name">Schema Name</Label>
+            <Input
+              id="schema_name"
+              placeholder="default (leave empty to use category default)"
+              value={formData.schema_name || ''}
+              onChange={(e) => onFormChange({ ...formData, schema_name: e.target.value || undefined })}
+            />
+            <p className="text-xs text-muted-foreground">
+              Links this prompt to a specific named schema variant for its category
+            </p>
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="prompt_text">Prompt Text <span className="text-red-500">*</span></Label>
             <Textarea
               id="prompt_text"

@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
-import { Upload, Video as VideoIcon, Settings, Music } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { useInfiniteQuery, useQuery, useMutation } from '@tanstack/react-query'
+import { Upload, Video as VideoIcon, Settings, Music, ChevronDown } from 'lucide-react'
 import { mediaApi } from '@/lib/api-client'
 import { UploadVideo } from '@/components/upload-video'
 import { Button } from '@/components/ui/button'
@@ -15,13 +15,28 @@ export default function MediaProcessingPage() {
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null)
   const [showProcessDialog, setShowProcessDialog] = useState(false)
 
-  const { data: videos, isLoading: videosLoading, refetch: refetchVideos } = useQuery({
+  const {
+    data: videosData,
+    isLoading: videosLoading,
+    refetch: refetchVideos,
+    fetchNextPage: fetchNextVideos,
+    hasNextPage: hasNextVideos,
+    isFetchingNextPage: isFetchingNextVideos,
+  } = useInfiniteQuery({
     queryKey: ['media-videos'],
-    queryFn: () => mediaApi.listVideos(),
+    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
+      mediaApi.listVideos(10, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   })
 
+  const videos = useMemo(
+    () => videosData?.pages.flatMap((p) => p.items) as any[] | undefined,
+    [videosData]
+  )
+
   const { data: allMediaJobs, refetch: refetchJobs } = useQuery({
-    queryKey: ['all-media-jobs'],
+    queryKey: ['all-media-jobs', videos?.map((v: any) => v.video_id)],
     queryFn: async () => {
       if (!videos || videos.length === 0) return []
 
@@ -183,6 +198,23 @@ export default function MediaProcessingPage() {
                         </Card>
                       )
                     })}
+                    {hasNextVideos && (
+                      <Card className="flex items-center justify-center">
+                        <Button
+                          variant="outline"
+                          onClick={() => fetchNextVideos()}
+                          disabled={isFetchingNextVideos}
+                          className="m-4"
+                        >
+                          {isFetchingNextVideos ? 'Loading...' : (
+                            <>
+                              <ChevronDown className="mr-2 h-4 w-4" />
+                              Load More
+                            </>
+                          )}
+                        </Button>
+                      </Card>
+                    )}
                   </div>
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">
