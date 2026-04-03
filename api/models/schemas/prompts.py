@@ -1,8 +1,10 @@
 """Prompt management schemas."""
 
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, Field, validator
+
+RESPONSE_TYPES = ["free_text", "structured_json"]
 
 
 PROMPT_TYPES = [
@@ -28,6 +30,8 @@ class PromptResponse(BaseModel):
     required_context_types: Optional[List[str]] = None
     max_context_items: Optional[int] = 5
     schema_name: Optional[str] = None
+    response_type: Optional[str] = None
+    response_schema: Optional[Dict[str, Any]] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     jobs_count: Optional[int] = 0
@@ -51,11 +55,25 @@ class CreatePromptRequest(BaseModel):
         None, description="List of required context types (text, image, video, audio)"
     )
     max_context_items: int = Field(5, description="Maximum number of context items allowed")
+    response_type: Optional[str] = Field(None, description="Response type: 'free_text' or 'structured_json'")
+    response_schema: Optional[Dict[str, Any]] = Field(None, description="JSON schema for structured output")
 
     @validator("type")
     def validate_type(cls, v):
         if v not in PROMPT_TYPES:
             raise ValueError(f"Type must be one of: {', '.join(PROMPT_TYPES)}")
+        return v
+
+    @validator("response_type")
+    def validate_response_type(cls, v):
+        if v is not None and v not in RESPONSE_TYPES:
+            raise ValueError(f"response_type must be one of: {', '.join(RESPONSE_TYPES)}")
+        return v
+
+    @validator("response_schema")
+    def validate_response_schema(cls, v, values):
+        if values.get("response_type") == "structured_json" and not v:
+            raise ValueError("response_schema is required when response_type is 'structured_json'")
         return v
 
 
@@ -75,9 +93,17 @@ class UpdatePromptRequest(BaseModel):
     context_description: Optional[str] = Field(None, description="Description of what context is expected")
     required_context_types: Optional[List[str]] = Field(None, description="List of required context types")
     max_context_items: Optional[int] = Field(None, description="Maximum number of context items allowed")
+    response_type: Optional[str] = Field(None, description="Response type: 'free_text' or 'structured_json'")
+    response_schema: Optional[Dict[str, Any]] = Field(None, description="JSON schema for structured output")
 
     @validator("type")
     def validate_type(cls, v):
         if v is not None and v not in PROMPT_TYPES:
             raise ValueError(f"Type must be one of: {', '.join(PROMPT_TYPES)}")
+        return v
+
+    @validator("response_type")
+    def validate_response_type(cls, v):
+        if v is not None and v not in RESPONSE_TYPES:
+            raise ValueError(f"response_type must be one of: {', '.join(RESPONSE_TYPES)}")
         return v

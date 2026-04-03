@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { toast } from 'sonner'
+import { useAuthStore } from '@/store/useAuthStore'
 
 export const apiClient = axios.create({
   baseURL: '',
@@ -8,10 +9,22 @@ export const apiClient = axios.create({
   },
 })
 
-// Global 429 rate limit handler
+// Attach X-Invite-Code header to every request
+apiClient.interceptors.request.use((config) => {
+  const code = useAuthStore.getState().inviteCode
+  if (code) {
+    config.headers['X-Invite-Code'] = code
+  }
+  return config
+})
+
+// Global error handler: 401/403 auto-logout + 429 rate limit
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      useAuthStore.getState().logout()
+    }
     if (error.response?.status === 429) {
       const data = error.response.data?.detail || error.response.data
       const retryMinutes = Math.ceil((data?.retry_after || 600) / 60)
@@ -257,12 +270,30 @@ export const promptApi = {
     return response.data
   },
 
-  createPrompt: async (data: { name: string; type: string; prompt_text: string }) => {
+  createPrompt: async (data: {
+    name: string
+    type: string
+    prompt_text: string
+    schema_name?: string
+    supports_context?: boolean
+    context_description?: string
+    response_type?: string | null
+    response_schema?: Record<string, unknown> | null
+  }) => {
     const response = await apiClient.post('/api/prompts', data)
     return response.data
   },
 
-  updatePrompt: async (promptId: string, data: { name?: string; type?: string; prompt_text?: string }) => {
+  updatePrompt: async (promptId: string, data: {
+    name?: string
+    type?: string
+    prompt_text?: string
+    schema_name?: string
+    supports_context?: boolean
+    context_description?: string
+    response_type?: string | null
+    response_schema?: Record<string, unknown> | null
+  }) => {
     const response = await apiClient.put(`/api/prompts/${promptId}`, data)
     return response.data
   },
@@ -348,6 +379,47 @@ export const brandingApi = {
   updateBranding: async (data: { app_title?: string; subtitle?: string; logo_url?: string }) => {
     const response = await apiClient.put('/api/branding', data)
     return response.data
+  },
+}
+
+// Auth endpoints
+export const authApi = {
+  validate: async (code: string) => {
+    const response = await apiClient.post('/api/auth/validate', { code })
+    return response.data as { valid: boolean; is_master: boolean }
+  },
+
+  listCodes: async () => {
+    const response = await apiClient.get('/api/auth/codes')
+    return response.data
+  },
+
+  createCode: async (data: {
+    code: string
+    label?: string
+    expires_at?: string | null
+  }) => {
+    const response = await apiClient.post('/api/auth/codes', data)
+    return response.data
+  },
+
+  updateCode: async (codeId: string, data: { label?: string }) => {
+    const response = await apiClient.patch(`/api/auth/codes/${codeId}`, data)
+    return response.data
+  },
+
+  revokeCode: async (codeId: string) => {
+    const response = await apiClient.post(`/api/auth/codes/${codeId}/revoke`)
+    return response.data
+  },
+
+  activateCode: async (codeId: string) => {
+    const response = await apiClient.post(`/api/auth/codes/${codeId}/activate`)
+    return response.data
+  },
+
+  deleteCode: async (codeId: string) => {
+    await apiClient.delete(`/api/auth/codes/${codeId}`)
   },
 }
 

@@ -1,4 +1,5 @@
-import { Download, FileJson, FileSpreadsheet } from 'lucide-react'
+import { Download, FileJson, FileSpreadsheet, ExternalLink } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Accordion } from '@/components/ui/accordion'
@@ -11,6 +12,7 @@ interface SceneResultsCardProps {
   downloadAsJSON: () => void
   downloadAsCSV: () => void
   downloadAsSRT: () => void
+  jobId?: string
 }
 
 export function SceneResultsCard({
@@ -19,6 +21,7 @@ export function SceneResultsCard({
   downloadAsJSON,
   downloadAsCSV,
   downloadAsSRT,
+  jobId,
 }: SceneResultsCardProps) {
   return (
     <Card>
@@ -36,6 +39,15 @@ export function SceneResultsCard({
               )}
             </CardDescription>
           </div>
+          <div className="flex items-center gap-2">
+          {jobId && (
+            <Button asChild variant="outline" size="sm">
+              <Link to={`/scene/${jobId}/results`}>
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Full View
+              </Link>
+            </Button>
+          )}
           {isSubtitleJob ? (
             <Button variant="outline" size="sm" onClick={downloadAsSRT}>
               <Download className="mr-2 h-4 w-4" />
@@ -61,6 +73,7 @@ export function SceneResultsCard({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>

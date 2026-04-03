@@ -75,18 +75,6 @@ export function PromptFormDialog({
             {formErrors.type && <p className="text-sm text-red-500">{formErrors.type}</p>}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="schema_name">Schema Name</Label>
-            <Input
-              id="schema_name"
-              placeholder="default (leave empty to use category default)"
-              value={formData.schema_name || ''}
-              onChange={(e) => onFormChange({ ...formData, schema_name: e.target.value || undefined })}
-            />
-            <p className="text-xs text-muted-foreground">
-              Links this prompt to a specific named schema variant for its category
-            </p>
-          </div>
-          <div className="space-y-2">
             <Label htmlFor="prompt_text">Prompt Text <span className="text-red-500">*</span></Label>
             <Textarea
               id="prompt_text"
@@ -101,6 +89,44 @@ export function PromptFormDialog({
               {formData.prompt_text.length.toLocaleString()} / 50,000 characters
             </p>
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="response_type">Response Type</Label>
+            <Select
+              value={formData.response_type || 'structured_json'}
+              onValueChange={(value) => onFormChange({
+                ...formData,
+                response_type: value,
+                response_schema_json: value !== 'structured_json' ? '' : formData.response_schema_json,
+              })}
+            >
+              <SelectTrigger id="response_type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="structured_json">Structured JSON</SelectItem>
+                <SelectItem value="free_text">Free Text</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {formData.response_type === 'structured_json' && (
+            <div className="space-y-2">
+              <Label htmlFor="response_schema_json">JSON Schema <span className="text-red-500">*</span></Label>
+              <Textarea
+                id="response_schema_json"
+                placeholder='{"type": "object", "properties": {...}}'
+                value={formData.response_schema_json || ''}
+                onChange={(e) => onFormChange({ ...formData, response_schema_json: e.target.value })}
+                rows={8}
+                className={`font-mono text-sm ${formErrors.response_schema_json ? 'border-red-500' : ''}`}
+              />
+              {formErrors.response_schema_json && (
+                <p className="text-sm text-red-500">{formErrors.response_schema_json}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                This schema overrides any category-level schema for this prompt.
+              </p>
+            </div>
+          )}
           <div className="space-y-3 rounded-lg border p-4">
             <div className="flex items-center space-x-2">
               <Checkbox

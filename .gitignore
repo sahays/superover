@@ -61,5 +61,10 @@ frontend/dist/
 frontend/.next/
 *.tsbuildinfo
 
+# Playwright
+frontend/e2e/.auth/
+frontend/e2e/test-results/
+frontend/e2e/screenshots/
+
 # v0 (old version)
 gemini-key

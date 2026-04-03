@@ -48,6 +48,13 @@ from .branding import (
     BrandingResponse,
     UpdateBrandingRequest,
 )
+from .auth import (
+    ValidateCodeRequest,
+    ValidateCodeResponse,
+    InviteCodeResponse,
+    CreateInviteCodeRequest,
+    UpdateInviteCodeRequest,
+)
 from .search import (
     SyncStatusItem,
     SyncRequest,
@@ -110,4 +117,10 @@ __all__ = [
     "InVideoSearchResult",
     "SearchRecommendation",
     "CuratedSearchResponse",
+    # Auth
+    "ValidateCodeRequest",
+    "ValidateCodeResponse",
+    "InviteCodeResponse",
+    "CreateInviteCodeRequest",
+    "UpdateInviteCodeRequest",
 ]

@@ -209,10 +209,20 @@ def register_job_routes(router: APIRouter) -> None:
                     detail=f"Prompt not found: {body.prompt_id}. Please select a valid prompt.",
                 )
 
-            prompt_category = prompt.get("type", "custom")
-            schema_name = prompt.get("schema_name", "default")
-            category_schema_doc = db.get_category_schema(prompt_category, schema_name)
-            response_schema = category_schema_doc.get("response_schema") if category_schema_doc else None
+            # Resolve response schema: prompt-level takes priority over category-level
+            prompt_response_type = prompt.get("response_type")
+            if prompt_response_type == "structured_json" and prompt.get("response_schema"):
+                response_schema = prompt["response_schema"]
+                logger.info("Using prompt-level structured JSON schema")
+            elif prompt_response_type == "free_text":
+                response_schema = None
+                logger.info("Prompt explicitly set to free text (no schema)")
+            else:
+                # Default: fall back to category-level schema
+                prompt_category = prompt.get("type", "custom")
+                schema_name = prompt.get("schema_name", "default")
+                category_schema_doc = db.get_category_schema(prompt_category, schema_name)
+                response_schema = category_schema_doc.get("response_schema") if category_schema_doc else None
 
             job_id = str(uuid.uuid4())
 

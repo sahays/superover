@@ -53,6 +53,8 @@ async def create_prompt(request: CreatePromptRequest):
             context_description=request.context_description,
             required_context_types=request.required_context_types,
             max_context_items=request.max_context_items,
+            response_type=request.response_type,
+            response_schema=request.response_schema,
         )
         prompt_data["jobs_count"] = 0  # New prompt has no jobs yet
         return PromptResponse(**prompt_data)
@@ -182,6 +184,8 @@ async def update_prompt(prompt_id: str, request: UpdatePromptRequest):
                 request.context_description is None,
                 request.required_context_types is None,
                 request.max_context_items is None,
+                request.response_type is None,
+                request.response_schema is None,
             ]
         ):
             raise HTTPException(
@@ -199,6 +203,8 @@ async def update_prompt(prompt_id: str, request: UpdatePromptRequest):
             context_description=request.context_description,
             required_context_types=request.required_context_types,
             max_context_items=request.max_context_items,
+            response_type=request.response_type,
+            response_schema=request.response_schema,
         )
 
         if not updated_prompt:

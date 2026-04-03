@@ -203,6 +203,8 @@ export const promptSchema = z.object({
   type: z.string(),
   prompt_text: z.string(),
   schema_name: z.string().nullable().optional(),
+  response_type: z.enum(['free_text', 'structured_json']).nullable().optional(),
+  response_schema: z.record(z.any()).nullable().optional(),
   supports_context: z.boolean().default(false),
   context_description: z.string().optional(),
   required_context_types: z.array(z.string()).optional(),

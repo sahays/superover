@@ -1,4 +1,5 @@
-import { Edit2, Trash2, Paperclip } from 'lucide-react'
+import { Edit2, Eye, Trash2, Paperclip } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PROMPT_TYPE_OPTIONS } from '@/lib/prompt-constants'
@@ -6,12 +7,12 @@ import type { Prompt } from '@/lib/types'
 
 interface PromptCardProps {
   prompt: Prompt
-  onEdit: (prompt: Prompt) => void
-  onDelete: (prompt: Prompt) => void
-  isDeleting: boolean
+  onDelete?: (prompt: Prompt) => void
+  isDeleting?: boolean
+  showActions?: boolean
 }
 
-export function PromptCard({ prompt, onEdit, onDelete, isDeleting }: PromptCardProps) {
+export function PromptCard({ prompt, onDelete, isDeleting, showActions = true }: PromptCardProps) {
   return (
     <Card className="flex flex-col">
       <CardHeader>
@@ -29,6 +30,7 @@ export function PromptCard({ prompt, onEdit, onDelete, isDeleting }: PromptCardP
               {PROMPT_TYPE_OPTIONS.find(opt => opt.value === prompt.type)?.label || prompt.type}
               {' • '}
               {prompt.jobs_count || 0} job(s)
+              {prompt.response_type && ` • ${prompt.response_type === 'structured_json' ? 'JSON' : 'Free text'}`}
             </CardDescription>
           </div>
         </div>
@@ -44,14 +46,18 @@ export function PromptCard({ prompt, onEdit, onDelete, isDeleting }: PromptCardP
         )}
       </CardContent>
       <CardContent className="flex justify-end gap-2 border-t pt-4">
-        <Button variant="outline" size="sm" onClick={() => onEdit(prompt)}>
-          <Edit2 className="mr-2 h-4 w-4" />
-          Edit
+        <Button asChild variant="outline" size="sm">
+          <Link to={`/prompts/${prompt.prompt_id}`}>
+            {showActions ? <Edit2 className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
+            {showActions ? 'Edit' : 'View'}
+          </Link>
         </Button>
-        <Button variant="outline" size="sm" onClick={() => onDelete(prompt)} disabled={isDeleting}>
-          <Trash2 className="mr-2 h-4 w-4" />
-          Delete
-        </Button>
+        {showActions && onDelete && (
+          <Button variant="outline" size="sm" onClick={() => onDelete(prompt)} disabled={isDeleting}>
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete
+          </Button>
+        )}
       </CardContent>
     </Card>
   )

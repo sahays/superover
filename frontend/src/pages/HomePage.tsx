@@ -1,4 +1,4 @@
-import { Film, Sparkles, ArrowRight, BotMessageSquare } from 'lucide-react'
+import { Film, Sparkles, ArrowRight, BotMessageSquare, Search } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -97,10 +97,7 @@ export default function HomePage() {
             </Link>
           </CardContent>
         </Card>
-      </div>
-
-      {/* Prompt Management Card */}
-      <div className="max-w-5xl mx-auto mt-8">
+        {/* Prompt Management Workflow */}
         <Card className="card-interactive relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-teal-500/20 to-transparent rounded-bl-full" />
           <CardHeader>
@@ -114,10 +111,25 @@ export default function HomePage() {
               Configure the prompts used by the Gemini AI models
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground mb-4">
-              Centrally manage the prompts for different analysis types to ensure consistency and allow for easy experimentation and tuning.
-            </p>
+          <CardContent className="space-y-4">
+            <ul className="space-y-3 text-sm text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <ArrowRight className="h-4 w-4 mt-0.5 text-teal-500 flex-shrink-0" />
+                <span>Create and edit analysis prompt templates</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <ArrowRight className="h-4 w-4 mt-0.5 text-teal-500 flex-shrink-0" />
+                <span>Configure response types and JSON schemas</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <ArrowRight className="h-4 w-4 mt-0.5 text-teal-500 flex-shrink-0" />
+                <span>Manage category-level schema defaults</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <ArrowRight className="h-4 w-4 mt-0.5 text-teal-500 flex-shrink-0" />
+                <span>Experiment and tune for better results</span>
+              </li>
+            </ul>
             <Link to="/prompts" className="block">
               <Button className="w-full mt-4 btn-press" size="lg" variant="outline">
                 Manage Prompts
@@ -126,9 +138,49 @@ export default function HomePage() {
             </Link>
           </CardContent>
         </Card>
+
+        {/* Search Workflow */}
+        <Card className="card-interactive relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-violet-500/20 to-transparent rounded-bl-full" />
+          <CardHeader>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-300">
+                <Search className="h-6 w-6" />
+              </div>
+              <CardTitle className="text-2xl font-heading">Search</CardTitle>
+            </div>
+            <CardDescription className="text-base">
+              Semantic video search powered by Gemini
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ul className="space-y-3 text-sm text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <ArrowRight className="h-4 w-4 mt-0.5 text-violet-500 flex-shrink-0" />
+                <span>Search videos with natural language queries</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <ArrowRight className="h-4 w-4 mt-0.5 text-violet-500 flex-shrink-0" />
+                <span>Gemini interprets and understands your intent</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <ArrowRight className="h-4 w-4 mt-0.5 text-violet-500 flex-shrink-0" />
+                <span>BigQuery vector search for fast results</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <ArrowRight className="h-4 w-4 mt-0.5 text-violet-500 flex-shrink-0" />
+                <span>Relevance-ranked matches with clip previews</span>
+              </li>
+            </ul>
+            <Link to="/search" className="block">
+              <Button className="w-full mt-4 btn-press" size="lg" variant="outline">
+                Start Searching
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
       </div>
-
-
     </div>
   )
 }

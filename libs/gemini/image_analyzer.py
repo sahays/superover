@@ -5,20 +5,14 @@ Authentication via ADC — no API key needed on Cloud Run.
 """
 
 import logging
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, List
 from google import genai
 from google.genai import types
-from google.api_core import exceptions as google_exceptions
 from config import settings
+from libs.gemini.common import model_name, retry_with_backoff, calculate_cost
 
 logger = logging.getLogger(__name__)
-
-
-def _model_name(name: str) -> str:
-    """Strip 'models/' prefix if present."""
-    return name.removeprefix("models/")
 
 
 class ImageAnalyzer:
@@ -31,52 +25,9 @@ class ImageAnalyzer:
             project=settings.gcp_project_id,
             location=settings.gemini_region,
         )
-        self.model_name = _model_name(settings.gemini_image_model)
+        self.model_name = model_name(settings.gemini_image_model)
         self.max_retries = max_retries
         self.base_delay = base_delay
-
-    def _retry_with_backoff(self, func, *args, **kwargs):
-        """Execute a function with exponential backoff retry logic."""
-        last_exception = None
-        for attempt in range(self.max_retries):
-            try:
-                return func(*args, **kwargs)
-            except (
-                google_exceptions.DeadlineExceeded,
-                google_exceptions.ServiceUnavailable,
-            ) as e:
-                last_exception = e
-                if attempt < self.max_retries - 1:
-                    delay = self.base_delay * (2**attempt)
-                    logger.warning(f"Attempt {attempt + 1} failed: {e}. Retrying in {delay:.1f}s...")
-                    time.sleep(delay)
-                else:
-                    logger.error("All retry attempts failed")
-            except Exception as e:
-                logger.error(f"Non-retryable error: {e}")
-                raise
-        raise last_exception
-
-    def _calculate_cost(self, usage_metadata) -> Dict[str, Any]:
-        """Calculate cost based on token usage and model pricing."""
-        if not usage_metadata:
-            return {}
-
-        prompt_tokens = usage_metadata.prompt_token_count
-        candidates_tokens = usage_metadata.candidates_token_count
-
-        input_rate = 0.0025  # per 1k tokens (placeholder)
-        output_rate = 0.0050
-
-        input_cost = (prompt_tokens / 1000) * input_rate
-        output_cost = (candidates_tokens / 1000) * output_rate
-        cost = input_cost + output_cost
-
-        return {
-            "input_tokens": prompt_tokens,
-            "output_tokens": candidates_tokens,
-            "estimated_cost_usd": round(cost, 6),
-        }
 
     def generate_adapt(
         self,
@@ -98,7 +49,7 @@ class ImageAnalyzer:
 
             image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
 
-            response = self._retry_with_backoff(
+            response = retry_with_backoff(
                 self.client.models.generate_content,
                 model=self.model_name,
                 contents=[full_prompt, image_part],
@@ -106,6 +57,8 @@ class ImageAnalyzer:
                     max_output_tokens=settings.gemini_image_output_tokens,
                     temperature=settings.gemini_temperature,
                 ),
+                max_retries=self.max_retries,
+                base_delay=self.base_delay,
             )
 
             if not response.candidates or not response.candidates[0].content.parts:
@@ -131,7 +84,7 @@ class ImageAnalyzer:
 
             usage_stats = {}
             if response.usage_metadata:
-                usage_stats = self._calculate_cost(response.usage_metadata)
+                usage_stats = calculate_cost(response.usage_metadata, settings.gemini_image_model)
 
             return {
                 "image_bytes": generated_image_bytes,

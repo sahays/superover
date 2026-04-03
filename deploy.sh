@@ -92,7 +92,8 @@ GEMINI_IMAGE_MODEL=${GEMINI_IMAGE_MODEL:-gemini-3-pro-image-preview},\
 GEMINI_IMAGE_OUTPUT_TOKENS=${GEMINI_IMAGE_OUTPUT_TOKENS:-32768},\
 GEMINI_SEARCH_MODEL=${GEMINI_SEARCH_MODEL:-gemini-3.1-flash-lite-preview},\
 GEMINI_SEARCH_OUTPUT_TOKENS=${GEMINI_SEARCH_OUTPUT_TOKENS:-8192},\
-TRANSCODER_LOCATION=${TRANSCODER_LOCATION:-asia-south1}"
+TRANSCODER_LOCATION=${TRANSCODER_LOCATION:-asia-south1},\
+MASTER_INVITE_CODE=${MASTER_INVITE_CODE:-}"
 
 
 # ── Helpers ──────────────────────────────────────────────
@@ -191,6 +192,29 @@ if [ "$DEPLOY_WORKER" = true ]; then
         --memory 8Gi \
         --timeout 3600 \
         --no-cpu-throttling
+fi
+
+# ── 3. Clean up old revisions (keep latest 3) ─────────
+cleanup_revisions() {
+    local service="$1"
+    local old=$(gcloud run revisions list --service "$service" \
+        --region "$REGION" --format="value(name)" 2>/dev/null | tail -n +4)
+    if [ -z "$old" ]; then
+        echo "   No old revisions to clean up for $service"
+        return
+    fi
+    local count=$(echo "$old" | wc -l)
+    echo ">> Cleaning up $count old revision(s) for $service..."
+    echo "$old" | xargs -P 10 -I {} \
+        gcloud run revisions delete {} --region "$REGION" --quiet 2>/dev/null
+    echo "   Done"
+}
+
+if [ "$DEPLOY_API" = true ]; then
+    cleanup_revisions "$SN-frontend"
+fi
+if [ "$DEPLOY_WORKER" = true ]; then
+    cleanup_revisions "$SN-worker"
 fi
 
 # ── Summary ──────────────────────────────────────────────

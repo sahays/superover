@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { MediaJobStatus, ImageJobStatus } from '@/lib/types'
 import { CreateAdapts } from '@/components/images/create-adapts'
+import { useAuthStore } from '@/store/useAuthStore'
 import { AdaptResults } from '@/components/images/adapt-results'
 import { getMediaStatusBadge } from '@/lib/media-status'
 import { JobProgressSection } from '@/components/media/job-progress-section'
@@ -204,7 +205,7 @@ export default function MediaJobDetailPage() {
           )}
 
           {/* Actions */}
-          {job.status !== MediaJobStatus.PROCESSING && (
+          {useAuthStore.getState().isMaster && job.status !== MediaJobStatus.PROCESSING && (
             <Card>
               <CardContent className="pt-6">
                 <Button

@@ -2,13 +2,12 @@
 
 import json
 import logging
-import time
 
 from google import genai
 from google.genai import types
-from google.api_core import exceptions as google_exceptions
 
 from config import settings
+from libs.gemini.common import model_name, retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +41,6 @@ RESPONSE_SCHEMA = types.Schema(
 )
 
 
-def _model_name(name: str) -> str:
-    """Strip 'models/' prefix if present."""
-    return name.removeprefix("models/")
-
-
 def _is_simple_english(text: str) -> bool:
     """Check if text is ASCII-only and looks like simple English.
 
@@ -70,33 +64,9 @@ class SearchQueryInterpreter:
             project=settings.gcp_project_id,
             location=settings.gemini_region,
         )
-        self.model_name = _model_name(settings.gemini_search_model)
+        self.model_name = model_name(settings.gemini_search_model)
         self.max_retries = max_retries
         self.base_delay = base_delay
-
-    def _retry_with_backoff(self, func, *args, **kwargs):
-        """Execute a function with exponential backoff retry logic."""
-        last_exception = None
-
-        for attempt in range(self.max_retries):
-            try:
-                return func(*args, **kwargs)
-            except (
-                google_exceptions.DeadlineExceeded,
-                google_exceptions.ServiceUnavailable,
-            ) as e:
-                last_exception = e
-                if attempt < self.max_retries - 1:
-                    delay = self.base_delay * (2**attempt)
-                    logger.warning(f"Attempt {attempt + 1}/{self.max_retries} failed: {e}. Retrying in {delay:.1f}s...")
-                    time.sleep(delay)
-                else:
-                    logger.error(f"All {self.max_retries} retry attempts failed")
-            except Exception as e:
-                logger.error(f"Non-retryable error: {type(e).__name__}: {e}")
-                raise
-
-        raise last_exception
 
     def interpret_query(
         self,
@@ -129,7 +99,7 @@ class SearchQueryInterpreter:
             raise ValueError("Either text or audio must be provided")
 
         try:
-            response = self._retry_with_backoff(
+            response = retry_with_backoff(
                 self.client.models.generate_content,
                 model=self.model_name,
                 contents=contents,

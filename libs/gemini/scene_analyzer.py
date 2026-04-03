@@ -6,20 +6,14 @@ Authentication via ADC — no API key needed on Cloud Run.
 
 import logging
 import json
-import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 from google import genai
 from google.genai import types
-from google.api_core import exceptions as google_exceptions
 from config import settings
+from libs.gemini.common import model_name, retry_with_backoff, calculate_cost
 
 logger = logging.getLogger(__name__)
-
-
-def _model_name(name: str) -> str:
-    """Strip 'models/' prefix if present."""
-    return name.removeprefix("models/")
 
 
 def _guess_mime_type(path: str) -> str:
@@ -44,74 +38,9 @@ class SceneAnalyzer:
             project=settings.gcp_project_id,
             location=settings.gemini_region,
         )
-        self.model_name = _model_name(settings.gemini_default_model)
+        self.model_name = model_name(settings.gemini_default_model)
         self.max_retries = max_retries
         self.base_delay = base_delay
-
-    def _retry_with_backoff(self, func, *args, **kwargs):
-        """Execute a function with exponential backoff retry logic."""
-        last_exception = None
-
-        for attempt in range(self.max_retries):
-            try:
-                return func(*args, **kwargs)
-            except (
-                google_exceptions.DeadlineExceeded,
-                google_exceptions.ServiceUnavailable,
-            ) as e:
-                last_exception = e
-                if attempt < self.max_retries - 1:
-                    delay = self.base_delay * (2**attempt)
-                    logger.warning(
-                        f"Attempt {attempt + 1}/{self.max_retries} failed with {type(e).__name__}: {e}. "
-                        f"Retrying in {delay:.1f}s..."
-                    )
-                    time.sleep(delay)
-                else:
-                    logger.error(f"All {self.max_retries} retry attempts failed")
-            except Exception as e:
-                logger.error(f"Non-retryable error: {type(e).__name__}: {e}")
-                raise
-
-        raise last_exception
-
-    def _calculate_cost(self, usage_metadata) -> Dict[str, Any]:
-        """Calculate cost based on token usage and model pricing."""
-        if not usage_metadata:
-            return {}
-
-        prompt_tokens = usage_metadata.prompt_token_count
-        candidates_tokens = usage_metadata.candidates_token_count
-        total_tokens = usage_metadata.total_token_count
-
-        model_name = settings.gemini_default_model.lower()
-        input_rate = 0.0
-        output_rate = 0.0
-
-        if "gemini-3" in model_name:
-            input_rate = 2.00 if prompt_tokens <= 200000 else 4.00
-            output_rate = 12.00 if prompt_tokens <= 200000 else 18.00
-        elif "gemini-2.5" in model_name or "gemini-pro" in model_name:
-            input_rate = 1.25 if prompt_tokens <= 128000 else 2.50
-            output_rate = 5.00 if prompt_tokens <= 128000 else 10.00
-        elif "flash" in model_name:
-            input_rate = 0.10
-            output_rate = 0.40
-
-        input_cost = (prompt_tokens / 1_000_000) * input_rate
-        output_cost = (candidates_tokens / 1_000_000) * output_rate
-        cost = input_cost + output_cost
-
-        return {
-            "prompt_tokens": prompt_tokens,
-            "candidates_tokens": candidates_tokens,
-            "total_tokens": total_tokens,
-            "applied_input_rate": input_rate,
-            "applied_output_rate": output_rate,
-            "input_cost_usd": round(input_cost, 6),
-            "output_cost_usd": round(output_cost, 6),
-            "estimated_cost_usd": round(cost, 6),
-        }
 
     def analyze_chunk(
         self,
@@ -207,11 +136,13 @@ class SceneAnalyzer:
                         f"accumulated {len(accumulated_text)} chars so far"
                     )
 
-                response = self._retry_with_backoff(
+                response = retry_with_backoff(
                     self.client.models.generate_content,
                     model=self.model_name,
                     contents=call_contents,
                     config=types.GenerateContentConfig(**gen_config_kwargs),
+                    max_retries=self.max_retries,
+                    base_delay=self.base_delay,
                 )
 
                 # Check if response was blocked
@@ -234,7 +165,7 @@ class SceneAnalyzer:
 
                 # Accumulate token usage across continuations
                 if response.usage_metadata:
-                    iter_usage = self._calculate_cost(response.usage_metadata)
+                    iter_usage = calculate_cost(response.usage_metadata, settings.gemini_default_model)
                     if not total_usage_stats:
                         total_usage_stats = iter_usage.copy()
                     else:

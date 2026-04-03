@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     scene_processing_mode: str = "sequential"  # "sequential" or "parallel"
     max_gemini_workers: int = 10  # Max concurrent Gemini API calls in parallel mode
 
+    # Auth
+    master_invite_code: str = ""
+
     # Runtime
     port: int = 8080  # Cloud Run uses 8080 by default
 

@@ -113,6 +113,7 @@ export default function SceneDetailPage() {
                 downloadAsJSON={downloadAsJSON}
                 downloadAsCSV={downloadAsCSV}
                 downloadAsSRT={downloadAsSRT}
+                jobId={jobId}
               />
             )}
 

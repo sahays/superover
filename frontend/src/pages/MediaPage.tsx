@@ -9,8 +9,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { StartProcessing } from '@/components/media/start-processing'
 import { JobCard } from '@/components/media/job-card'
 import { formatBytes } from '@/lib/utils'
+import { useAuthStore } from '@/store/useAuthStore'
 
 export default function MediaProcessingPage() {
+  const { isMaster } = useAuthStore()
   const [showUpload, setShowUpload] = useState(false)
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null)
   const [showProcessDialog, setShowProcessDialog] = useState(false)
@@ -94,10 +96,12 @@ export default function MediaProcessingPage() {
           <h1 className="text-3xl font-bold font-heading">Media Processing</h1>
           <p className="text-muted-foreground mt-1">Video Compression & Audio Extraction</p>
         </div>
-        <Button onClick={() => setShowUpload(true)} size="lg">
-          <Upload className="mr-2 h-4 w-4" />
-          Upload Media
-        </Button>
+        {isMaster && (
+          <Button onClick={() => setShowUpload(true)} size="lg">
+            <Upload className="mr-2 h-4 w-4" />
+            Upload Media
+          </Button>
+        )}
       </div>
         {showUpload ? (
           <div className="mx-auto max-w-2xl">
@@ -190,6 +194,8 @@ export default function MediaProcessingPage() {
                               className="w-full"
                               size="sm"
                               onClick={() => handleStartProcessing(video.video_id)}
+                              disabled={!isMaster}
+                              title={!isMaster ? 'Master access required' : undefined}
                             >
                               <Settings className="mr-2 h-4 w-4" />
                               Process {mediaType}
@@ -238,7 +244,7 @@ export default function MediaProcessingPage() {
                         key={job.job_id}
                         job={job}
                         videoFilename={videoFilenameMap[job.video_id]}
-                        onDelete={(jobId) => deleteJobMutation.mutate(jobId)}
+                        onDelete={isMaster ? (jobId) => deleteJobMutation.mutate(jobId) : undefined}
                       />
                     ))}
                   </div>

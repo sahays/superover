@@ -1,26 +1,23 @@
-import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { FileText, Plus, Loader2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { promptApi } from '@/lib/api-client'
 import { Prompt, CategorySchema } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { PROMPT_TYPE_OPTIONS } from '@/lib/prompt-constants'
-import { usePromptForm, type PromptFormData } from '@/hooks/use-prompt-form'
 import { useSchemaEditor } from '@/hooks/use-schema-editor'
+import { useAuthStore } from '@/store/useAuthStore'
 import { PromptCard } from '@/components/prompts/prompt-card'
 import { CategorySchemaCard } from '@/components/prompts/category-schema-card'
 import { SchemaEditDialog } from '@/components/prompts/schema-edit-dialog'
-import { PromptFormDialog } from '@/components/prompts/prompt-form-dialog'
 import { PromptDeleteDialog } from '@/components/prompts/prompt-delete-dialog'
+import { useState } from 'react'
 
 export default function PromptsPage() {
   const queryClient = useQueryClient()
-  const [showCreateDialog, setShowCreateDialog] = useState(false)
-  const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null)
+  const { isMaster } = useAuthStore()
   const [deletingPrompt, setDeletingPrompt] = useState<Prompt | null>(null)
-
-  const { formData, setFormData, formErrors, resetForm, populateFrom, validateForm } = usePromptForm()
   const schemaEditor = useSchemaEditor()
 
   const { data: prompts, isLoading } = useQuery<Prompt[]>({
@@ -31,25 +28,6 @@ export default function PromptsPage() {
   const { data: categorySchemas } = useQuery<CategorySchema[]>({
     queryKey: ['categorySchemas'],
     queryFn: () => promptApi.listSchemas(),
-  })
-
-  const createMutation = useMutation({
-    mutationFn: (data: PromptFormData) => promptApi.createPrompt(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['prompts'] })
-      setShowCreateDialog(false)
-      resetForm()
-    },
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: ({ promptId, data }: { promptId: string; data: Partial<PromptFormData> }) =>
-      promptApi.updatePrompt(promptId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['prompts'] })
-      setEditingPrompt(null)
-      resetForm()
-    },
   })
 
   const deleteMutation = useMutation({
@@ -72,21 +50,6 @@ export default function PromptsPage() {
       schemaEditor.closeEditor()
     },
   })
-
-  const handleCreate = () => {
-    if (!validateForm()) return
-    createMutation.mutate(formData)
-  }
-
-  const handleUpdate = () => {
-    if (!editingPrompt || !validateForm()) return
-    updateMutation.mutate({ promptId: editingPrompt.prompt_id, data: formData })
-  }
-
-  const handleEdit = (prompt: Prompt) => {
-    setEditingPrompt(prompt)
-    populateFrom(prompt)
-  }
 
   const handleSaveSchema = () => {
     if (!schemaEditor.editingCategory) return
@@ -113,13 +76,17 @@ export default function PromptsPage() {
     <div className="container mx-auto max-w-6xl px-4 py-8">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold font-heading">Prompt Management</h1>
-          <p className="text-muted-foreground mt-1">Create and manage analysis prompts</p>
+          <h1 className="text-3xl font-bold font-heading">Prompts</h1>
+          <p className="text-muted-foreground mt-1">Analysis prompts for scene processing</p>
         </div>
-        <Button onClick={() => { resetForm(); setShowCreateDialog(true) }} size="lg">
-          <Plus className="mr-2 h-4 w-4" />
-          Create Prompt
-        </Button>
+        {isMaster && (
+          <Button asChild size="lg">
+            <Link to="/prompts/new">
+              <Plus className="mr-2 h-4 w-4" />
+              Create Prompt
+            </Link>
+          </Button>
+        )}
       </div>
 
       {isLoading ? (
@@ -137,9 +104,9 @@ export default function PromptsPage() {
             <PromptCard
               key={prompt.prompt_id}
               prompt={prompt}
-              onEdit={handleEdit}
-              onDelete={setDeletingPrompt}
+              onDelete={isMaster ? setDeletingPrompt : undefined}
               isDeleting={deleteMutation.isPending}
+              showActions={isMaster}
             />
           ))}
         </div>
@@ -149,70 +116,67 @@ export default function PromptsPage() {
             <div className="text-center">
               <FileText className="mx-auto h-12 w-12 text-gray-400" />
               <h3 className="mt-4 text-lg font-semibold">No prompts yet</h3>
-              <p className="mt-2 text-sm text-muted-foreground">Create your first prompt to start analyzing videos</p>
-              <Button onClick={() => { resetForm(); setShowCreateDialog(true) }} className="mt-4">
-                <Plus className="mr-2 h-4 w-4" />
-                Create Prompt
-              </Button>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {isMaster ? 'Create your first prompt to start analyzing videos' : 'No prompts have been created yet'}
+              </p>
+              {isMaster && (
+                <Button asChild className="mt-4">
+                  <Link to="/prompts/new">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create Prompt
+                  </Link>
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Category Schemas Section */}
-      <div className="mt-12">
-        <h2 className="text-2xl font-bold font-heading mb-2">Category Schemas</h2>
-        <p className="text-muted-foreground mb-6">
-          Define JSON response schemas per prompt category. Categories with a schema get structured Gemini output; others get free text.
-        </p>
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {PROMPT_TYPE_OPTIONS.map((option) => (
-            <CategorySchemaCard
-              key={option.value}
-              label={option.label}
-              value={option.value}
-              schemas={categorySchemas || []}
-              onEditSchema={(cat, schemaName) => schemaEditor.openEditor(cat, categorySchemas, schemaName)}
-            />
-          ))}
+      {/* Category Schemas Section — master only */}
+      {isMaster && (
+        <div className="mt-12">
+          <h2 className="text-2xl font-bold font-heading mb-2">Category Schemas</h2>
+          <p className="text-muted-foreground mb-6">
+            Define JSON response schemas per prompt category. Categories with a schema get structured Gemini output; others get free text.
+          </p>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {PROMPT_TYPE_OPTIONS.map((option) => (
+              <CategorySchemaCard
+                key={option.value}
+                label={option.label}
+                value={option.value}
+                schemas={categorySchemas || []}
+                onEditSchema={(cat, schemaName) => schemaEditor.openEditor(cat, categorySchemas, schemaName)}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      <SchemaEditDialog
-        editingCategory={schemaEditor.editingCategory}
-        schemaName={schemaEditor.editingSchemaName}
-        onSchemaNameChange={schemaEditor.setEditingSchemaName}
-        schemaText={schemaEditor.schemaText}
-        onSchemaTextChange={schemaEditor.setSchemaText}
-        schemaError={schemaEditor.schemaError}
-        onSchemaErrorClear={() => schemaEditor.setSchemaError(null)}
-        onSave={handleSaveSchema}
-        onClear={handleClearSchema}
-        onClose={schemaEditor.closeEditor}
-        isSaving={setSchemaMutation.isPending}
-      />
+      {isMaster && (
+        <>
+          <SchemaEditDialog
+            editingCategory={schemaEditor.editingCategory}
+            schemaName={schemaEditor.editingSchemaName}
+            onSchemaNameChange={schemaEditor.setEditingSchemaName}
+            schemaText={schemaEditor.schemaText}
+            onSchemaTextChange={schemaEditor.setSchemaText}
+            schemaError={schemaEditor.schemaError}
+            onSchemaErrorClear={() => schemaEditor.setSchemaError(null)}
+            onSave={handleSaveSchema}
+            onClear={handleClearSchema}
+            onClose={schemaEditor.closeEditor}
+            isSaving={setSchemaMutation.isPending}
+          />
 
-      <PromptFormDialog
-        open={showCreateDialog || editingPrompt !== null}
-        isEditing={editingPrompt !== null}
-        formData={formData}
-        formErrors={formErrors}
-        onFormChange={setFormData}
-        onSubmit={editingPrompt ? handleUpdate : handleCreate}
-        onClose={() => {
-          setShowCreateDialog(false)
-          setEditingPrompt(null)
-          resetForm()
-        }}
-        isSaving={createMutation.isPending || updateMutation.isPending}
-      />
-
-      <PromptDeleteDialog
-        prompt={deletingPrompt}
-        onConfirm={() => deletingPrompt && deleteMutation.mutate(deletingPrompt.prompt_id)}
-        onCancel={() => setDeletingPrompt(null)}
-        isDeleting={deleteMutation.isPending}
-      />
+          <PromptDeleteDialog
+            prompt={deletingPrompt}
+            onConfirm={() => deletingPrompt && deleteMutation.mutate(deletingPrompt.prompt_id)}
+            onCancel={() => setDeletingPrompt(null)}
+            isDeleting={deleteMutation.isPending}
+          />
+        </>
+      )}
     </div>
   )
 }

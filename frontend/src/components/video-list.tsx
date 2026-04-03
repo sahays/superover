@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { videoApi } from '@/lib/api-client'
 import { useMutation } from '@tanstack/react-query'
+import { useAuthStore } from '@/store/useAuthStore'
 
 interface VideoListProps {
   videos: Video[]
@@ -146,14 +147,16 @@ function VideoCard({ video, onDelete }: { video: Video; onDelete: () => void }) 
                       View Details
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem
-                    onClick={handleDelete}
-                    className="text-destructive focus:text-destructive"
-                    disabled={deleteMutation.isPending}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
-                  </DropdownMenuItem>
+                  {useAuthStore.getState().isMaster && (
+                    <DropdownMenuItem
+                      onClick={handleDelete}
+                      className="text-destructive focus:text-destructive"
+                      disabled={deleteMutation.isPending}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

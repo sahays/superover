@@ -10,13 +10,9 @@ from pathlib import Path
 from google import genai
 from google.genai import types
 from config import settings
+from libs.gemini.common import model_name
 
 logger = logging.getLogger(__name__)
-
-
-def _model_name(name: str) -> str:
-    """Strip 'models/' prefix if present."""
-    return name.removeprefix("models/")
 
 
 class GeminiAnalyzer:
@@ -29,7 +25,7 @@ class GeminiAnalyzer:
             project=settings.gcp_project_id,
             location=settings.gemini_region,
         )
-        self.model_name = _model_name(settings.gemini_default_model)
+        self.model_name = model_name(settings.gemini_default_model)
 
     def analyze_video_file(self, video_path: Path, analysis_types: Optional[List[str]] = None) -> Dict[str, Any]:
         """Analyze a video file using Gemini."""

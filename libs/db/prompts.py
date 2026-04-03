@@ -21,6 +21,8 @@ class PromptsMixin:
         context_description: Optional[str] = None,
         required_context_types: Optional[List[str]] = None,
         max_context_items: int = 5,
+        response_type: Optional[str] = None,
+        response_schema: Optional[Dict] = None,
     ) -> Dict[str, Any]:
         """Create a new prompt document with auto-generated ID."""
         prompt_id = str(uuid.uuid4())
@@ -41,6 +43,11 @@ class PromptsMixin:
             prompt_data["context_description"] = context_description or "Upload additional context files"
             prompt_data["required_context_types"] = required_context_types or []
             prompt_data["max_context_items"] = max_context_items
+
+        if response_type:
+            prompt_data["response_type"] = response_type
+        if response_schema is not None:
+            prompt_data["response_schema"] = response_schema
 
         self.prompts.document(prompt_id).set(prompt_data)
         logger.info(f"Created prompt: {prompt_id} ({name}) of type {type}, supports_context={supports_context}")
@@ -90,6 +97,8 @@ class PromptsMixin:
         context_description: Optional[str] = None,
         required_context_types: Optional[List[str]] = None,
         max_context_items: Optional[int] = None,
+        response_type: Optional[str] = None,
+        response_schema: Optional[Dict] = None,
     ) -> Optional[Dict[str, Any]]:
         """Update a prompt document."""
         prompt_ref = self.prompts.document(prompt_id)
@@ -114,6 +123,10 @@ class PromptsMixin:
             update_data["required_context_types"] = required_context_types
         if max_context_items is not None:
             update_data["max_context_items"] = max_context_items
+        if response_type is not None:
+            update_data["response_type"] = response_type
+        if response_schema is not None:
+            update_data["response_schema"] = response_schema
 
         if len(update_data) == 1:  # Only updated_at
             raise ValueError("At least one field must be provided for update")

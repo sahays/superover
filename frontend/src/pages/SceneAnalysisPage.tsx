@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Video as VideoIcon, FileVideo, ChevronDown } from 'lucide-react'
 import { videoApi, sceneJobApi } from '@/lib/api-client'
+import { useAuthStore } from '@/store/useAuthStore'
 import { SceneJob, SceneJobStatus, ContextItem } from '@/lib/types'
 import type { SelectedVideoState } from '@/components/video-picker'
 import { VideoPicker } from '@/components/video-picker'
@@ -12,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 export default function SceneAnalysisPage() {
+  const { isMaster } = useAuthStore()
   const [showPicker, setShowPicker] = useState(false)
   const [promptTypeFilter, setPromptTypeFilter] = useState('all')
   const [videoFilenames, setVideoFilenames] = useState<Record<string, string>>({})
@@ -150,7 +152,7 @@ export default function SceneAnalysisPage() {
           <h1 className="text-3xl font-bold font-heading">Scene Analysis</h1>
           <p className="text-muted-foreground mt-1">AI-Powered Scene Analysis with Gemini</p>
         </div>
-        {!showPicker && (
+        {isMaster && !showPicker && (
           <Button onClick={() => setShowPicker(true)} size="lg">
             <FileVideo className="mr-2 h-4 w-4" />
             Start New Analysis
@@ -256,8 +258,8 @@ export default function SceneAnalysisPage() {
                         key={job.job_id}
                         job={job}
                         videoFilename={videoFilenames[job.video_id]}
-                        onDelete={(jobId) => deleteJobMutation.mutate(jobId)}
-                        onArchive={(jobId) => archiveJobMutation.mutate(jobId)}
+                        onDelete={isMaster ? (jobId) => deleteJobMutation.mutate(jobId) : undefined}
+                        onArchive={isMaster ? (jobId) => archiveJobMutation.mutate(jobId) : undefined}
                       />
                     ))}
                   </div>

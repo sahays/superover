@@ -8,6 +8,8 @@ export interface PromptFormData {
   schema_name?: string
   supports_context?: boolean
   context_description?: string
+  response_type?: string
+  response_schema_json?: string
 }
 
 const INITIAL_FORM: PromptFormData = {
@@ -17,6 +19,8 @@ const INITIAL_FORM: PromptFormData = {
   schema_name: undefined,
   supports_context: false,
   context_description: '',
+  response_type: 'structured_json',
+  response_schema_json: '',
 }
 
 export function usePromptForm() {
@@ -36,6 +40,8 @@ export function usePromptForm() {
       schema_name: prompt.schema_name || undefined,
       supports_context: prompt.supports_context || false,
       context_description: prompt.context_description || '',
+      response_type: prompt.response_type || undefined,
+      response_schema_json: prompt.response_schema ? JSON.stringify(prompt.response_schema, null, 2) : '',
     })
     setFormErrors({})
   }, [])
@@ -61,6 +67,18 @@ export function usePromptForm() {
       errors.prompt_text = 'Prompt text must be at least 10 characters'
     } else if (formData.prompt_text.length > 50000) {
       errors.prompt_text = 'Prompt text must be less than 50,000 characters'
+    }
+
+    if (formData.response_type === 'structured_json') {
+      if (!formData.response_schema_json?.trim()) {
+        errors.response_schema_json = 'JSON schema is required for structured output'
+      } else {
+        try {
+          JSON.parse(formData.response_schema_json)
+        } catch {
+          errors.response_schema_json = 'Invalid JSON'
+        }
+      }
     }
 
     setFormErrors(errors)

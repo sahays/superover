@@ -11,8 +11,11 @@ import {
   Palette,
   Sun,
   Moon,
+  KeyRound,
+  LogOut,
 } from 'lucide-react'
 import { useBranding } from '@/hooks/use-branding'
+import { useAuthStore } from '@/store/useAuthStore'
 
 interface NavItem {
   title: string
@@ -53,8 +56,11 @@ const configItems: NavItem[] = [
     title: 'Prompts',
     href: '/prompts',
     icon: FileText,
-    description: 'Manage analysis prompts',
+    description: 'Analysis prompts',
   },
+]
+
+const adminItems: NavItem[] = [
   {
     title: 'Embeddings',
     href: '/search/sync',
@@ -66,6 +72,12 @@ const configItems: NavItem[] = [
     href: '/branding',
     icon: Palette,
     description: 'Customize app branding',
+  },
+  {
+    title: 'Invite Codes',
+    href: '/invite-codes',
+    icon: KeyRound,
+    description: 'Manage access codes',
   },
 ]
 
@@ -166,6 +178,7 @@ function BrandLogo({ logoUrl }: { logoUrl: string }) {
 export function Sidebar() {
   const pathname = useLocation().pathname
   const { data: branding } = useBranding()
+  const { isMaster, logout } = useAuthStore()
   const appTitle = branding?.app_title || 'Superover'
   const subtitle = branding?.subtitle || 'Video Analysis Platform'
   const logoUrl = branding?.logo_url || ''
@@ -189,22 +202,38 @@ export function Sidebar() {
             ))}
           </div>
 
-          {/* Separator */}
           <div className="my-4 border-t" />
-
           <div className="stagger-children space-y-1">
-            <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
-              Configuration
-            </p>
             {configItems.map((item) => (
               <NavLink key={item.href} item={item} pathname={pathname} />
             ))}
           </div>
+
+          {isMaster && (
+            <>
+              <div className="my-4 border-t" />
+              <div className="stagger-children space-y-1">
+                <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
+                  Admin
+                </p>
+                {adminItems.map((item) => (
+                  <NavLink key={item.href} item={item} pathname={pathname} />
+                ))}
+              </div>
+            </>
+          )}
         </nav>
 
         {/* Footer */}
         <div className="border-t p-4 space-y-2">
           <DarkModeToggle />
+          <button
+            onClick={logout}
+            className="btn-press flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors w-full"
+          >
+            <LogOut className="h-4 w-4" />
+            <span>Sign out</span>
+          </button>
           <div className="text-xs text-muted-foreground">
             <p className="font-medium font-heading">{appTitle}</p>
             <p className="mt-1">{subtitle}</p>
