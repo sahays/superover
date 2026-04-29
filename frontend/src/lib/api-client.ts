@@ -423,6 +423,57 @@ export const authApi = {
   },
 }
 
+// Engagement analysis endpoints
+export const engagementApi = {
+  getBarcSignedUrl: async (filename: string, contentType: string) => {
+    const response = await apiClient.post('/api/engagement/signed-url', {
+      filename,
+      content_type: contentType,
+    })
+    return response.data as { signed_url: string; gcs_path: string; expires_in_minutes: number }
+  },
+
+  createJob: async (data: {
+    video_id: string
+    source_scene_job_id: string
+    barc_gcs_path: string
+    config?: Record<string, unknown>
+  }) => {
+    const response = await apiClient.post('/api/engagement/jobs', data)
+    return response.data
+  },
+
+  getJob: async (jobId: string) => {
+    const response = await apiClient.get(`/api/engagement/jobs/${jobId}`)
+    return response.data
+  },
+
+  listJobsForVideo: async (videoId: string) => {
+    const response = await apiClient.get(`/api/engagement/videos/${videoId}/jobs`)
+    return response.data
+  },
+
+  listEligibleSourceJobs: async (videoId: string) => {
+    const response = await apiClient.get(`/api/engagement/videos/${videoId}/scene-jobs`)
+    return response.data
+  },
+
+  listAllEligibleSourceJobs: async (limit = 100) => {
+    const response = await apiClient.get('/api/engagement/scene-jobs', { params: { limit } })
+    return response.data
+  },
+
+  getTimeseries: async (jobId: string) => {
+    const response = await apiClient.get(`/api/engagement/jobs/${jobId}/timeseries`)
+    return response.data as { points: [number, number][]; time_column?: string; score_column?: string }
+  },
+
+  deleteJob: async (jobId: string) => {
+    const response = await apiClient.delete(`/api/engagement/jobs/${jobId}`)
+    return response.data
+  },
+}
+
 // Upload file to GCS using signed URL
 export const uploadToGCS = async (signedUrl: string, file: File) => {
   await axios.put(signedUrl, file, {

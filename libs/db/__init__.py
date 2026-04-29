@@ -1,6 +1,6 @@
 """Firestore database module — re-exports for backward compatibility."""
 
-from .enums import MediaJobStatus, SceneJobStatus, ImageJobStatus
+from .enums import MediaJobStatus, SceneJobStatus, ImageJobStatus, EngagementJobStatus
 from .client import FirestoreDB, get_db
 
 __all__ = [
@@ -9,4 +9,5 @@ __all__ = [
     "MediaJobStatus",
     "SceneJobStatus",
     "ImageJobStatus",
+    "EngagementJobStatus",
 ]

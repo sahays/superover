@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from config import settings
-from api.routes import scenes, media, prompts, images, search, branding, auth
+from api.routes import scenes, media, prompts, images, search, branding, auth, engagement
 from api.middleware.invite_code import InviteCodeMiddleware
 from api.models.schemas import HealthResponse
 
@@ -95,6 +95,7 @@ app.include_router(scenes.router, prefix="/api")
 app.include_router(media.router, prefix="/api")
 app.include_router(prompts.router, prefix="/api")
 app.include_router(images.router, prefix="/api")
+app.include_router(engagement.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
 app.include_router(branding.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")

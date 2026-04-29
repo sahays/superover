@@ -9,6 +9,7 @@ from .videos import VideosMixin
 from .scenes import ScenesMixin
 from .media import MediaMixin
 from .images import ImagesMixin
+from .engagement import EngagementMixin
 from .prompts import PromptsMixin
 from .category_schemas import CategorySchemasMixin
 from .branding import BrandingMixin
@@ -22,6 +23,7 @@ class FirestoreDB(
     ScenesMixin,
     MediaMixin,
     ImagesMixin,
+    EngagementMixin,
     PromptsMixin,
     CategorySchemasMixin,
     BrandingMixin,
@@ -42,6 +44,7 @@ class FirestoreDB(
         self.media_jobs = self.client.collection(f"{prefix}media_jobs")
         self.image_jobs = self.client.collection(f"{prefix}image_jobs")
         self.image_results = self.client.collection(f"{prefix}image_results")
+        self.engagement_jobs = self.client.collection(f"{prefix}engagement_jobs")
         self.prompts = self.client.collection(f"{prefix}prompts")
         self.category_schemas = self.client.collection(f"{prefix}category_schemas")
         self.branding_settings = self.client.collection(f"{prefix}branding_settings")

@@ -30,3 +30,12 @@ class ImageJobStatus(str, Enum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class EngagementJobStatus(str, Enum):
+    """Engagement analysis job status."""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"

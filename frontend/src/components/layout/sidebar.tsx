@@ -13,6 +13,7 @@ import {
   Moon,
   KeyRound,
   LogOut,
+  TrendingUp,
 } from 'lucide-react'
 import { useBranding } from '@/hooks/use-branding'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -42,6 +43,12 @@ const featureItems: NavItem[] = [
     href: '/scene-analysis',
     icon: Clapperboard,
     description: 'AI-powered scene analysis',
+  },
+  {
+    title: 'Engagement',
+    href: '/engagement',
+    icon: TrendingUp,
+    description: 'BARC peaks and valleys',
   },
   {
     title: 'Search',

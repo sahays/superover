@@ -20,6 +20,8 @@ NON_MASTER_WRITE_PREFIXES = (
     "/api/scenes/context/signed-url",
     "/api/media/jobs",
     "/api/images/jobs",
+    "/api/engagement/signed-url",
+    "/api/engagement/jobs",
 )
 
 # Dynamic write paths allowed for non-master users

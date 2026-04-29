@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from .analyzer import GeminiAnalyzer
+from .engagement_analyzer import EngagementAnalyzer, get_engagement_analyzer
 from .scene_analyzer import SceneAnalyzer
 from .search_curator import SearchCurator
 from .search_query_interpreter import SearchQueryInterpreter
@@ -9,6 +10,8 @@ from .search_query_interpreter import SearchQueryInterpreter
 __all__ = [
     "GeminiAnalyzer",
     "get_analyzer",
+    "EngagementAnalyzer",
+    "get_engagement_analyzer",
     "SceneAnalyzer",
     "get_scene_analyzer",
     "SearchCurator",

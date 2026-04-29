@@ -10,6 +10,9 @@ import MediaJobDetailPage from '@/pages/MediaJobDetailPage'
 import SceneAnalysisPage from '@/pages/SceneAnalysisPage'
 import SceneDetailPage from '@/pages/SceneDetailPage'
 import SceneResultsPage from '@/pages/SceneResultsPage'
+import EngagementAnalysisPage from '@/pages/EngagementAnalysisPage'
+import EngagementNewPage from '@/pages/EngagementNewPage'
+import EngagementResultsPage from '@/pages/EngagementResultsPage'
 import PromptsPage from '@/pages/PromptsPage'
 import CreatePromptPage from '@/pages/CreatePromptPage'
 import EditPromptPage from '@/pages/EditPromptPage'
@@ -42,6 +45,9 @@ export function App() {
         <Route path="/scene-analysis" element={<SceneAnalysisPage />} />
         <Route path="/scene/:id" element={<SceneDetailPage />} />
         <Route path="/scene/:id/results" element={<SceneResultsPage />} />
+        <Route path="/engagement" element={<EngagementAnalysisPage />} />
+        {isMaster && <Route path="/engagement/new" element={<EngagementNewPage />} />}
+        <Route path="/engagement/:jobId" element={<EngagementResultsPage />} />
         <Route path="/prompts" element={<PromptsPage />} />
         {isMaster && <Route path="/prompts/new" element={<CreatePromptPage />} />}
         <Route path="/prompts/:promptId" element={<EditPromptPage />} />

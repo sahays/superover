@@ -40,6 +40,15 @@ from .images import (
     CreateImageJobRequest,
     ImageJobResponse,
 )
+from .engagement import (
+    BarcSignedUrlRequest,
+    CreateEngagementJobRequest,
+    EngagementExtremum,
+    EngagementResults,
+    EngagementJobResponse,
+    EligibleSourceJob,
+    EngagementTimeseriesResponse,
+)
 from .category import (
     CategorySchemaResponse,
     SetCategorySchemaRequest,
@@ -102,6 +111,14 @@ __all__ = [
     "ImageProcessingConfigRequest",
     "CreateImageJobRequest",
     "ImageJobResponse",
+    # Engagement
+    "BarcSignedUrlRequest",
+    "CreateEngagementJobRequest",
+    "EngagementExtremum",
+    "EngagementResults",
+    "EngagementJobResponse",
+    "EligibleSourceJob",
+    "EngagementTimeseriesResponse",
     # Category
     "CategorySchemaResponse",
     "SetCategorySchemaRequest",

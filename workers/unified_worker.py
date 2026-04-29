@@ -16,12 +16,15 @@ import time
 import traceback
 from config import settings
 from libs.database import get_db, MediaJobStatus, SceneJobStatus, ImageJobStatus
+from libs.db.enums import EngagementJobStatus
 from libs.storage import get_storage
 from libs.transcoder import get_transcoder_client
-from libs.gemini import get_scene_analyzer
+from libs.gemini import get_scene_analyzer, get_engagement_analyzer
 from libs.gemini.image_analyzer import get_image_analyzer
 from libs.scene_processing import get_scene_processor
 from libs.scene_processing.orchestrator import SceneOrchestrator
+from libs.engagement import parse_barc_csv, find_extrema, fetch_chunks_at
+from libs.engagement.prompts import ENGAGEMENT_PROMPT_TEXT
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -37,6 +40,7 @@ class UnifiedWorker:
         self.transcoder = get_transcoder_client()
         self.scene_analyzer = get_scene_analyzer()
         self.image_analyzer = get_image_analyzer()
+        self.engagement_analyzer = get_engagement_analyzer()
         self.temp_dir = settings.get_temp_dir()
         self.running = False
 
@@ -90,6 +94,9 @@ class UnifiedWorker:
 
             # 4. Process pending scene analysis jobs (Gemini)
             self._process_pending_scene_jobs()
+
+            # 5. Process pending engagement analysis jobs (deterministic + Gemini)
+            self._process_pending_engagement_jobs()
 
         except Exception as e:
             logger.error(f"Error in poll cycle: {e}")
@@ -408,6 +415,128 @@ class UnifiedWorker:
     def _process_scene(self, job: dict):
         """Process a scene analysis job using Transcoder API for chunking."""
         self.scene_orchestrator.run(job)
+
+    # ── Engagement Jobs (BARC + Gemini) ──────────────────────
+
+    def _process_pending_engagement_jobs(self):
+        """Process pending engagement analysis jobs."""
+        try:
+            jobs = self.db.get_pending_engagement_jobs(limit=settings.max_concurrent_tasks)
+            if not jobs:
+                return
+
+            logger.info(f"Found {len(jobs)} pending engagement jobs")
+
+            for job in jobs:
+                try:
+                    self._process_engagement_job(job)
+                except Exception as e:
+                    logger.error(f"Error processing engagement job {job.get('job_id')}: {e}")
+                    logger.error(traceback.format_exc())
+                    try:
+                        self.db.update_engagement_job_status(
+                            job["job_id"], EngagementJobStatus.FAILED, error_message=str(e)
+                        )
+                    except Exception as db_error:
+                        logger.error(f"Failed to mark engagement job FAILED: {db_error}")
+
+        except Exception as e:
+            logger.error(f"Error polling engagement jobs: {e}")
+
+    def _process_engagement_job(self, job: dict):
+        """Run a single engagement analysis job end-to-end."""
+        import json as _json
+
+        job_id = job["job_id"]
+        video_id = job["video_id"]
+        source_scene_job_id = job["source_scene_job_id"]
+        barc_gcs_path = job["barc_gcs_path"]
+        config = job.get("config") or {}
+
+        logger.info(f"[ENGAGEMENT] Processing job {job_id} for video {video_id}")
+        self.db.update_engagement_job_status(job_id, EngagementJobStatus.PROCESSING)
+
+        # 1. Download + parse BARC CSV
+        bucket_name, blob_name = self.storage._parse_gcs_path(barc_gcs_path)
+        blob = self.storage.client.bucket(bucket_name).blob(blob_name)
+        csv_bytes = blob.download_as_bytes()
+        series = parse_barc_csv(csv_bytes)
+        logger.info(
+            f"[ENGAGEMENT] Parsed {len(series.points)} BARC points "
+            f"(time={series.time_column}, score={series.score_column})"
+        )
+
+        # 2. Find peaks and valleys
+        n = int(config.get("n", 3))
+        min_spacing = float(config.get("min_spacing_sec", 30.0))
+        peaks, valleys = find_extrema(series.points, n=n, min_spacing_sec=min_spacing)
+        logger.info(f"[ENGAGEMENT] Detected {len(peaks)} peaks, {len(valleys)} valleys")
+
+        if not peaks and not valleys:
+            raise RuntimeError("No peaks or valleys detected in BARC series")
+
+        # 3. Fetch scene context for each extremum's timestamp
+        all_timestamps = [p.timestamp_sec for p in peaks] + [v.timestamp_sec for v in valleys]
+        contexts = fetch_chunks_at(self.db, source_scene_job_id, all_timestamps)
+
+        # 4. Persist normalized timeseries to GCS for the chart
+        timeseries_payload = {
+            "points": [[t, s] for t, s in series.points],
+            "time_column": series.time_column,
+            "score_column": series.score_column,
+        }
+        timeseries_path = f"gs://{settings.results_bucket}/engagement/{job_id}/timeseries.json"
+        self.storage.upload_bytes(
+            _json.dumps(timeseries_payload).encode("utf-8"),
+            timeseries_path,
+            content_type="application/json",
+        )
+
+        # 5. Call Gemini once for explanations
+        gemini_result = self.engagement_analyzer.explain(
+            prompt_text=ENGAGEMENT_PROMPT_TEXT,
+            peaks=peaks,
+            valleys=valleys,
+            contexts=contexts,
+        )
+
+        # 6. Merge deterministic data (rank/timestamp/score/chunk_index) with LLM output
+        def _merge(items, llm_items, label):
+            merged = []
+            llm_by_rank = {int(it.get("rank", 0)): it for it in (llm_items or [])}
+            for it in items:
+                ctx = contexts.get(it.timestamp_sec)
+                llm = llm_by_rank.get(it.rank, {})
+                merged.append(
+                    {
+                        "rank": it.rank,
+                        "timestamp_sec": it.timestamp_sec,
+                        "score": it.score,
+                        "chunk_index": ctx.chunk_index if ctx else None,
+                        "scene_summary": llm.get("scene_summary"),
+                        "explanation": llm.get("explanation"),
+                        "key_actors": llm.get("key_actors") or [],
+                        "key_events": llm.get("key_events") or [],
+                        "key_objects": llm.get("key_objects") or [],
+                    }
+                )
+            logger.info(f"[ENGAGEMENT] Merged {len(merged)} {label}")
+            return merged
+
+        results = {
+            "peaks": _merge(peaks, gemini_result.get("peaks"), "peaks"),
+            "valleys": _merge(valleys, gemini_result.get("valleys"), "valleys"),
+            "timeseries_gcs_path": timeseries_path,
+            "barc_time_column": series.time_column,
+            "barc_score_column": series.score_column,
+            "point_count": len(series.points),
+            "duration_sec": series.duration_sec,
+            "token_usage": gemini_result.get("token_usage"),
+            "finish_reason": gemini_result.get("finish_reason"),
+        }
+
+        self.db.update_engagement_job_status(job_id, EngagementJobStatus.COMPLETED, results=results)
+        logger.info(f"[ENGAGEMENT] Job {job_id} completed")
 
 
 def main():

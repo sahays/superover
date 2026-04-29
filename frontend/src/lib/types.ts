@@ -23,6 +23,13 @@ export enum ImageJobStatus {
   FAILED = 'failed',
 }
 
+export enum EngagementJobStatus {
+  PENDING = 'pending',
+  PROCESSING = 'processing',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+}
+
 // Zod Schemas
 export const videoSchema = z.object({
   video_id: z.string(),
@@ -237,3 +244,54 @@ export const categorySchemaSchema = z.object({
 })
 
 export type CategorySchema = z.infer<typeof categorySchemaSchema>
+
+// Engagement Analysis Types
+export const engagementExtremumSchema = z.object({
+  rank: z.number(),
+  timestamp_sec: z.number(),
+  score: z.number().nullable().optional(),
+  scene_summary: z.string().nullable().optional(),
+  explanation: z.string().nullable().optional(),
+  chunk_index: z.number().nullable().optional(),
+  key_actors: z.array(z.string()).optional().default([]),
+  key_events: z.array(z.string()).optional().default([]),
+  key_objects: z.array(z.string()).optional().default([]),
+})
+
+export const engagementResultsSchema = z.object({
+  peaks: z.array(engagementExtremumSchema).default([]),
+  valleys: z.array(engagementExtremumSchema).default([]),
+  timeseries_gcs_path: z.string().nullable().optional(),
+  barc_time_column: z.string().nullable().optional(),
+  barc_score_column: z.string().nullable().optional(),
+  point_count: z.number().nullable().optional(),
+  duration_sec: z.number().nullable().optional(),
+  token_usage: z.record(z.any()).nullable().optional(),
+  finish_reason: z.string().nullable().optional(),
+})
+
+export const engagementJobSchema = z.object({
+  job_id: z.string(),
+  video_id: z.string(),
+  source_scene_job_id: z.string(),
+  barc_gcs_path: z.string(),
+  status: z.nativeEnum(EngagementJobStatus),
+  config: z.record(z.any()).nullable().optional(),
+  results: engagementResultsSchema.nullable().optional(),
+  created_at: z.string().optional(),
+  updated_at: z.string().optional(),
+  error_message: z.string().optional(),
+})
+
+export const eligibleSourceJobSchema = z.object({
+  job_id: z.string(),
+  video_id: z.string(),
+  prompt_name: z.string().nullable().optional(),
+  prompt_type: z.string().nullable().optional(),
+  created_at: z.string().optional(),
+})
+
+export type EngagementExtremum = z.infer<typeof engagementExtremumSchema>
+export type EngagementResults = z.infer<typeof engagementResultsSchema>
+export type EngagementJob = z.infer<typeof engagementJobSchema>
+export type EligibleSourceJob = z.infer<typeof eligibleSourceJobSchema>
