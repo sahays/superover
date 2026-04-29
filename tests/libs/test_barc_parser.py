@@ -82,7 +82,7 @@ def test_real_barc_report_format():
 
 
 def test_handles_thousands_separator_in_score():
-    csv = "timestamp,score\n0,\"1,000\"\n10,\"2,500\"\n"
+    csv = 'timestamp,score\n0,"1,000"\n10,"2,500"\n'
     series = parse_barc_csv(_csv(csv))
     assert [s for _, s in series.points] == [1000.0, 2500.0]
 
@@ -94,11 +94,7 @@ def test_score_with_percent_suffix():
 
 
 def test_falls_back_to_impressions_when_no_tvr():
-    csv = (
-        "Start Time,Impressions ('000s),Reach ('000s)\n"
-        "00:00:00,350,300\n"
-        "00:00:30,400,350\n"
-    )
+    csv = "Start Time,Impressions ('000s),Reach ('000s)\n00:00:00,350,300\n00:00:30,400,350\n"
     series = parse_barc_csv(_csv(csv))
     # No TVR present — Impressions wins next in priority
     assert series.score_column == "Impressions ('000s)"
@@ -111,3 +107,55 @@ def test_does_not_anchor_when_starts_near_zero():
     series = parse_barc_csv(_csv(csv))
     assert series.anchor_offset_sec == 0
     assert [t for t, _ in series.points] == [0.0, 5.0, 10.0]
+
+
+def test_real_barc_returns_all_metrics():
+    """Real BARC CSV exposes TVR + Impressions + Reach. All three must come
+    back in `metrics`, anchored to t=0 from the first row's Start Time."""
+    csv = (
+        "Date,Start Time,End Time,Duration (Mins),Impressions ('000s),TVR (%),Reach ('000s)\n"
+        "2026-04-15,20:00:00,20:01:00,1,350,0.45,320\n"
+        "2026-04-15,20:01:00,20:02:00,1,420,0.52,380\n"
+        "2026-04-15,20:02:00,20:03:00,1,500,0.61,450\n"
+    )
+    series = parse_barc_csv(_csv(csv))
+
+    # Primary metric is TVR (highest priority among the three)
+    assert series.score_column == "TVR (%)"
+    assert series.points == [(0.0, 0.45), (60.0, 0.52), (120.0, 0.61)]
+
+    # All three meaningful numeric columns are exposed in `metrics`
+    # (Duration is also numeric and may also be present — that's fine).
+    assert {"TVR (%)", "Impressions ('000s)", "Reach ('000s)"}.issubset(series.metrics.keys())
+
+    # All metrics share the same anchor (20:00:00 = 72000s subtracted)
+    assert series.anchor_offset_sec == 20 * 3600
+    assert series.metrics["Impressions ('000s)"] == [(0.0, 350.0), (60.0, 420.0), (120.0, 500.0)]
+    assert series.metrics["Reach ('000s)"] == [(0.0, 320.0), (60.0, 380.0), (120.0, 450.0)]
+
+    # Primary metric is also keyed in `metrics` for chart-rendering convenience
+    assert series.metrics["TVR (%)"] == series.points
+
+
+def test_metrics_excludes_non_numeric_columns():
+    """Date / Duration column should not pollute `metrics`."""
+    csv = "Start Time,Note,TVR (%),Impressions ('000s)\n00:00:00,intro,0.5,200\n00:00:30,mid,0.7,300\n"
+    series = parse_barc_csv(_csv(csv))
+    assert "Note" not in series.metrics
+    assert set(series.metrics.keys()) == {"TVR (%)", "Impressions ('000s)"}
+
+
+def test_metrics_priority_order():
+    """`metrics` insertion order should reflect candidate priority: TVR
+    first, then Impressions, then Reach, then any leftovers alphabetically."""
+    csv = (
+        "Start Time,Reach ('000s),Other Metric,Impressions ('000s),TVR (%)\n"
+        "00:00:00,100,5,200,0.5\n"
+        "00:00:30,110,6,210,0.6\n"
+    )
+    series = parse_barc_csv(_csv(csv))
+    keys = list(series.metrics.keys())
+    # TVR before Impressions before Reach
+    assert keys.index("TVR (%)") < keys.index("Impressions ('000s)") < keys.index("Reach ('000s)")
+    # "Other Metric" comes last (alphabetical leftover)
+    assert keys[-1] == "Other Metric"

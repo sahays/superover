@@ -81,6 +81,15 @@ class EligibleSourceJob(BaseModel):
 
 
 class EngagementTimeseriesResponse(BaseModel):
-    points: List[List[float]] = Field(..., description="List of [timestamp_sec, score] pairs")
+    # Back-compat: `points` is the primary metric only.
+    points: List[List[float]] = Field(
+        default_factory=list,
+        description="Primary metric as [timestamp_sec, score] pairs (back-compat)",
+    )
+    metrics: Dict[str, List[List[float]]] = Field(
+        default_factory=dict,
+        description="Every numeric metric in the BARC CSV, keyed by column name.",
+    )
+    primary_metric: Optional[str] = None
     time_column: Optional[str] = None
     score_column: Optional[str] = None

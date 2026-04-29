@@ -25,6 +25,8 @@ from libs.scene_processing import get_scene_processor
 from libs.scene_processing.orchestrator import SceneOrchestrator
 from libs.engagement import parse_barc_csv, find_extrema, fetch_chunks_at
 from libs.engagement.prompts import ENGAGEMENT_PROMPT_TEXT
+from libs.engagement.scene_extract import extract_from_scene_results
+from libs.engagement.recommendations import compute_stats
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -479,9 +481,10 @@ class UnifiedWorker:
         all_timestamps = [p.timestamp_sec for p in peaks] + [v.timestamp_sec for v in valleys]
         contexts = fetch_chunks_at(self.db, source_scene_job_id, all_timestamps)
 
-        # 4. Persist normalized timeseries to GCS for the chart
+        # 4. Persist normalized multi-metric timeseries to GCS for the chart
         timeseries_payload = {
-            "points": [[t, s] for t, s in series.points],
+            "metrics": {col: [[t, s] for t, s in pts] for col, pts in series.metrics.items()},
+            "primary_metric": series.score_column,
             "time_column": series.time_column,
             "score_column": series.score_column,
         }
@@ -492,7 +495,47 @@ class UnifiedWorker:
             content_type="application/json",
         )
 
-        # 5. Call Gemini once for explanations
+        # 4b. Extract entities + cues from the source scene job
+        source_results = self.db.get_results_for_job(source_scene_job_id) or []
+        cues, entities = extract_from_scene_results(source_results)
+        logger.info(f"[ENGAGEMENT] Extracted {len(cues)} cues, {len(entities)} entities from source job")
+
+        cues_path = f"gs://{settings.results_bucket}/engagement/{job_id}/cues.json"
+        self.storage.upload_bytes(
+            _json.dumps(
+                [
+                    {
+                        "start_sec": c.start_sec,
+                        "end_sec": c.end_sec,
+                        "text": c.text,
+                        "kind": c.kind,
+                        "speaker": c.speaker,
+                    }
+                    for c in cues
+                ]
+            ).encode("utf-8"),
+            cues_path,
+            content_type="application/json",
+        )
+
+        entities_path = f"gs://{settings.results_bucket}/engagement/{job_id}/entities.json"
+        self.storage.upload_bytes(
+            _json.dumps(
+                [
+                    {
+                        "name": e.name,
+                        "kind": e.kind,
+                        "appearances": [{"start_sec": s, "end_sec": en} for (s, en) in e.appearances],
+                        "mention_count": e.mention_count,
+                    }
+                    for e in entities
+                ]
+            ).encode("utf-8"),
+            entities_path,
+            content_type="application/json",
+        )
+
+        # 5. Call Gemini for peak/valley explanations
         gemini_result = self.engagement_analyzer.explain(
             prompt_text=ENGAGEMENT_PROMPT_TEXT,
             peaks=peaks,
@@ -523,15 +566,60 @@ class UnifiedWorker:
             logger.info(f"[ENGAGEMENT] Merged {len(merged)} {label}")
             return merged
 
+        # 6. Recommendations: compute stats + Gemini synthesis
+        stats = compute_stats(series.points, entities)
+        # Group cues into 60s buckets for the high/low minutes the LLM cares about
+        cues_by_minute: dict = {}
+        for c in cues:
+            idx = int(c.start_sec // 60)
+            cues_by_minute.setdefault(idx, []).append(
+                {
+                    "start_sec": c.start_sec,
+                    "end_sec": c.end_sec,
+                    "text": c.text,
+                    "speaker": c.speaker,
+                    "kind": c.kind,
+                }
+            )
+
+        recommendations_payload: dict = {}
+        try:
+            recommendations_payload = self.engagement_analyzer.recommend(stats, cues_by_minute)
+        except Exception as e:
+            logger.error(f"[ENGAGEMENT] Recommendation call failed (non-fatal): {e}")
+            recommendations_payload = {"headline": "", "do_more_of": [], "do_less_of": [], "per_minute_callouts": []}
+
+        recommendations_path = f"gs://{settings.results_bucket}/engagement/{job_id}/recommendations.json"
+        self.storage.upload_bytes(
+            _json.dumps(recommendations_payload).encode("utf-8"),
+            recommendations_path,
+            content_type="application/json",
+        )
+
+        # Aggregate token usage across both Gemini calls
+        explain_tokens = gemini_result.get("token_usage") or {}
+        recommend_tokens = recommendations_payload.get("token_usage") or {}
+        aggregated_tokens = {}
+        for k in ("prompt_tokens", "candidates_tokens", "total_tokens"):
+            aggregated_tokens[k] = explain_tokens.get(k, 0) + recommend_tokens.get(k, 0)
+        for k in ("input_cost_usd", "output_cost_usd", "estimated_cost_usd"):
+            aggregated_tokens[k] = round(explain_tokens.get(k, 0) + recommend_tokens.get(k, 0), 6)
+
         results = {
             "peaks": _merge(peaks, gemini_result.get("peaks"), "peaks"),
             "valleys": _merge(valleys, gemini_result.get("valleys"), "valleys"),
             "timeseries_gcs_path": timeseries_path,
+            "cues_gcs_path": cues_path,
+            "entities_gcs_path": entities_path,
+            "recommendations_gcs_path": recommendations_path,
             "barc_time_column": series.time_column,
             "barc_score_column": series.score_column,
+            "barc_metrics": list(series.metrics.keys()),
             "point_count": len(series.points),
             "duration_sec": series.duration_sec,
-            "token_usage": gemini_result.get("token_usage"),
+            "entity_count": len(entities),
+            "cue_count": len(cues),
+            "token_usage": aggregated_tokens,
             "finish_reason": gemini_result.get("finish_reason"),
         }
 

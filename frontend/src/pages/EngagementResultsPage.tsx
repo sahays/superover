@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, Loader2 } from 'lucide-react'
@@ -13,9 +14,17 @@ import { engagementApi } from '@/lib/api-client'
 import { EngagementJob, EngagementJobStatus } from '@/lib/types'
 import { EngagementChart } from '@/components/engagement/engagement-chart'
 import { EngagementCard } from '@/components/engagement/engagement-card'
+import { EntityFilter } from '@/components/engagement/entity-filter'
+import { DialogDrawer } from '@/components/engagement/dialog-drawer'
+import {
+  RecommendationsPanel,
+  type RecommendationsPayload,
+} from '@/components/engagement/recommendations-panel'
 
 export default function EngagementResultsPage() {
   const { jobId } = useParams<{ jobId: string }>()
+  const [activeTimestamp, setActiveTimestamp] = useState<number | null>(null)
+  const [selectedEntities, setSelectedEntities] = useState<Set<string>>(new Set())
 
   const { data: job, isLoading } = useQuery<EngagementJob>({
     queryKey: ['engagement-job', jobId],
@@ -29,11 +38,56 @@ export default function EngagementResultsPage() {
     },
   })
 
+  const isCompleted = job?.status === EngagementJobStatus.COMPLETED
+
   const { data: timeseries } = useQuery({
     queryKey: ['engagement-timeseries', jobId],
     queryFn: () => engagementApi.getTimeseries(jobId!),
-    enabled: !!jobId && job?.status === EngagementJobStatus.COMPLETED,
+    enabled: !!jobId && isCompleted,
   })
+
+  const { data: entities } = useQuery({
+    queryKey: ['engagement-entities', jobId],
+    queryFn: () => engagementApi.getEntities(jobId!),
+    enabled: !!jobId && isCompleted,
+    staleTime: 60_000,
+  })
+
+  const { data: recommendations } = useQuery<RecommendationsPayload>({
+    queryKey: ['engagement-recommendations', jobId],
+    queryFn: () => engagementApi.getRecommendations(jobId!) as Promise<RecommendationsPayload>,
+    enabled: !!jobId && isCompleted,
+    staleTime: 60_000,
+  })
+
+  // Selected entity ranges → highlight bands on the chart
+  const highlightRanges = useMemo(() => {
+    if (!entities || selectedEntities.size === 0) return []
+    return entities
+      .filter((e) => selectedEntities.has(e.name))
+      .flatMap((e) =>
+        e.appearances.map((r) => ({ start: r.start_sec, end: r.end_sec, label: e.name }))
+      )
+  }, [entities, selectedEntities])
+
+  // Avg engagement during selected ranges
+  const { overallAvg, selectionAvg } = useMemo(() => {
+    const primary = timeseries?.primary_metric
+    const points: [number, number][] = primary && timeseries?.metrics
+      ? (timeseries.metrics[primary] as [number, number][]) || []
+      : timeseries?.points || []
+    if (points.length === 0) return { overallAvg: undefined, selectionAvg: undefined }
+    const allScores = points.map(([, s]) => s)
+    const overall = allScores.reduce((a, b) => a + b, 0) / allScores.length
+    if (highlightRanges.length === 0) return { overallAvg: overall, selectionAvg: undefined }
+    const inRange = points.filter(([t]) =>
+      highlightRanges.some((r) => t >= r.start && t <= r.end)
+    )
+    const sel = inRange.length > 0
+      ? inRange.reduce((a, [, s]) => a + s, 0) / inRange.length
+      : undefined
+    return { overallAvg: overall, selectionAvg: sel }
+  }, [timeseries, highlightRanges])
 
   if (isLoading || !job) {
     return (
@@ -49,6 +103,14 @@ export default function EngagementResultsPage() {
   const peaks = job.results?.peaks || []
   const valleys = job.results?.valleys || []
   const tokenUsage = job.results?.token_usage as { estimated_cost_usd?: number; total_tokens?: number } | undefined
+
+  const toggleEntity = (name: string) =>
+    setSelectedEntities((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
 
   return (
     <div className="container mx-auto max-w-6xl px-4 py-8">
@@ -66,7 +128,7 @@ export default function EngagementResultsPage() {
         </p>
       </div>
 
-      {job.status !== EngagementJobStatus.COMPLETED ? (
+      {!isCompleted ? (
         <Card>
           <CardHeader>
             <CardTitle>{job.status === EngagementJobStatus.FAILED ? 'Job failed' : 'Working…'}</CardTitle>
@@ -79,6 +141,14 @@ export default function EngagementResultsPage() {
         </Card>
       ) : (
         <div className="space-y-8">
+          {/* Recommendations — top of the page so producers see prescriptive guidance first */}
+          {recommendations && (
+            <RecommendationsPanel
+              data={recommendations}
+              onAnchorClick={(t) => setActiveTimestamp(t)}
+            />
+          )}
+
           {/* Stats row */}
           <div className="grid gap-4 md:grid-cols-4">
             <Card>
@@ -119,25 +189,50 @@ export default function EngagementResultsPage() {
             </Card>
           </div>
 
+          {/* Entity / event chips */}
+          {entities && entities.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Filter by character or event</CardTitle>
+                <CardDescription>
+                  Click a chip to highlight where that entity appears and compare its
+                  average engagement to the overall.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <EntityFilter
+                  entities={entities}
+                  selected={selectedEntities}
+                  onToggle={toggleEntity}
+                  overallAvg={overallAvg}
+                  selectionAvg={selectionAvg}
+                />
+              </CardContent>
+            </Card>
+          )}
+
           {/* Chart */}
           <Card>
             <CardHeader>
               <CardTitle>Engagement timeline</CardTitle>
               <CardDescription>
-                BARC {job.results?.barc_score_column || 'engagement'} over time. Green dots = peaks, red dots = valleys.
+                Click any point to see the dialog at that moment. Green dots are
+                peaks, red dots are valleys.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <EngagementChart
-                points={timeseries?.points || []}
+                metrics={timeseries?.metrics || {}}
+                primaryMetric={timeseries?.primary_metric}
                 peaks={peaks}
                 valleys={valleys}
-                scoreLabel={job.results?.barc_score_column || 'Engagement'}
+                highlightRanges={highlightRanges}
+                onPointSelect={(t) => setActiveTimestamp(t)}
               />
             </CardContent>
           </Card>
 
-          {/* Peaks + Valleys side by side */}
+          {/* Peaks + Valleys */}
           <div className="grid gap-6 lg:grid-cols-2">
             <div className="space-y-4">
               <h2 className="text-xl font-semibold">Peaks</h2>
@@ -161,6 +256,15 @@ export default function EngagementResultsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Click-a-point drawer */}
+      {jobId && (
+        <DialogDrawer
+          jobId={jobId}
+          activeTimestamp={activeTimestamp}
+          onClose={() => setActiveTimestamp(null)}
+        />
       )}
     </div>
   )

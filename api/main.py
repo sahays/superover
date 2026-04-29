@@ -51,6 +51,14 @@ async def lifespan(app: FastAPI):
     # Ensure temp directory exists
     settings.get_temp_dir()
 
+    # Seed default prompts (idempotent — each seed checks for existence first).
+    try:
+        from libs.database import get_db
+
+        get_db().seed_default_prompts()
+    except Exception as e:
+        logger.error(f"seed_default_prompts failed (non-fatal): {e}")
+
     yield
 
     # Shutdown

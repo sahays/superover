@@ -75,6 +75,28 @@ class FirestoreDB(
                 supports_context=False,
             )
 
+        # Seed the structured Scene Analysis prompt — drives the analytics pipeline
+        # (entity timeline, click-a-cue drawer, recommendations).
+        from libs.scene_processing.scene_analysis_schema import (
+            SCENE_ANALYSIS_PROMPT_NAME,
+            SCENE_ANALYSIS_PROMPT_TEXT,
+            SCENE_ANALYSIS_SCHEMA,
+        )
+
+        existing = (
+            self.prompts.where("type", "==", "scene_analysis").where("name", "==", SCENE_ANALYSIS_PROMPT_NAME).limit(1)
+        )
+        if not list(existing.stream()):
+            logger.info(f"Seeding structured scene-analysis prompt: {SCENE_ANALYSIS_PROMPT_NAME}")
+            self.create_prompt(
+                name=SCENE_ANALYSIS_PROMPT_NAME,
+                type="scene_analysis",
+                prompt_text=SCENE_ANALYSIS_PROMPT_TEXT,
+                supports_context=False,
+                response_type="structured_json",
+                response_schema=SCENE_ANALYSIS_SCHEMA,
+            )
+
 
 # Singleton instance
 _db_instance: Optional[FirestoreDB] = None

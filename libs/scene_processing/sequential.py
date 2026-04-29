@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional
 from google.api_core import exceptions as google_exceptions
 from libs.database import SceneJobStatus
 from .base import SceneProcessor
+from .scene_analysis_schema import render_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -132,12 +133,18 @@ class SequentialSceneProcessor(SceneProcessor):
                         },
                     )
 
+                # Substitute chunk-time placeholders in prompt_text. Safe no-op
+                # for prompts without {chunk_start_sec}/{chunk_end_sec}.
+                chunk_start = float(chunk.get("start_time", 0.0))
+                chunk_end = float(chunk.get("end_time", chunk_start + chunk.get("duration", 0)))
+                rendered_prompt = render_prompt(prompt_text, chunk_start, chunk_end)
+
                 # Analyze with Gemini — pass GCS URI directly, no local file needed
                 result = self.analyzer.analyze_chunk(
                     media_path=None,
                     chunk_index=chunk_index,
                     chunk_duration=chunk["duration"],
-                    prompt_text=prompt_text,
+                    prompt_text=rendered_prompt,
                     prompt_type=prompt_type,
                     context_text=chunk_context or None,
                     gcs_path=chunk_gcs,

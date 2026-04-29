@@ -465,7 +465,60 @@ export const engagementApi = {
 
   getTimeseries: async (jobId: string) => {
     const response = await apiClient.get(`/api/engagement/jobs/${jobId}/timeseries`)
-    return response.data as { points: [number, number][]; time_column?: string; score_column?: string }
+    return response.data as {
+      points: [number, number][]
+      metrics: Record<string, [number, number][]>
+      primary_metric?: string
+      time_column?: string
+      score_column?: string
+    }
+  },
+
+  getEntities: async (jobId: string) => {
+    const response = await apiClient.get(`/api/engagement/jobs/${jobId}/entities`)
+    return response.data as Array<{
+      name: string
+      kind: string
+      appearances: { start_sec: number; end_sec: number }[]
+      mention_count: number
+    }>
+  },
+
+  getCues: async (jobId: string) => {
+    const response = await apiClient.get(`/api/engagement/jobs/${jobId}/cues`)
+    return response.data as Array<{
+      start_sec: number
+      end_sec: number
+      text: string
+      kind: string
+      speaker: string
+    }>
+  },
+
+  getRecommendations: async (jobId: string) => {
+    const response = await apiClient.get(`/api/engagement/jobs/${jobId}/recommendations`)
+    return response.data as {
+      headline: string
+      do_more_of: Array<{
+        recommendation: string
+        rationale: string
+        expected_lift: 'low' | 'medium' | 'high'
+        evidence?: { entity?: string; delta_pct?: number; sample_size?: number; anchor_timestamps?: number[] }
+      }>
+      do_less_of: Array<{
+        recommendation: string
+        rationale: string
+        expected_lift: 'low' | 'medium' | 'high'
+        evidence?: { entity?: string; delta_pct?: number; sample_size?: number; anchor_timestamps?: number[] }
+      }>
+      per_minute_callouts: Array<{
+        minute_start_sec: number
+        minute_end_sec: number
+        what_happened: string
+        why_it_dipped: string
+        alternative: string
+      }>
+    }
   },
 
   deleteJob: async (jobId: string) => {

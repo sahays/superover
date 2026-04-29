@@ -250,24 +250,31 @@ class ParallelSceneProcessor(SceneProcessor):
             except Exception as e:
                 logger.warning(f"[PARALLEL] Could not find extracted audio: {e}")
 
-        # Prepare tasks — no file downloads needed
-        gemini_tasks = [
-            {
-                "chunk_index": chunk["index"],
-                "chunk_duration": chunk["duration"],
-                "gcs_path": chunk["gcs_path"],
-                "prompt_text": prompt_text,
-                "prompt_type": prompt_type,
-                "context_text": context_text,
-                "response_schema": response_schema,
-                "use_chirp": use_chirp,
-                "chirp_audio_gcs": chirp_audio_gcs,
-                "job_id": job_id,
-                "video_id": video_id,
-                "total_chunks": total_chunks,
-            }
-            for chunk in chunks
-        ]
+        # Prepare tasks — no file downloads needed.
+        # Render chunk-time placeholders into prompt_text per chunk so the
+        # subprocess receives a fully-substituted prompt.
+        from .scene_analysis_schema import render_prompt
+
+        gemini_tasks = []
+        for chunk in chunks:
+            chunk_start = float(chunk.get("start_time", 0.0))
+            chunk_end = float(chunk.get("end_time", chunk_start + chunk.get("duration", 0)))
+            gemini_tasks.append(
+                {
+                    "chunk_index": chunk["index"],
+                    "chunk_duration": chunk["duration"],
+                    "gcs_path": chunk["gcs_path"],
+                    "prompt_text": render_prompt(prompt_text, chunk_start, chunk_end),
+                    "prompt_type": prompt_type,
+                    "context_text": context_text,
+                    "response_schema": response_schema,
+                    "use_chirp": use_chirp,
+                    "chirp_audio_gcs": chirp_audio_gcs,
+                    "job_id": job_id,
+                    "video_id": video_id,
+                    "total_chunks": total_chunks,
+                }
+            )
 
         completed_count = 0
         errors = []

@@ -137,31 +137,69 @@ def _to_eligible(jobs: list) -> list:
 
 @router.get("/jobs/{job_id}/timeseries", response_model=EngagementTimeseriesResponse)
 async def get_engagement_timeseries(job_id: str):
-    """Fetch the normalized BARC timeseries used for charting."""
+    """Fetch the normalized multi-metric BARC timeseries used for charting."""
+    data = _load_results_artifact(job_id, "timeseries_gcs_path", "timeseries")
+
+    metrics = data.get("metrics") or {}
+    # Back-compat: older jobs stored `points` (primary metric only).
+    if not metrics and data.get("points"):
+        primary = data.get("score_column") or "score"
+        metrics = {primary: data["points"]}
+
+    primary_metric = data.get("primary_metric") or data.get("score_column")
+    primary_points = metrics.get(primary_metric, []) if primary_metric else []
+
+    return EngagementTimeseriesResponse(
+        points=primary_points,
+        metrics=metrics,
+        primary_metric=primary_metric,
+        time_column=data.get("time_column"),
+        score_column=data.get("score_column"),
+    )
+
+
+@router.get("/jobs/{job_id}/entities")
+async def get_engagement_entities(job_id: str):
+    """Fetch the entity list mined / extracted from the source scene job."""
+    return _load_results_artifact(job_id, "entities_gcs_path", "entities")
+
+
+@router.get("/jobs/{job_id}/cues")
+async def get_engagement_cues(job_id: str):
+    """Fetch the merged dialog/narration cues — powers the click-a-point drawer."""
+    return _load_results_artifact(job_id, "cues_gcs_path", "cues")
+
+
+@router.get("/jobs/{job_id}/recommendations")
+async def get_engagement_recommendations(job_id: str):
+    """Fetch grounded 'do more / do less / per-minute' recommendations."""
+    return _load_results_artifact(job_id, "recommendations_gcs_path", "recommendations")
+
+
+def _load_results_artifact(job_id: str, gcs_path_key: str, artifact_label: str):
+    """Shared helper: fetch one of the engagement results JSON files from GCS.
+
+    Returns the parsed JSON. Raises 404 if the job or path is missing,
+    500 on download/parse failure.
+    """
     db = get_db()
     job = db.get_engagement_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
     results = job.get("results") or {}
-    gcs_path = results.get("timeseries_gcs_path")
+    gcs_path = results.get(gcs_path_key)
     if not gcs_path:
-        raise HTTPException(status_code=404, detail="No timeseries available yet")
+        raise HTTPException(status_code=404, detail=f"No {artifact_label} available yet")
 
     storage = get_storage()
     bucket_name, blob_name = storage._parse_gcs_path(gcs_path)
     blob = storage.client.bucket(bucket_name).blob(blob_name)
     try:
-        data = json.loads(blob.download_as_bytes())
+        return json.loads(blob.download_as_bytes())
     except Exception as e:
-        logger.error(f"Failed to read timeseries from {gcs_path}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to read timeseries")
-
-    return EngagementTimeseriesResponse(
-        points=data.get("points", []),
-        time_column=data.get("time_column"),
-        score_column=data.get("score_column"),
-    )
+        logger.error(f"Failed to read {artifact_label} from {gcs_path}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to read {artifact_label}")
 
 
 @router.delete("/jobs/{job_id}")
