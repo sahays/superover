@@ -20,80 +20,131 @@ A check of the user's existing scene-analysis result was free-text SRT, but the 
 
 **File:** `libs/scene_processing/scene_analysis_schema.py` (new) — single source of truth for the JSON shape Gemini returns for any scene_analysis prompt.
 
+The schema below uses only Gemini-compatible JSON-Schema keywords: `type`, `properties`, `required`, `items`, `enum`, `description`, `minItems`, `maxItems`, `nullable`. No `#` comments (invalid JSON), no `$ref`, no `additionalProperties`, no `oneOf`/`anyOf`. `appearances` uses an array-of-objects rather than array-of-array because Gemini's structured-output parser is reliably strict on the former.
+
 ```python
 SCENE_ANALYSIS_SCHEMA = {
-  "type": "object",
-  "required": ["summary", "cues", "entities", "events"],
-  "properties": {
-    "summary": {"type": "string",
-                "description": "1-paragraph chunk synopsis"},
-    "cues": {  # dialog + narration + bracketed audio events, with timing
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["start_sec", "end_sec", "text", "kind"],
-        "properties": {
-          "start_sec": {"type": "number"},
-          "end_sec": {"type": "number"},
-          "speaker": {"type": "string"},   # "" if narration / non-dialog
-          "text": {"type": "string"},
-          "kind": {"type": "string",
-                   "enum": ["dialogue", "narration", "music", "sfx", "silence"]},
+    "type": "object",
+    "required": ["summary", "cues", "entities", "events"],
+    "properties": {
+        "summary": {
+            "type": "string",
+            "description": "One-paragraph synopsis of what happens in this chunk (3-6 sentences)."
         },
-      },
-    },
-    "entities": {  # characters / objects / locations with on-screen ranges
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["name", "kind", "appearances"],
-        "properties": {
-          "name": {"type": "string"},
-          "kind": {"type": "string",
-                   "enum": ["character", "object", "location"]},
-          "description": {"type": "string"},
-          "appearances": {
+        "cues": {
             "type": "array",
+            "description": "Dialog, narration, and timed audio events covering the chunk.",
             "items": {
-              "type": "array", "minItems": 2, "maxItems": 2,
-              "items": {"type": "number"},  # [start_sec, end_sec]
-            },
-          },
+                "type": "object",
+                "required": ["start_sec", "end_sec", "text", "kind"],
+                "properties": {
+                    "start_sec": {
+                        "type": "number",
+                        "description": "Absolute start time in seconds from t=0 of the full source video."
+                    },
+                    "end_sec": {
+                        "type": "number",
+                        "description": "Absolute end time in seconds from t=0 of the full source video."
+                    },
+                    "speaker": {
+                        "type": "string",
+                        "description": "Speaking character's name for dialogue cues. Empty string if narration, music, sfx, silence, or unknown."
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "Verbatim line for dialogue/narration; bracketed description for non-verbal cues (e.g. '[dramatic orchestral swell]')."
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": ["dialogue", "narration", "music", "sfx", "silence"]
+                    }
+                }
+            }
         },
-      },
-    },
-    "events": {  # tagged narrative/audio events with ranges
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["tag", "start_sec", "end_sec"],
-        "properties": {
-          "tag": {"type": "string",
-                  "enum": ["action", "dialogue_heavy", "music", "comedy",
-                           "tension", "exposition", "climax", "transition",
-                           "song", "fight", "romance", "emotional"]},
-          "description": {"type": "string"},
-          "start_sec": {"type": "number"},
-          "end_sec": {"type": "number"},
+        "entities": {
+            "type": "array",
+            "description": "Named characters, props, and locations that appear in this chunk.",
+            "items": {
+                "type": "object",
+                "required": ["name", "kind", "appearances"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "kind": {
+                        "type": "string",
+                        "enum": ["character", "object", "location"]
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Short identifying phrase (e.g. 'young protagonist, blue tunic')."
+                    },
+                    "appearances": {
+                        "type": "array",
+                        "description": "Contiguous on-screen ranges within this chunk. Merge ranges within 2 seconds of each other.",
+                        "items": {
+                            "type": "object",
+                            "required": ["start_sec", "end_sec"],
+                            "properties": {
+                                "start_sec": {"type": "number"},
+                                "end_sec": {"type": "number"}
+                            }
+                        }
+                    }
+                }
+            }
         },
-      },
-    },
-    "narrative_beats": {  # optional macro structure
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "beat": {"type": "string",
-                   "enum": ["setup", "inciting_incident", "rising_action",
-                            "climax", "falling_action", "resolution"]},
-          "start_sec": {"type": "number"},
-          "end_sec": {"type": "number"},
+        "events": {
+            "type": "array",
+            "description": "Tagged narrative or audio events with absolute time bounds.",
+            "items": {
+                "type": "object",
+                "required": ["tag", "start_sec", "end_sec"],
+                "properties": {
+                    "tag": {
+                        "type": "string",
+                        "enum": [
+                            "action", "dialogue_heavy", "music", "comedy",
+                            "tension", "exposition", "climax", "transition",
+                            "song", "fight", "romance", "emotional"
+                        ]
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "One short sentence anchoring the event in concrete content."
+                    },
+                    "start_sec": {"type": "number"},
+                    "end_sec": {"type": "number"}
+                }
+            }
         },
-      },
-    },
-  },
+        "narrative_beats": {
+            "type": "array",
+            "description": "Optional. Emit only when a classical story beat clearly starts in this chunk.",
+            "items": {
+                "type": "object",
+                "required": ["beat", "start_sec", "end_sec"],
+                "properties": {
+                    "beat": {
+                        "type": "string",
+                        "enum": [
+                            "setup", "inciting_incident", "rising_action",
+                            "climax", "falling_action", "resolution"
+                        ]
+                    },
+                    "start_sec": {"type": "number"},
+                    "end_sec": {"type": "number"}
+                }
+            }
+        }
+    }
 }
 ```
+
+**Gemini compatibility checklist** (verified against `google-genai` SDK with Vertex backend, the same path `libs/gemini/scene_analyzer.py` already uses):
+- Only types `string`, `number`, `integer`, `boolean`, `array`, `object` appear.
+- All `enum` values are strings.
+- No `$ref`, `$schema`, `additionalProperties`, `patternProperties`, `oneOf`, `anyOf`, `allOf` — the parser rejects them.
+- No comments anywhere; the file is a Python dict literal that is also valid JSON when serialized.
+- Optional fields are simply omitted from the parent's `required` array (e.g. `speaker`, `description`, `narrative_beats`). Gemini's parser does not need `nullable: true` here because the model is told in the prompt to return `""` rather than `null` for missing speakers.
 
 Wiring:
 - Seed this schema as a `category_schemas` row keyed `scene_analysis` (existing collection — `libs/db/category_schemas.py`). New scene_analysis prompts created via the prompt UI auto-pick it up because the prompt's `response_schema` is resolved through the category default when not explicitly set.
