@@ -27,6 +27,9 @@ import {
   parseTimestamp,
 } from '@/components/search/video-search-player'
 import { useAudioRecorder } from '@/hooks/use-audio-recorder'
+import { useAuthStore } from '@/store/useAuthStore'
+import { AvatarSearchPanel } from '@/components/search/avatar-search-panel'
+import type { CuratedSearchResponse, SearchRecommendation } from '@/types/search'
 
 const LOADING_MESSAGES = [
   'Asking the AI to binge-watch your videos real quick...',
@@ -40,41 +43,6 @@ const LOADING_MESSAGES = [
   'Polishing the crystal ball of search results...',
   'Running through your footage in flip-flops...',
 ]
-
-interface VideoSearchResult {
-  video_id: string
-  video_filename: string | null
-  top_match_text: string
-  score: number
-  chunk_count: number
-  timestamp_start: string | null
-  timestamp_end: string | null
-  description: string | null
-  genre: string | null
-  content_type: string | null
-  mood: string | null
-  setting: string | null
-  actors: string[] | null
-}
-
-interface SearchRecommendation {
-  video_id: string
-  video_filename: string | null
-  gcs_path: string | null
-  recommendation_type: 'full_video' | 'clip'
-  title: string
-  reason: string
-  clip_start: string | null
-  clip_end: string | null
-  confidence: number
-}
-
-interface CuratedSearchResponse {
-  response_text: string
-  recommendations: SearchRecommendation[]
-  raw_results: VideoSearchResult[]
-  interpreted_query: string | null
-}
 
 function SearchLoadingAnimation() {
   const [messageIndex, setMessageIndex] = useState(() =>
@@ -124,11 +92,13 @@ function SearchLoadingAnimation() {
 
 export default function SearchPage() {
   const navigate = useNavigate()
+  const { isMaster } = useAuthStore()
   const [query, setQuery] = useState('')
   const [curatedResponse, setCuratedResponse] =
     useState<CuratedSearchResponse | null>(null)
   const [searching, setSearching] = useState(false)
   const [searchDuration, setSearchDuration] = useState<number | null>(null)
+  const [avatarMode, setAvatarMode] = useState(false)
   const hasSearchedRef = useRef(false)
 
   const {
@@ -247,9 +217,38 @@ export default function SearchPage() {
 
   return (
     <div className="container mx-auto max-w-6xl px-4 py-8">
+      {/* Avatar mode corner widget — only renders when toggle is on. */}
+      {avatarMode && (
+        <div className="fixed top-20 right-6 z-30">
+          <AvatarSearchPanel
+            onResults={setCuratedResponse}
+            onSearchingChange={setSearching}
+            onDuration={setSearchDuration}
+          />
+        </div>
+      )}
+
       {/* Page Header */}
       <div className="mb-8 animate-slide-up">
-        <h1 className="text-3xl font-bold font-heading">Conversational Search</h1>
+        <div className="flex items-start justify-between gap-4">
+          <h1 className="text-3xl font-bold font-heading">Conversational Search</h1>
+          {isMaster && (
+            <button
+              type="button"
+              onClick={() => setAvatarMode((v) => !v)}
+              className={`shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                avatarMode
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'border-muted-foreground/30 text-muted-foreground hover:border-primary/40 hover:text-foreground'
+              }`}
+              aria-pressed={avatarMode}
+              title={avatarMode ? 'Disable Avatar mode' : 'Enable Avatar mode'}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Avatar mode {avatarMode ? 'on' : 'off'}
+            </button>
+          )}
+        </div>
         <p className="text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
           <span>Powered by</span>
           <img src="/gemini-logo.svg" alt="Gemini" className="h-5 inline-block dark:invert" />
@@ -273,7 +272,8 @@ export default function SearchPage() {
         </div>
       </div>
 
-      {/* Search Bar */}
+      {/* Search Bar — hidden in avatar mode (the avatar takes input). */}
+      {!avatarMode && (
       <div className="input-glow rounded-xl border-2 border-primary/30 p-2 card-surface animate-slide-up flex gap-2 mb-8 shadow-lg shadow-primary/5">
         <Input
           placeholder="Describe what you're looking for (any language)..."
@@ -311,9 +311,10 @@ export default function SearchPage() {
           {searching ? 'Searching...' : 'Search'}
         </Button>
       </div>
+      )}
 
       {/* Recording indicator */}
-      {isRecording && (
+      {!avatarMode && isRecording && (
         <div className="flex items-center gap-2 mb-4 text-sm text-destructive">
           <span className="relative flex h-3 w-3">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
@@ -399,15 +400,24 @@ export default function SearchPage() {
             </Card>
           )}
 
-          {/* Sample searches after results */}
-          <SampleSearchPills groups={sampleSearchGroups} onSelect={handleSampleSearch} />
+          {/* Sample searches after results — hidden in avatar mode */}
+          {!avatarMode && (
+            <SampleSearchPills groups={sampleSearchGroups} onSelect={handleSampleSearch} />
+          )}
         </div>
       )}
 
       {/* Empty state when no search has been performed */}
-      {!searching && !curatedResponse && (
+      {!searching && !curatedResponse && !avatarMode && (
         <div className="space-y-6 animate-fade-in">
           <SampleSearchPills groups={sampleSearchGroups} onSelect={handleSampleSearch} />
+        </div>
+      )}
+
+      {/* Empty state in avatar mode — minimal coaching while waiting for voice. */}
+      {!searching && !curatedResponse && avatarMode && (
+        <div className="text-center text-sm text-muted-foreground py-12 animate-fade-in">
+          Talk to the avatar — describe a movie, mood, or scene. Results will appear here.
         </div>
       )}
     </div>

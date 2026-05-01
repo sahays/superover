@@ -14,7 +14,11 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from api.models.schemas.avatars import Avatar
 from config import settings
-from libs.avatar_service import build_system_instruction
+from libs.avatar_service import (
+    SEARCH_TOOL_DECLARATION,
+    LiveMode,
+    build_system_instruction,
+)
 from libs.avatar_token import verify_live_token
 from libs.database import get_db
 from libs.gcp_auth import vertex_access_token
@@ -55,16 +59,21 @@ def _build_speech_config(avatar: Avatar) -> dict:
     }
 
 
-def _build_system_instruction(avatar: Avatar) -> str:
+def _build_system_instruction(avatar: Avatar, mode: LiveMode) -> str:
     """Wedge the default greeting into the system prompt so the model speaks
-    it on connect — Gemini Live has no separate `default_greeting` slot."""
-    text = build_system_instruction(avatar)
-    if avatar.default_greeting:
+    it on connect — Gemini Live has no separate `default_greeting` slot.
+
+    Search mode skips the greeting entirely: the desired flow there is
+    user-speaks → ack → tool-call → narrate, with no opening utterance from
+    the avatar before the user has said anything.
+    """
+    text = build_system_instruction(avatar, mode=mode)
+    if mode != "search" and avatar.default_greeting:
         text += f'\n\nOpen the conversation by saying exactly: "{avatar.default_greeting.strip()}"'
     return text
 
 
-def _build_setup_frame(avatar: Avatar) -> dict:
+def _build_setup_frame(avatar: Avatar, mode: LiveMode = "default") -> dict:
     """First frame on the upstream WS — model, voice, system instruction,
     modalities. Built server-side so the browser can't tamper with them."""
     project = settings.avatar_live_project
@@ -80,15 +89,34 @@ def _build_setup_frame(avatar: Avatar) -> dict:
             "responseModalities": ["AUDIO"] if audio_only else ["VIDEO"],
             "speechConfig": _build_speech_config(avatar),
         },
-        "systemInstruction": {"parts": [{"text": _build_system_instruction(avatar)}]},
+        "systemInstruction": {"parts": [{"text": _build_system_instruction(avatar, mode)}]},
         "outputAudioTranscription": {},
         "inputAudioTranscription": {},
     }
+    # NOTE: do not set `realtimeInputConfig.automaticActivityDetection` here.
+    # It seemed like an obvious latency win (default ~1s end-of-turn detection)
+    # but on this preview model the field destabilised the session: the model
+    # stopped emitting `toolCall` frames entirely and produced silent audio.
+    # The default VAD timing is what works.
+    # Tools are an array of tool blocks; grounding and functionDeclarations
+    # coexist. Search mode adds the search_movies tool so the model can fetch
+    # results itself instead of us injecting them mid-turn (which races).
+    tools: list[dict] = []
     if avatar.enable_grounding:
-        setup["tools"] = [{"googleSearch": {}}]
+        tools.append({"googleSearch": {}})
+    if mode == "search":
+        tools.append({"functionDeclarations": [SEARCH_TOOL_DECLARATION]})
+    if tools:
+        setup["tools"] = tools
     if not audio_only:
         setup["avatarConfig"] = {"avatarName": preset_name}
     return {"setup": setup}
+
+
+def _parse_mode(raw: Optional[str]) -> LiveMode:
+    """Constrain to known modes so a typo can't smuggle a free-text override
+    into the system instruction."""
+    return "search" if raw == "search" else "default"
 
 
 # ---------------------------------------------------------------------------
@@ -142,34 +170,73 @@ def _sniff_client_text(avatar_id: str, snippet: str, sniffed: set[str]) -> None:
     for tag in CLIENT_SNIFF_TAGS:
         if tag in snippet and tag not in sniffed:
             sniffed.add(tag)
-            logger.debug(f"[avatar:{avatar_id}] client→upstream first {tag}: {snippet}")
+            # logger.info — DEBUG is filtered by the INFO root logger in
+            # api/main.py, so debug-level lines never reach Cloud Run. The
+            # avatar_live_debug flag still gates these so they don't spam
+            # in normal traffic.
+            logger.info(f"[avatar:{avatar_id}] client→upstream first {tag}: {snippet}")
 
 
-def _log_upstream_text(avatar_id: str, text_count: int, snippet: str, setup_complete_seen: bool) -> bool:
+def _try_extract_model_utterance(snippet: str) -> Optional[str]:
+    """Pluck `serverContent.outputTranscription.text` from a JSON-shaped
+    upstream frame. Returns None for non-JSON / non-transcript frames."""
+    if "outputTranscription" not in snippet:
+        return None
+    try:
+        msg = json.loads(snippet)
+    except (ValueError, TypeError):
+        return None
+    text = msg.get("serverContent", {}).get("outputTranscription", {}).get("text")
+    if isinstance(text, str) and text.strip():
+        return text
+    return None
+
+
+def _log_first_model_utterance(avatar_id: str, snippet: str, first_utt_state: dict) -> None:
+    """One-shot INFO log of the model's first spoken text. Independent of
+    avatar_live_debug — always fires once per session so we can tell what
+    the model is saying on connect even with debug off."""
+    if first_utt_state.get("seen"):
+        return
+    text = _try_extract_model_utterance(snippet)
+    if text:
+        first_utt_state["seen"] = True
+        logger.info(f"[avatar:{avatar_id}] first model utterance: {text!r}")
+
+
+def _log_upstream_text(
+    avatar_id: str, text_count: int, snippet: str, setup_complete_seen: bool, first_utt_state: dict
+) -> bool:
     if settings.avatar_live_debug and text_count <= 10:
-        logger.debug(f"[avatar:{avatar_id}] upstream→client[txt#{text_count}]: {snippet}")
+        logger.info(f"[avatar:{avatar_id}] upstream→client[txt#{text_count}]: {snippet}")
     if not setup_complete_seen and "setupComplete" in snippet:
         logger.info(f"[avatar:{avatar_id}] upstream: setupComplete received")
         setup_complete_seen = True
+    _log_first_model_utterance(avatar_id, snippet, first_utt_state)
     if '"error"' in snippet or '"goAway"' in snippet:
         logger.warning(f"[avatar:{avatar_id}] upstream sent error/goAway: {snippet}")
     return setup_complete_seen
 
 
-def _log_upstream_bytes(avatar_id: str, bytes_count: int, payload: bytes, setup_complete_seen: bool) -> bool:
+def _log_upstream_bytes(
+    avatar_id: str, bytes_count: int, payload: bytes, setup_complete_seen: bool, first_utt_state: dict
+) -> bool:
     if settings.avatar_live_debug and (bytes_count <= 5 or bytes_count % 25 == 0):
-        logger.debug(
+        logger.info(
             f"[avatar:{avatar_id}] upstream→client[bin#{bytes_count}] ({len(payload)} bytes): {_bin_preview(payload)}"
         )
-    if setup_complete_seen or len(payload) >= 4096:
+    if setup_complete_seen and first_utt_state.get("seen"):
+        return setup_complete_seen
+    if len(payload) >= 4096:
         return setup_complete_seen
     try:
         decoded = bytes(payload).decode("utf-8")
     except UnicodeDecodeError:
         return setup_complete_seen
-    if "setupComplete" in decoded:
+    if not setup_complete_seen and "setupComplete" in decoded:
         logger.info(f"[avatar:{avatar_id}] upstream: setupComplete received (in binary frame)")
-        return True
+        setup_complete_seen = True
+    _log_first_model_utterance(avatar_id, decoded, first_utt_state)
     if '"error"' in decoded or '"goAway"' in decoded:
         logger.warning(f"[avatar:{avatar_id}] upstream sent error/goAway (binary): {decoded[:600]}")
     return setup_complete_seen
@@ -198,22 +265,50 @@ async def _relay_client_to_upstream(avatar_id: str, client_ws: WebSocket, upstre
         raise
 
 
-async def _relay_upstream_to_client(avatar_id: str, client_ws: WebSocket, upstream_ws) -> None:
-    """Forward frames from Vertex AI to the browser verbatim."""
+async def _relay_upstream_to_client(
+    avatar_id: str,
+    client_ws: WebSocket,
+    upstream_ws,
+    kickstart_frame: Optional[str] = None,
+) -> None:
+    """Forward frames from Vertex AI to the browser verbatim.
+
+    `kickstart_frame`, if provided, is sent upstream once we observe
+    `setupComplete` — a deferred kickstart eliciting the configured greeting
+    once the model is actually ready to act on it. Sending it before
+    setupComplete is unreliable on this preview surface.
+    """
     text_count = bytes_count = 0
     setup_complete_seen = False
+    kickstart_sent = kickstart_frame is None
+    first_utt_state: dict = {"seen": False}
     tail = lambda: (  # noqa: E731
         f"after {text_count + bytes_count} frame(s) (txt={text_count} bin={bytes_count})"
     )
+
+    async def _maybe_send_kickstart() -> None:
+        nonlocal kickstart_sent
+        if kickstart_sent or not setup_complete_seen or kickstart_frame is None:
+            return
+        kickstart_sent = True
+        await upstream_ws.send(kickstart_frame)
+        logger.info(f"[avatar:{avatar_id}] sent deferred kickstart turn upstream (post-setupComplete)")
+
     try:
         async for kind, payload in _iter_upstream_frames(upstream_ws):
             if kind == "bytes":
                 bytes_count += 1
-                setup_complete_seen = _log_upstream_bytes(avatar_id, bytes_count, payload, setup_complete_seen)
+                setup_complete_seen = _log_upstream_bytes(
+                    avatar_id, bytes_count, payload, setup_complete_seen, first_utt_state
+                )
+                await _maybe_send_kickstart()
                 await client_ws.send_bytes(payload)
             else:
                 text_count += 1
-                setup_complete_seen = _log_upstream_text(avatar_id, text_count, payload[:600], setup_complete_seen)
+                setup_complete_seen = _log_upstream_text(
+                    avatar_id, text_count, payload[:600], setup_complete_seen, first_utt_state
+                )
+                await _maybe_send_kickstart()
                 await client_ws.send_text(payload)
         logger.info(f"[avatar:{avatar_id}] upstream→client: stream ended {tail()}")
     except asyncio.CancelledError:
@@ -239,10 +334,9 @@ async def _relay_upstream_to_client(avatar_id: str, client_ws: WebSocket, upstre
 def _log_setup_frame(avatar_id: str, setup_frame: str) -> None:
     if not settings.avatar_live_debug:
         return
-    try:
-        logger.debug(f"[avatar:{avatar_id}] setup frame: {setup_frame[:1500]}")
-    except Exception:
-        pass
+    # logger.info because root logging is at INFO; avatar_live_debug already
+    # gates this so it doesn't fire in normal traffic.
+    logger.info(f"[avatar:{avatar_id}] setup frame: {setup_frame[:1500]}")
 
 
 async def _open_upstream(avatar_id: str, token: str):
@@ -272,10 +366,12 @@ async def _open_upstream(avatar_id: str, token: str):
     )
 
 
-async def _run_relay(avatar_id: str, ws: WebSocket, upstream_ws) -> None:
+async def _run_relay(avatar_id: str, ws: WebSocket, upstream_ws, kickstart_frame: Optional[str] = None) -> None:
     """Race the two relay directions; whichever finishes first cancels the other."""
     relay_a = asyncio.create_task(_relay_client_to_upstream(avatar_id, ws, upstream_ws))
-    relay_b = asyncio.create_task(_relay_upstream_to_client(avatar_id, ws, upstream_ws))
+    relay_b = asyncio.create_task(
+        _relay_upstream_to_client(avatar_id, ws, upstream_ws, kickstart_frame=kickstart_frame)
+    )
     done, pending = await asyncio.wait({relay_a, relay_b}, return_when=asyncio.FIRST_COMPLETED)
     for t in pending:
         t.cancel()
@@ -295,7 +391,8 @@ async def avatar_live(ws: WebSocket, avatar_id: str):
     Auth: client must present a short-lived signed token from
     POST /api/avatars/{id}/live-token in the `?token=` query string.
     """
-    logger.info(f"[avatar:{avatar_id}] live ws upgrade requested")
+    mode = _parse_mode(ws.query_params.get("mode"))
+    logger.info(f"[avatar:{avatar_id}] live ws upgrade requested (mode={mode})")
 
     if not verify_live_token(ws.query_params.get("token", ""), avatar_id):
         logger.warning(f"[avatar:{avatar_id}] live ws rejected: invalid/expired live token")
@@ -321,7 +418,7 @@ async def avatar_live(ws: WebSocket, avatar_id: str):
         return
 
     try:
-        setup_frame = json.dumps(_build_setup_frame(avatar))
+        setup_frame = json.dumps(_build_setup_frame(avatar, mode))
     except Exception as e:
         logger.exception(f"[avatar:{avatar_id}] setup frame build failed: {e}")
         await ws.close(code=1011)
@@ -338,9 +435,24 @@ async def avatar_live(ws: WebSocket, avatar_id: str):
 
     try:
         await upstream_ws.send(setup_frame)
+        # Kickstart only in default (avatar-page) mode so the avatar speaks
+        # its configured `default_greeting` on connect. In search mode the
+        # desired flow is user-speaks → ack → tool-call → narrate with no
+        # opening utterance, so we skip the kickstart entirely and the
+        # model stays silent until the user clicks Speak and talks.
+        kickstart_frame: Optional[str] = None
+        if mode != "search":
+            kickstart_frame = json.dumps(
+                {
+                    "clientContent": {
+                        "turns": [{"role": "user", "parts": [{"text": "Hi"}]}],
+                        "turnComplete": True,
+                    }
+                }
+            )
         await ws.accept()
-        logger.info(f"[avatar:{avatar_id}] client WS accepted; starting relay")
-        await _run_relay(avatar_id, ws, upstream_ws)
+        logger.info(f"[avatar:{avatar_id}] client WS accepted; starting relay (mode={mode})")
+        await _run_relay(avatar_id, ws, upstream_ws, kickstart_frame=kickstart_frame)
     except Exception as e:
         logger.exception(f"[avatar:{avatar_id}] live relay error: {e}")
     finally:

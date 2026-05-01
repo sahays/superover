@@ -91,12 +91,22 @@ export function useDeleteAvatar() {
   })
 }
 
+export type AvatarLiveMode = 'default' | 'search'
+
 // WS upgrades can't carry custom headers, so we mint a short-lived signed
 // token over authenticated HTTP and present it on the WS query string.
-export async function buildAvatarLiveUrl(avatarId: string): Promise<string> {
+//
+// `mode` is a behaviour switch read by the backend setup-frame builder
+// (default = avatar's normal persona, search = layered search-assistant rules).
+export async function buildAvatarLiveUrl(
+  avatarId: string,
+  opts: { mode?: AvatarLiveMode } = {},
+): Promise<string> {
   const { token } = await avatarsApi.liveToken(avatarId)
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const host = window.location.host
-  const qs = new URLSearchParams({ token }).toString()
+  const params: Record<string, string> = { token }
+  if (opts.mode && opts.mode !== 'default') params.mode = opts.mode
+  const qs = new URLSearchParams(params).toString()
   return `${proto}//${host}/api/avatars/${avatarId}/live?${qs}`
 }

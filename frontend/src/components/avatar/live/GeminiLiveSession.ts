@@ -12,6 +12,12 @@ export type LiveMessage =
   | { type: 'video-chunk'; mimeType: string; data: Uint8Array }
   | { type: 'audio-chunk'; mimeType: string; data: Uint8Array }
   | { type: 'transcript'; role: 'user' | 'model'; text: string; isFinal: boolean }
+  | {
+      type: 'tool-call'
+      id: string
+      name: string
+      args: Record<string, unknown>
+    }
   | { type: 'error'; error: Error }
 
 export class GeminiLiveSession extends EventTarget {
@@ -55,10 +61,41 @@ export class GeminiLiveSession extends EventTarget {
   }
 
   sendText(text: string) {
-    // Live API expects realtimeInput.text — this matches the upstream
-    // demo (gemini-live-client.ts in ffeldhaus/live-agent) and production's
-    // current behaviour.
-    this._send({ realtimeInput: { text } })
+    // clientContent + turnComplete:true closes the user turn explicitly so
+    // the model responds NOW. realtimeInput.text (the prior approach) keeps
+    // the turn open and waits for VAD silence — that buffers the message
+    // and any subsequent sendText alongside it, so the model only replies
+    // after everything has piled up. With turnComplete each sendText
+    // triggers an immediate response (and a second one interrupts the first).
+    this._send({
+      clientContent: {
+        turns: [{ role: 'user', parts: [{ text }] }],
+        turnComplete: true,
+      },
+    })
+  }
+
+  /**
+   * Reply to a `tool-call` from the model. Pairs with the `tool-call` event;
+   * the model pauses until this lands, then continues narrating with the
+   * `response` payload available as the tool result.
+   */
+  sendToolResponse(id: string, name: string, response: unknown) {
+    this._send({
+      toolResponse: {
+        functionResponses: [{ id, name, response }],
+      },
+    })
+  }
+
+  /**
+   * Explicitly close the current user turn. Kept for completeness; do NOT
+   * call this from a press-to-talk release path on this preview model —
+   * it cancels the model's in-flight response and the tool-call step is
+   * skipped. VAD silence detection is the reliable end-of-turn signal here.
+   */
+  sendTurnComplete() {
+    this._send({ clientContent: { turnComplete: true } })
   }
 
   sendAudioChunk(pcm16: ArrayBuffer) {
@@ -111,6 +148,14 @@ export class GeminiLiveSession extends EventTarget {
 
     if (msg.serverContent) {
       const sc = msg.serverContent
+      // Diagnostic: surface unexpected top-level keys so the search-mode
+      // transcript wiring can be tuned if Gemini Live shifts field names.
+      // Log only NON-content keys (skip the chatty modelTurn).
+      const keys = Object.keys(sc).filter((k) => k !== 'modelTurn')
+      if (keys.length > 0) {
+        // eslint-disable-next-line no-console
+        console.debug('[GeminiLiveSession] serverContent keys', keys, sc)
+      }
       const parts = sc.modelTurn?.parts as Array<any> | undefined
       if (parts) {
         for (const part of parts) {
@@ -148,6 +193,22 @@ export class GeminiLiveSession extends EventTarget {
           role: 'user',
           text: it.text,
           isFinal: !!it.finished,
+        })
+      }
+    }
+
+    if (msg.toolCall?.functionCalls) {
+      for (const fc of msg.toolCall.functionCalls as Array<{
+        id?: string
+        name?: string
+        args?: Record<string, unknown>
+      }>) {
+        if (!fc.name) continue
+        this._dispatch({
+          type: 'tool-call',
+          id: fc.id ?? '',
+          name: fc.name,
+          args: fc.args ?? {},
         })
       }
     }

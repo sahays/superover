@@ -326,32 +326,51 @@ export class VideoCanvasSink {
     src.start(start)
     this.nextAudioStart = start + buffer.duration
 
-    // Anchor the stream-to-wallclock relationship from the first audio
-    // sample. Both video and audio timestamps share the same MP4 timebase,
-    // so any video frame's wall-clock target is `streamTime + streamOffset`.
+    // Stream-to-wallclock mapping: every video frame's draw time is
+    // `streamSec + streamOffset`. Audio and video share the same MP4 timebase,
+    // so this mapping holds *within a continuous segment*. It does NOT hold
+    // across a pause/resume (where audio's `start` jumps forward as
+    // currentTime overtakes nextAudioStart) or a tool-call boundary (where
+    // the model may reset MP4 timestamps for the new content).
     //
-    // `outputLatency` is the gap between AudioContext.currentTime and the
-    // sound actually leaving the speakers (buffer + device + Bluetooth, can
-    // exceed 500 ms on some setups). Without folding it in, video frames
-    // get drawn at the *schedule* moment but audio doesn't emit until later
-    // — the visible result is audio lagging the lips by exactly that amount.
-    if (this.streamOffset === null) {
-      const audioStreamSec = audio.timestamp / 1_000_000
-      const outputLatency = ctx.outputLatency || 0
-      this.streamOffset = start + outputLatency - audioStreamSec
+    // Solution: roll the anchor on every audio chunk. Each chunk derives
+    // streamOffset from its own (start, audioStreamSec) pair, so the mapping
+    // tracks whatever discontinuities the producer introduces. Within a
+    // contiguous segment all chunks compute the same offset (chained
+    // scheduling preserves it), so this is a no-op there. At a discontinuity
+    // the offset updates to the new mapping and subsequent video frames
+    // line up.
+    //
+    // outputLatency is intentionally not folded in — see prior commit
+    // history; values reported by browsers vary too widely to be useful.
+    const audioStreamSec = audio.timestamp / 1_000_000
+    const newOffset = start - audioStreamSec
+    const isFirstAnchor = this.streamOffset === null
+    const offsetChanged =
+      this.streamOffset !== null && Math.abs(newOffset - this.streamOffset) > 0.01
+    this.streamOffset = newOffset
+
+    if (isFirstAnchor) {
       // eslint-disable-next-line no-console
       console.log('[VideoCanvasSink] sync anchored', {
         streamOffset: this.streamOffset,
         firstAudioStreamSec: audioStreamSec,
         startedAt: start,
-        outputLatency,
+        outputLatency: ctx.outputLatency,
         baseLatency: ctx.baseLatency,
         pendingVideoFrames: this.pendingVideoFrames.length,
       })
-      // Drain any video frames decoded before audio caught up.
+      // Drain video frames decoded before audio caught up.
       const drained = this.pendingVideoFrames
       this.pendingVideoFrames = []
       for (const f of drained) this._scheduleVideoFrame(f)
+    } else if (offsetChanged) {
+      // eslint-disable-next-line no-console
+      console.log('[VideoCanvasSink] sync re-anchored (discontinuity)', {
+        streamOffset: this.streamOffset,
+        audioStreamSec,
+        startedAt: start,
+      })
     }
     if (this.audioDataCount === 1 || this.audioDataCount % 50 === 0) {
       // eslint-disable-next-line no-console

@@ -3,7 +3,7 @@
 // toggles `disconnected`.
 
 import { useEffect, useRef, useState } from 'react'
-import { avatarsApi, buildAvatarLiveUrl } from '@/lib/api/avatars'
+import { avatarsApi, buildAvatarLiveUrl, type AvatarLiveMode } from '@/lib/api/avatars'
 import { AudioCapture } from '@/components/avatar/live/AudioCapture'
 import { AudioPlayer } from '@/components/avatar/live/AudioPlayer'
 import { GeminiLiveSession } from '@/components/avatar/live/GeminiLiveSession'
@@ -20,9 +20,11 @@ interface Options {
   avatarId: string
   enabled: boolean
   canvasRef: React.RefObject<HTMLCanvasElement | null>
+  // Behaviour layer applied server-side at WS open. Defaults to 'default'.
+  mode?: AvatarLiveMode
 }
 
-export const useAvatarLiveSession = ({ avatarId, enabled, canvasRef }: Options) => {
+export const useAvatarLiveSession = ({ avatarId, enabled, canvasRef, mode = 'default' }: Options) => {
   const sessionRef = useRef<GeminiLiveSession | null>(null)
   const captureRef = useRef<AudioCapture | null>(null)
   const sinkRef = useRef<VideoCanvasSink | null>(null)
@@ -85,7 +87,7 @@ export const useAvatarLiveSession = ({ avatarId, enabled, canvasRef }: Options) 
           player.pushChunk(e.detail.mimeType, e.detail.data)
         })
 
-        const url = await buildAvatarLiveUrl(avatarId)
+        const url = await buildAvatarLiveUrl(avatarId, { mode })
         if (cancelled) return
         await session.connect(url)
         if (cancelled) return
@@ -107,7 +109,7 @@ export const useAvatarLiveSession = ({ avatarId, enabled, canvasRef }: Options) 
     }
     // canvasRef is a ref; teardown is closed over identity-stable refs, so
     // we deliberately don't depend on it.
-  }, [avatarId, enabled])
+  }, [avatarId, enabled, mode])
 
   return {
     status,

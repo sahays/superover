@@ -127,6 +127,117 @@ class TestSystemInstruction:
         assert "serious" in sys_inst.lower()
         assert "Persona note" not in sys_inst
 
+    def test_default_mode_omits_search_overlay(self):
+        from api.models.schemas.avatars import Avatar
+        from libs.avatar_service import build_system_instruction
+
+        avatar = Avatar(id="av-z", name="Hana", preset_name="Hana")
+        sys_inst = build_system_instruction(avatar)
+        assert "MODE: SEARCH ASSISTANT" not in sys_inst
+
+    def test_search_mode_appends_overlay(self):
+        from api.models.schemas.avatars import Avatar
+        from libs.avatar_service import build_system_instruction
+
+        avatar = Avatar(id="av-z", name="Hana", preset_name="Hana")
+        sys_inst = build_system_instruction(avatar, mode="search")
+        assert "MODE: SEARCH ASSISTANT" in sys_inst
+        assert "search_movies" in sys_inst
+        # Strict 3-step ordering must be present.
+        assert "STEP 1" in sys_inst and "STEP 2" in sys_inst and "STEP 3" in sys_inst
+        assert "Never invent" in sys_inst
+
+
+# ----------------------------------------------------------------------------
+# Setup-frame builder — search mode layers behaviour and overrides greeting.
+# ----------------------------------------------------------------------------
+
+
+class TestSetupFrame:
+    def _avatar(self, **overrides):
+        from api.models.schemas.avatars import Avatar
+
+        base = dict(id="av-frame", name="Hana", preset_name="Hana", default_greeting="Hi! Talk cricket.")
+        base.update(overrides)
+        return Avatar(**base)
+
+    def test_default_mode_uses_avatar_greeting(self, monkeypatch):
+        from api.routes.avatars_live import _build_setup_frame
+        from config import settings
+
+        monkeypatch.setattr(settings, "avatar_live_project", "test-proj")
+        frame = _build_setup_frame(self._avatar())
+        text = frame["setup"]["systemInstruction"]["parts"][0]["text"]
+        assert "Hi! Talk cricket." in text
+        assert "MODE: SEARCH ASSISTANT" not in text
+
+    def test_search_mode_drops_greeting(self, monkeypatch):
+        """Search mode skips the greeting directive entirely — the desired
+        flow is user-speaks → ack → tool-call → narrate, with the avatar
+        silent until the user actually says something."""
+        from api.routes.avatars_live import _build_setup_frame
+        from config import settings
+
+        monkeypatch.setattr(settings, "avatar_live_project", "test-proj")
+        frame = _build_setup_frame(self._avatar(), "search")
+        text = frame["setup"]["systemInstruction"]["parts"][0]["text"]
+        # The avatar's own greeting must not leak in either.
+        assert "Hi! Talk cricket." not in text
+        # No "Open the conversation by saying exactly" directive at all.
+        assert "Open the conversation" not in text
+        # Search overlay still applies.
+        assert "MODE: SEARCH ASSISTANT" in text
+
+    def test_parse_mode_constrains_to_known_values(self):
+        from api.routes.avatars_live import _parse_mode
+
+        assert _parse_mode("search") == "search"
+        assert _parse_mode("default") == "default"
+        assert _parse_mode("anything-else") == "default"
+        assert _parse_mode(None) == "default"
+
+    def test_search_mode_declares_search_movies_tool(self, monkeypatch):
+        from api.routes.avatars_live import _build_setup_frame
+        from config import settings
+
+        monkeypatch.setattr(settings, "avatar_live_project", "test-proj")
+        frame = _build_setup_frame(self._avatar(), "search")
+        tools = frame["setup"].get("tools", [])
+        # Find the functionDeclarations block.
+        decls = next((t for t in tools if "functionDeclarations" in t), None)
+        assert decls is not None, "search mode must include functionDeclarations"
+        names = [d["name"] for d in decls["functionDeclarations"]]
+        assert "search_movies" in names
+        # Schema sanity check.
+        tool = next(d for d in decls["functionDeclarations"] if d["name"] == "search_movies")
+        assert tool["parameters"]["required"] == ["query"]
+        assert tool["parameters"]["properties"]["query"]["type"] == "string"
+
+    def test_default_mode_omits_search_tool(self, monkeypatch):
+        from api.routes.avatars_live import _build_setup_frame
+        from config import settings
+
+        monkeypatch.setattr(settings, "avatar_live_project", "test-proj")
+        frame = _build_setup_frame(self._avatar(), "default")
+        tools = frame["setup"].get("tools", [])
+        for t in tools:
+            if "functionDeclarations" in t:
+                names = [d["name"] for d in t["functionDeclarations"]]
+                assert "search_movies" not in names
+
+    def test_search_tool_coexists_with_grounding(self, monkeypatch):
+        from api.routes.avatars_live import _build_setup_frame
+        from config import settings
+
+        monkeypatch.setattr(settings, "avatar_live_project", "test-proj")
+        avatar = self._avatar(enable_grounding=True)
+        frame = _build_setup_frame(avatar, "search")
+        tools = frame["setup"]["tools"]
+        # Both tool blocks must be present, in either order.
+        has_grounding = any("googleSearch" in t for t in tools)
+        has_decls = any("functionDeclarations" in t for t in tools)
+        assert has_grounding and has_decls
+
 
 # ----------------------------------------------------------------------------
 # Access control — middleware blocks guests on the master-only prefix.
