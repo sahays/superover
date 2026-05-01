@@ -25,7 +25,11 @@ import AvatarCreatePage from '@/pages/AvatarCreatePage'
 import AvatarPage from '@/pages/AvatarPage'
 
 export function App() {
-  const { isAuthenticated, isMaster, inviteCode, logout } = useAuthStore()
+  const { isAuthenticated, isMaster, isAdmin, inviteCode, logout } = useAuthStore()
+  // Master and admin see the same set of routes — admin = master for
+  // navigation. The only master-only privilege is creating new invite
+  // codes, enforced inside InviteCodesPage and the API.
+  const elevated = isMaster || isAdmin
 
   // Re-validate stored code on mount
   useEffect(() => {
@@ -49,13 +53,13 @@ export function App() {
         <Route path="/scene/:id" element={<SceneDetailPage />} />
         <Route path="/scene/:id/results" element={<SceneResultsPage />} />
         <Route path="/engagement" element={<EngagementAnalysisPage />} />
-        {isMaster && <Route path="/engagement/new" element={<EngagementNewPage />} />}
+        {elevated && <Route path="/engagement/new" element={<EngagementNewPage />} />}
         <Route path="/engagement/:jobId" element={<EngagementResultsPage />} />
         <Route path="/prompts" element={<PromptsPage />} />
-        {isMaster && <Route path="/prompts/new" element={<CreatePromptPage />} />}
+        {elevated && <Route path="/prompts/new" element={<CreatePromptPage />} />}
         <Route path="/prompts/:promptId" element={<EditPromptPage />} />
         <Route path="/search" element={<SearchPage />} />
-        {isMaster && (
+        {elevated && (
           <>
             <Route path="/avatars" element={<AvatarsPage />} />
             <Route path="/avatars/create" element={<AvatarCreatePage />} />

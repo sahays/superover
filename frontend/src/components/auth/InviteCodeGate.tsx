@@ -23,8 +23,13 @@ export function InviteCodeGate() {
     try {
       const result = await authApi.validate(code.trim())
       if (result.valid) {
-        login(code.trim(), result.is_master)
-        toast.success(result.is_master ? 'Welcome, admin!' : 'Welcome!')
+        login(code.trim(), result.is_master, result.is_admin)
+        const greeting = result.is_master
+          ? 'Welcome, master!'
+          : result.is_admin
+            ? 'Welcome, admin!'
+            : 'Welcome!'
+        toast.success(greeting)
       } else {
         setError('Invalid invite code')
       }

@@ -27,28 +27,46 @@ def _is_master(code: str) -> bool:
 
 
 def validate_code(code: str) -> dict:
-    """Validate an invite code. Returns {valid, is_master}."""
+    """Validate an invite code. Returns {valid, is_master, is_admin}.
+
+    The env-var master code is always (master=True, admin=False) — admin is
+    a Firestore-side opt-in distinct from the env-var role. Stored codes
+    read `is_admin` from the doc (default False for codes pre-dating this
+    feature).
+    """
     if _is_master(code):
-        return {"valid": True, "is_master": True}
+        return {"valid": True, "is_master": True, "is_admin": False}
 
     db = get_db()
     invite = db.get_invite_code_by_value(code)
     if not invite:
-        return {"valid": False, "is_master": False}
+        return {"valid": False, "is_master": False, "is_admin": False}
 
     if not invite.get("is_active", True):
-        return {"valid": False, "is_master": False}
+        return {"valid": False, "is_master": False, "is_admin": False}
 
     expires_at = invite.get("expires_at")
     if expires_at and expires_at < datetime.now(timezone.utc):
-        return {"valid": False, "is_master": False}
+        return {"valid": False, "is_master": False, "is_admin": False}
 
-    return {"valid": True, "is_master": False}
+    return {
+        "valid": True,
+        "is_master": False,
+        "is_admin": bool(invite.get("is_admin", False)),
+    }
 
 
 def _require_master(request: Request) -> None:
     if not getattr(request.state, "is_master", False):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Master access required")
+
+
+def _require_elevated(request: Request) -> None:
+    """Master OR admin. Use for invite-code management actions that admins
+    should be able to run day-to-day (revoke, activate, delete, label edits).
+    Code creation stays master-only via _require_master."""
+    if not (getattr(request.state, "is_master", False) or getattr(request.state, "is_admin", False)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Master or admin access required")
 
 
 # --- Public endpoint ---
@@ -66,8 +84,8 @@ async def validate_invite_code(body: ValidateCodeRequest):
 
 @router.get("/codes", response_model=List[InviteCodeResponse])
 async def list_codes(request: Request):
-    """List all invite codes (master only)."""
-    _require_master(request)
+    """List all invite codes (master or admin)."""
+    _require_elevated(request)
     db = get_db()
     codes = db.get_invite_codes()
     return [InviteCodeResponse(**c) for c in codes]
@@ -75,7 +93,8 @@ async def list_codes(request: Request):
 
 @router.post("/codes", response_model=InviteCodeResponse, status_code=status.HTTP_201_CREATED)
 async def create_code(request: Request, body: CreateInviteCodeRequest):
-    """Create a new invite code (master only)."""
+    """Create a new invite code (master only — admins cannot create new codes
+    so they can't escalate privileges)."""
     _require_master(request)
     db = get_db()
 
@@ -86,6 +105,7 @@ async def create_code(request: Request, body: CreateInviteCodeRequest):
     code = db.create_invite_code(
         code=body.code,
         label=body.label,
+        is_admin=body.is_admin,
         expires_at=body.expires_at,
     )
     return InviteCodeResponse(**code)
@@ -93,8 +113,9 @@ async def create_code(request: Request, body: CreateInviteCodeRequest):
 
 @router.patch("/codes/{code_id}", response_model=InviteCodeResponse)
 async def update_code(request: Request, code_id: str, body: UpdateInviteCodeRequest):
-    """Update an invite code (master only)."""
-    _require_master(request)
+    """Update an invite code (master or admin). UpdateInviteCodeRequest only
+    exposes `label`, so admins can't promote others via PATCH."""
+    _require_elevated(request)
     db = get_db()
 
     updates = body.dict(exclude_none=True)
@@ -109,8 +130,8 @@ async def update_code(request: Request, code_id: str, body: UpdateInviteCodeRequ
 
 @router.post("/codes/{code_id}/revoke", response_model=InviteCodeResponse)
 async def revoke_code(request: Request, code_id: str):
-    """Deactivate an invite code (master only)."""
-    _require_master(request)
+    """Deactivate an invite code (master or admin)."""
+    _require_elevated(request)
     db = get_db()
     result = db.update_invite_code(code_id, {"is_active": False})
     if not result:
@@ -120,8 +141,8 @@ async def revoke_code(request: Request, code_id: str):
 
 @router.post("/codes/{code_id}/activate", response_model=InviteCodeResponse)
 async def activate_code(request: Request, code_id: str):
-    """Reactivate an invite code (master only)."""
-    _require_master(request)
+    """Reactivate an invite code (master or admin)."""
+    _require_elevated(request)
     db = get_db()
     result = db.update_invite_code(code_id, {"is_active": True})
     if not result:
@@ -131,8 +152,8 @@ async def activate_code(request: Request, code_id: str):
 
 @router.delete("/codes/{code_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_code(request: Request, code_id: str):
-    """Delete an invite code (master only)."""
-    _require_master(request)
+    """Delete an invite code (master or admin)."""
+    _require_elevated(request)
     db = get_db()
     existing = db.get_invite_code(code_id)
     if not existing:

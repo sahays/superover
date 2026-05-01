@@ -17,7 +17,8 @@ interface Props {
 }
 
 export function AvatarLiveView({ avatar }: Props) {
-  const { isMaster } = useAuthStore()
+  const { isMaster, isAdmin } = useAuthStore()
+  const elevated = isMaster || isAdmin
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [muted, setMuted] = useState(false)
@@ -29,7 +30,7 @@ export function AvatarLiveView({ avatar }: Props) {
 
   const live = useAvatarLiveSession({
     avatarId: avatar.id,
-    enabled: isMaster && !disconnected,
+    enabled: elevated && !disconnected,
     canvasRef,
   })
 
@@ -83,7 +84,7 @@ export function AvatarLiveView({ avatar }: Props) {
               : ''}
           </p>
         </div>
-        {isMaster && (
+        {elevated && (
           <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
             <Pencil className="mr-1.5 h-3 w-3" /> Edit
           </Button>

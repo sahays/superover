@@ -92,7 +92,8 @@ function SearchLoadingAnimation() {
 
 export default function SearchPage() {
   const navigate = useNavigate()
-  const { isMaster } = useAuthStore()
+  const { isMaster, isAdmin } = useAuthStore()
+  const elevated = isMaster || isAdmin
   const [query, setQuery] = useState('')
   const [curatedResponse, setCuratedResponse] =
     useState<CuratedSearchResponse | null>(null)
@@ -232,7 +233,7 @@ export default function SearchPage() {
       <div className="mb-8 animate-slide-up">
         <div className="flex items-start justify-between gap-4">
           <h1 className="text-3xl font-bold font-heading">Conversational Search</h1>
-          {isMaster && (
+          {elevated && (
             <button
               type="button"
               onClick={() => setAvatarMode((v) => !v)}

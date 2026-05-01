@@ -70,6 +70,20 @@ export function AvatarSearchPanel({ onResults, onSearchingChange, onDuration }: 
   // the fallback path only.
   const transcriptBufferRef = useRef('')
   const transcriptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Speculative search slot. Filled when the user mutes (turn ended) by
+  // firing searchApi against the live transcript in parallel with the
+  // model's ~2s VAD wait. The tool-call handler and the fallback path
+  // await this promise before falling back to a fresh search — so a
+  // tool-call that lands while the prefetch is still in flight reuses
+  // it instead of fanning out into a parallel search.
+  //
+  // The query is the user's transcript (intent), not the model's possibly-
+  // paraphrased tool-call query — but the curator handles paraphrase
+  // translation server-side, so this is fine.
+  const prefetchRef = useRef<{
+    query: string
+    promise: Promise<CuratedSearchResponse>
+  } | null>(null)
 
   const live = useAvatarLiveSession({
     avatarId: avatarId ?? '',
@@ -86,6 +100,7 @@ export function AvatarSearchPanel({ onResults, onSearchingChange, onDuration }: 
   useEffect(() => {
     if (live.status === 'connecting') {
       toolCallSeenRef.current = false
+      prefetchRef.current = null
       setReady(false)
     }
     if (live.status === 'connected') {
@@ -157,11 +172,42 @@ export function AvatarSearchPanel({ onResults, onSearchingChange, onDuration }: 
         transcriptTimerRef.current = null
       }
       transcriptBufferRef.current = ''
+
+      // Fast path: speculative search fired on mute. Await the promise
+      // (which may already be resolved, or still in flight). Saves the
+      // ~1s tool-round-trip and the avatar starts narrating immediately.
+      // We trust the user's transcript over the model's possibly-paraphrased
+      // tool-call query; the curator handles paraphrase translation
+      // server-side.
+      const cached = prefetchRef.current
+      if (cached) {
+        prefetchRef.current = null
+        try {
+          const response = await cached.promise
+          session.sendToolResponse(detail.id, detail.name, {
+            summary: response.response_text || 'No matching results were found.',
+            result_count: response.recommendations.length,
+            interpreted_query: response.interpreted_query,
+          })
+          // eslint-disable-next-line no-console
+          console.log('[AvatarSearchPanel] tool returned (prefetched)', {
+            result_count: response.recommendations.length,
+          })
+          return
+        } catch (err) {
+          session.sendToolResponse(detail.id, detail.name, {
+            error: err instanceof Error ? err.message : 'search failed',
+          })
+          // eslint-disable-next-line no-console
+          console.error('[AvatarSearchPanel] prefetched search failed', err)
+          return
+        }
+      }
+
       if (inFlightRef.current) {
-        // Belt-and-braces: if a fallback search somehow snuck in, tell the
-        // model so it can stop waiting on the tool response.
+        // Another search path snuck in. Tell the model so it doesn't wait.
         session.sendToolResponse(detail.id, detail.name, {
-          error: 'a search was already in progress',
+          error: 'a search is already in progress',
         })
         return
       }
@@ -219,7 +265,22 @@ export function AvatarSearchPanel({ onResults, onSearchingChange, onDuration }: 
       // eslint-disable-next-line no-console
       console.log('[AvatarSearchPanel] fallback: no tool-call seen, firing manual search for:', text)
       try {
-        const [response] = await runSearch(text)
+        // Prefer the prefetched promise if one was fired on mute — same
+        // turn, same query, no need to round-trip again.
+        const cached = prefetchRef.current
+        let response: CuratedSearchResponse | null
+        if (cached) {
+          prefetchRef.current = null
+          try {
+            response = await cached.promise
+          } catch {
+            const [r] = await runSearch(text)
+            response = r
+          }
+        } else {
+          const [r] = await runSearch(text)
+          response = r
+        }
         const summary = response?.response_text || 'No matching results were found.'
         // Single combined turn — see comment in plan: two separate turns race.
         session.sendText(
@@ -301,6 +362,48 @@ export function AvatarSearchPanel({ onResults, onSearchingChange, onDuration }: 
     live.captureRef.current?.setMuted(next)
     void live.sinkRef.current?.resume()
     void live.audioPlayerRef.current?.resume()
+
+    if (next === false) {
+      // Going from muted → listening: a new turn is starting. Drop any stale
+      // prefetch from a prior turn so it can't bleed into this one's response.
+      prefetchRef.current = null
+      return
+    }
+
+    // Going from listening → muted: speculative prefetch using whatever the
+    // live transcription has captured. Runs in parallel with the model's VAD
+    // wait + tool-call decision; the result is consumed by either the
+    // tool-call handler or the fallback path. Cards render optimistically
+    // when the prefetch resolves, ~1s ahead of the avatar's narration.
+    const text = transcriptBufferRef.current.trim()
+    if (!text || prefetchRef.current || inFlightRef.current) return
+
+    setSearching(true)
+    onSearchingChange(true)
+    onDuration(null)
+    const startTime = performance.now()
+    // eslint-disable-next-line no-console
+    console.log('[AvatarSearchPanel] prefetch firing for:', text)
+    const promise = searchApi.searchVideos(text, 20) as Promise<CuratedSearchResponse>
+    prefetchRef.current = { query: text, promise }
+    promise
+      .then((response) => {
+        // Optimistic UI: cards land before the avatar starts narrating.
+        onResults(response)
+        onDuration(Math.round((performance.now() - startTime) / 100) / 10)
+        // eslint-disable-next-line no-console
+        console.log('[AvatarSearchPanel] prefetch resolved', {
+          recommendations: response.recommendations.length,
+        })
+      })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error('[AvatarSearchPanel] prefetch failed', err)
+      })
+      .finally(() => {
+        setSearching(false)
+        onSearchingChange(false)
+      })
   }
 
   if (loadingAvatars) {

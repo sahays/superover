@@ -85,21 +85,28 @@ class InviteCodeMiddleware(BaseHTTPMiddleware):
             return JSONResponse(status_code=401, content={"detail": "Invalid invite code"})
 
         request.state.is_master = result["is_master"]
+        request.state.is_admin = result.get("is_admin", False)
         request.state.invite_code = code
 
-        # Block all access to master-only prefixes for non-master users
-        if not result["is_master"] and any(path.startswith(p) for p in MASTER_ONLY_PREFIXES):
+        # Admins are treated as elevated for prefix and write checks. The
+        # only master-only privilege left is creating new invite codes,
+        # which is enforced inside the create_code route handler via
+        # _require_master (admins reach the route but get 403 there).
+        elevated = result["is_master"] or result.get("is_admin", False)
+
+        # Block all access to master-only prefixes for non-elevated users
+        if not elevated and any(path.startswith(p) for p in MASTER_ONLY_PREFIXES):
             return JSONResponse(
                 status_code=403,
                 content={"detail": "Master access required"},
             )
 
-        # Block non-master write operations unless explicitly allowed
-        if not result["is_master"] and request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        # Block non-elevated write operations unless explicitly allowed
+        if not elevated and request.method in ("POST", "PUT", "PATCH", "DELETE"):
             if not _is_non_master_write_allowed(path, request.method):
                 return JSONResponse(
                     status_code=403,
-                    content={"detail": "Write access requires master account"},
+                    content={"detail": "Write access requires master or admin account"},
                 )
 
         return await call_next(request)

@@ -386,7 +386,7 @@ export const brandingApi = {
 export const authApi = {
   validate: async (code: string) => {
     const response = await apiClient.post('/api/auth/validate', { code })
-    return response.data as { valid: boolean; is_master: boolean }
+    return response.data as { valid: boolean; is_master: boolean; is_admin: boolean }
   },
 
   listCodes: async () => {
@@ -397,6 +397,7 @@ export const authApi = {
   createCode: async (data: {
     code: string
     label?: string
+    is_admin?: boolean
     expires_at?: string | null
   }) => {
     const response = await apiClient.post('/api/auth/codes', data)

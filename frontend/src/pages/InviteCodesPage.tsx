@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Plus, Trash2, ShieldCheck, ShieldOff, Copy } from 'lucide-react'
+import { Loader2, Plus, Trash2, ShieldCheck, ShieldOff, Copy, Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import {
   Dialog,
   DialogContent,
@@ -23,6 +24,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { authApi } from '@/lib/api-client'
+import { useAuthStore } from '@/store/useAuthStore'
 import { toast } from 'sonner'
 
 interface InviteCode {
@@ -30,6 +32,7 @@ interface InviteCode {
   code: string
   label: string
   is_active: boolean
+  is_admin: boolean
   expires_at: string | null
   created_at: string | null
 }
@@ -45,10 +48,14 @@ function generateRandomCode(): string {
 
 export default function InviteCodesPage() {
   const queryClient = useQueryClient()
+  const { isMaster } = useAuthStore()
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [newCode, setNewCode] = useState('')
   const [newLabel, setNewLabel] = useState('')
+  // Admin checkbox is master-only since admins can't reach the create
+  // endpoint anyway. Default off — most invitees are regular users.
+  const [newIsAdmin, setNewIsAdmin] = useState(false)
 
   const { data: codes = [], isLoading } = useQuery<InviteCode[]>({
     queryKey: ['invite-codes'],
@@ -62,6 +69,7 @@ export default function InviteCodesPage() {
       setCreateOpen(false)
       setNewCode('')
       setNewLabel('')
+      setNewIsAdmin(false)
       toast.success('Invite code created')
     },
     onError: (err: any) => {
@@ -99,6 +107,7 @@ export default function InviteCodesPage() {
     createMutation.mutate({
       code: newCode.trim(),
       label: newLabel.trim(),
+      is_admin: newIsAdmin,
     })
   }
 
@@ -122,10 +131,15 @@ export default function InviteCodesPage() {
           <h1 className="text-2xl font-bold font-heading">Invite Codes</h1>
           <p className="text-muted-foreground">Manage access codes for the platform</p>
         </div>
-        <Button onClick={() => { setNewCode(generateRandomCode()); setCreateOpen(true) }}>
-          <Plus className="mr-2 h-4 w-4" />
-          Create Code
-        </Button>
+        {/* Create is master-only. Admins reach this page (revoke/activate/
+            delete) but cannot mint new codes — so they cannot escalate
+            privileges. */}
+        {isMaster && (
+          <Button onClick={() => { setNewCode(generateRandomCode()); setCreateOpen(true) }}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Code
+          </Button>
+        )}
       </div>
 
       <div className="space-y-3">
@@ -150,6 +164,11 @@ export default function InviteCodesPage() {
                 }`}>
                   {code.is_active ? 'Active' : 'Revoked'}
                 </span>
+                {code.is_admin && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                    <Star className="h-3 w-3" /> Admin
+                  </span>
+                )}
               </div>
               {code.label && <p className="text-sm text-muted-foreground">{code.label}</p>}
               {code.expires_at && (
@@ -222,6 +241,19 @@ export default function InviteCodesPage() {
                 value={newLabel}
                 onChange={(e) => setNewLabel(e.target.value)}
                 placeholder="e.g., Team member name"
+              />
+            </div>
+            <div className="flex items-start justify-between rounded-lg border p-3">
+              <div>
+                <Label htmlFor="admin-toggle" className="text-sm">Admin</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Grants master-level access except creating new codes.
+                </p>
+              </div>
+              <Switch
+                id="admin-toggle"
+                checked={newIsAdmin}
+                onCheckedChange={setNewIsAdmin}
               />
             </div>
           </div>

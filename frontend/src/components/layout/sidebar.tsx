@@ -186,7 +186,8 @@ function BrandLogo({ logoUrl }: { logoUrl: string }) {
 export function Sidebar() {
   const pathname = useLocation().pathname
   const { data: branding } = useBranding()
-  const { isMaster, logout } = useAuthStore()
+  const { isMaster, isAdmin, logout } = useAuthStore()
+  const elevated = isMaster || isAdmin
   const appTitle = branding?.app_title || 'Superover'
   const subtitle = branding?.subtitle || 'Video Analysis Platform'
   const logoUrl = branding?.logo_url || ''
@@ -208,7 +209,7 @@ export function Sidebar() {
             {featureItems.map((item) => (
               <NavLink key={item.href} item={item} pathname={pathname} />
             ))}
-            {isMaster && (
+            {elevated && (
               <NavLink
                 key="/avatars"
                 item={{
@@ -229,7 +230,7 @@ export function Sidebar() {
             ))}
           </div>
 
-          {isMaster && (
+          {elevated && (
             <>
               <div className="my-4 border-t" />
               <div className="stagger-children space-y-1">

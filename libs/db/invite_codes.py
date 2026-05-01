@@ -39,6 +39,7 @@ class InviteCodesMixin:
         self,
         code: str,
         label: str = "",
+        is_admin: bool = False,
         expires_at: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         """Create a new invite code."""
@@ -48,13 +49,14 @@ class InviteCodesMixin:
             "code": code,
             "label": label,
             "is_active": True,
+            "is_admin": is_admin,
             "created_at": firestore.SERVER_TIMESTAMP,
         }
         if expires_at is not None:
             code_data["expires_at"] = expires_at
 
         self.invite_codes_col.document(code_id).set(code_data)
-        logger.info(f"Created invite code: {code_id} (label={label})")
+        logger.info(f"Created invite code: {code_id} (label={label}, admin={is_admin})")
         return self.get_invite_code(code_id)  # type: ignore[return-value]
 
     def update_invite_code(self, code_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
