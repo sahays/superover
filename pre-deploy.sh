@@ -25,13 +25,13 @@ echo ""
 echo ">> [Python] Linting with ruff..."
 ruff check "$REPO_ROOT" --fix
 
-# ── Python: type check (soft gate — warns but does not block) ──
+# ── Python: type check (hard gate — blocks deploy on errors) ──
+# Per-module overrides in mypy.ini grandfather pre-existing errors; new
+# modules are gated strictly by default. Tighten by removing entries from
+# mypy.ini, not by re-softening this gate.
 echo ""
 echo ">> [Python] Type checking with mypy..."
-if ! mypy "$REPO_ROOT" --exclude='(frontend|venv)/' --ignore-missing-imports --explicit-package-bases; then
-    echo ""
-    echo "   ⚠  mypy found type errors (non-blocking). Fix before tightening this gate."
-fi
+mypy "$REPO_ROOT" --explicit-package-bases
 
 # ── Frontend: lint ─────────────────────────────────────────
 echo ""

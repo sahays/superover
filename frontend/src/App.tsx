@@ -20,6 +20,9 @@ import SearchPage from '@/pages/SearchPage'
 import SearchSyncPage from '@/pages/SearchSyncPage'
 import BrandingPage from '@/pages/BrandingPage'
 import InviteCodesPage from '@/pages/InviteCodesPage'
+import AvatarsPage from '@/pages/AvatarsPage'
+import AvatarCreatePage from '@/pages/AvatarCreatePage'
+import AvatarPage from '@/pages/AvatarPage'
 
 export function App() {
   const { isAuthenticated, isMaster, inviteCode, logout } = useAuthStore()
@@ -54,6 +57,9 @@ export function App() {
         <Route path="/search" element={<SearchPage />} />
         {isMaster && (
           <>
+            <Route path="/avatars" element={<AvatarsPage />} />
+            <Route path="/avatars/create" element={<AvatarCreatePage />} />
+            <Route path="/avatars/:id" element={<AvatarPage />} />
             <Route path="/search/sync" element={<SearchSyncPage />} />
             <Route path="/branding" element={<BrandingPage />} />
             <Route path="/invite-codes" element={<InviteCodesPage />} />

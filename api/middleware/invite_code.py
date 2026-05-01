@@ -11,6 +11,11 @@ logger = logging.getLogger(__name__)
 # Paths that skip auth entirely
 EXEMPT_PATHS = {"/health", "/api/auth/validate"}
 
+# Path prefixes restricted to master users for ALL methods (read + write).
+# Avatars expose a personal-data-rich live conversation; not suitable for
+# anonymous invite-code holders.
+MASTER_ONLY_PREFIXES = ("/api/avatars",)
+
 # Write paths allowed for non-master users (exact match)
 NON_MASTER_WRITE_ALLOWED = {"/api/auth/validate"}
 
@@ -81,6 +86,13 @@ class InviteCodeMiddleware(BaseHTTPMiddleware):
 
         request.state.is_master = result["is_master"]
         request.state.invite_code = code
+
+        # Block all access to master-only prefixes for non-master users
+        if not result["is_master"] and any(path.startswith(p) for p in MASTER_ONLY_PREFIXES):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Master access required"},
+            )
 
         # Block non-master write operations unless explicitly allowed
         if not result["is_master"] and request.method in ("POST", "PUT", "PATCH", "DELETE"):

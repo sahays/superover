@@ -64,6 +64,16 @@ from .auth import (
     CreateInviteCodeRequest,
     UpdateInviteCodeRequest,
 )
+from .avatars import (
+    Avatar,
+    AvatarStyle,
+    AvatarVoice,
+    AvatarResponse,
+    CreateAvatarRequest,
+    UpdateAvatarRequest,
+    LiveConfigResponse,
+    LiveTokenResponse,
+)
 from .search import (
     SyncStatusItem,
     SyncRequest,
@@ -140,4 +150,13 @@ __all__ = [
     "InviteCodeResponse",
     "CreateInviteCodeRequest",
     "UpdateInviteCodeRequest",
+    # Avatars
+    "Avatar",
+    "AvatarStyle",
+    "AvatarVoice",
+    "AvatarResponse",
+    "CreateAvatarRequest",
+    "UpdateAvatarRequest",
+    "LiveConfigResponse",
+    "LiveTokenResponse",
 ]

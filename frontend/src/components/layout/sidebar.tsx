@@ -14,6 +14,7 @@ import {
   KeyRound,
   LogOut,
   TrendingUp,
+  MessagesSquare,
 } from 'lucide-react'
 import { useBranding } from '@/hooks/use-branding'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -207,6 +208,18 @@ export function Sidebar() {
             {featureItems.map((item) => (
               <NavLink key={item.href} item={item} pathname={pathname} />
             ))}
+            {isMaster && (
+              <NavLink
+                key="/avatars"
+                item={{
+                  title: 'Avatars',
+                  href: '/avatars',
+                  icon: MessagesSquare,
+                  description: 'Live conversations with personas',
+                }}
+                pathname={pathname}
+              />
+            )}
           </div>
 
           <div className="my-4 border-t" />

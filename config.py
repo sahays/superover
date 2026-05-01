@@ -5,6 +5,7 @@ Designed to work both locally and on Cloud Run.
 
 import os
 from pathlib import Path
+from typing import Optional
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
@@ -69,6 +70,19 @@ class Settings(BaseSettings):
 
     # Auth
     master_invite_code: str = ""
+
+    # Avatar Live (Vertex Gemini Live preview). avatar_live_project must be
+    # set explicitly — the preview surface is allowlisted per project.
+    avatar_live_model: str = "gemini-3.1-flash-live-preview-04-2026"
+    avatar_live_project: str = ""
+    avatar_live_location: str = "global"
+    avatar_live_preset_name: Optional[str] = None
+    avatar_live_audio_only: bool = False
+    # Override the default Vertex Live host (e.g. when the model graduates
+    # from the autopush sandbox to GA aiplatform.googleapis.com).
+    avatar_live_host_override: Optional[str] = None
+    # Per-frame relay logging for the live session — noisy, off by default.
+    avatar_live_debug: bool = False
 
     # Runtime
     port: int = 8080  # Cloud Run uses 8080 by default
