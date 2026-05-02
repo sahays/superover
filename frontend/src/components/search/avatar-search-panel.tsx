@@ -1,25 +1,48 @@
-// Avatar mode for /search. Owns the live session lifecycle and orchestrates
-// the user's voice → search → spoken results loop.
+// Avatar mode for /search. Owns the live session lifecycle and an
+// event-driven search pipeline:
 //
-// Two paths run simultaneously, with the tool-call path always preferred:
+//   1. user speaks; pause auto-triggers pipeline
+//   2. panel shows "You asked: <transcript>"          (immediate)
+//   3. panel sends sendText(ack)                      → avatar speaks ack
+//   4. on ack `turn-complete`:
+//        - searchApi(transcript) fires
+//        - sendText(filler) → avatar speaks "trying to find a few titles…"
+//   5. race — whichever wins first:
+//        - search resolves → summary sent now, interrupts the filler
+//        - filler turn-completes → wait for search, then summary
+//   6. cards render in main column on search resolve
+//   7. panel sends sendText("[SEARCH_RESULTS] …")     → avatar narrates
 //
-//   PRIMARY (tool calling): the backend declares a `search_movies` tool in
-//   the setup frame for mode=search. The model decides when to call it,
-//   emits a `toolCall` frame, and PAUSES until we send a `toolResponse` —
-//   so the search and the narration can never race. The model then narrates
-//   the result in one coherent response.
+// Pipeline state is a small finite-state machine driven via useReducer. The
+// reducer is pure; side effects (sendText, searchApi, mic mute) run in
+// useEffect hooks keyed off the state. Mic muted is *derived* from state —
+// the mic is open iff state.kind === 'listening'.
 //
-//   FALLBACK (transcript + single sendText): if the model never emits a
-//   tool-call within the user-quiet window — e.g. because this preview
-//   model doesn't honour functionDeclarations on the video modality — we
-//   fire the search ourselves and inject one combined `clientContent` turn
-//   asking the model to acknowledge + summarise in one response.
+// State-machine diagram:
 //
-// `toolCallSeenRef` flips on the first tool-call event of the session and
-// permanently disables the fallback for that session. Both paths share the
-// `inFlightRef` lock so we can't double-fire.
+//                    +-----------+   click   +-----------+
+//                    |   idle    |---------->| listening |
+//                    +-----------+           +-----------+
+//                          ^                   |        |
+//                          |          stop +empty       | stop +text
+//             narration-sent|         transcript        |
+//                          |                  |         v
+//                          |                  |    +---------+
+//                          |                  +----|         |
+//                          |                       | asking  |
+//                          |   search-resolved     |         |
+//                          |       +---------------+---------+
+//                          |       |
+//                          |       v
+//                          |  +---------------+
+//                          +--+  summarising  |
+//                             +---------------+
+//
+// Connection-side state (live.status, ready warm-up, disconnected) lives
+// outside this FSM since it's owned by useAvatarLiveSession. The FSM only
+// covers what the panel does once we're connected + ready.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2, Mic, MicOff, Power, User as UserIcon } from 'lucide-react'
 import { searchApi } from '@/lib/api-client'
@@ -29,8 +52,136 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import type { CuratedSearchResponse } from '@/types/search'
 
+// ---------------------------------------------------------------------------
+// State machine
+// ---------------------------------------------------------------------------
+
+type PipelineState =
+  | { kind: 'idle'; lastQuery: string }
+  | { kind: 'listening'; transcript: string }
+  | { kind: 'asking'; query: string }
+  | { kind: 'summarising'; query: string }
+
+type PipelineEvent =
+  | { type: 'mic-on' }
+  | { type: 'mic-off-empty' }
+  | { type: 'pipeline-start'; query: string }
+  | { type: 'transcript-update'; text: string }
+  | { type: 'search-resolved' }
+  | { type: 'narration-sent' }
+  | { type: 'reset' }
+
+const INITIAL_STATE: PipelineState = { kind: 'idle', lastQuery: '' }
+
+function pipelineReducer(state: PipelineState, event: PipelineEvent): PipelineState {
+  switch (event.type) {
+    case 'mic-on':
+      if (state.kind === 'idle') return { kind: 'listening', transcript: '' }
+      return state
+    case 'transcript-update':
+      // Accumulate only while listening; ignore stale transcript events that
+      // arrive after the user has clicked stop (Gemini Live can lag the
+      // transcription by a few hundred ms).
+      if (state.kind === 'listening') return { ...state, transcript: event.text }
+      return state
+    case 'mic-off-empty':
+      if (state.kind === 'listening') return { kind: 'idle', lastQuery: '' }
+      return state
+    case 'pipeline-start':
+      if (state.kind === 'listening') return { kind: 'asking', query: event.query }
+      return state
+    case 'search-resolved':
+      if (state.kind === 'asking') return { kind: 'summarising', query: state.query }
+      return state
+    case 'narration-sent':
+      if (state.kind === 'summarising' || state.kind === 'asking') {
+        return { kind: 'idle', lastQuery: state.query }
+      }
+      return state
+    case 'reset':
+      return INITIAL_STATE
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+// User-pause threshold. We dispatch pipeline-start automatically when no
+// new transcript chunk has arrived for this long while in `listening`.
+// Within-sentence pauses are typically 200-400ms; between-sentence pauses
+// up to ~800ms. 1200ms is comfortably past both.
+const AUTO_STOP_MS = 1200
+
+// Warm-up after `setupComplete` — the model is briefly unreliable about
+// handling user audio in the first ~1.5s.
+const WARM_UP_MS = 2000
+
+// Hard cap on how long we wait for any single model turn (ack or filler)
+// to finish before assuming we missed the turn-complete signal and moving
+// on. Stops a stuck model from deadlocking the pipeline.
+const TURN_MAX_WAIT_MS = 12000
+
+// Tiny buffer added after the WebAudio queue is supposed to have drained.
+// Covers slop between AudioContext clock and AudioBufferSourceNode's actual
+// stop time, plus a small "natural pause" before the next utterance.
+const PLAYBACK_TAIL_MS = 200
+
+// Resolves once the model has finished speaking AND the local WebAudio
+// queue has fully drained. Order of waits:
+//   1. first model audio chunk arrives (guards against stale turn-complete
+//      events that fire before the model actually starts speaking, e.g.
+//      from closing the user's input turn)
+//   2. server-side `turn-complete` event arrives
+//   3. local audio buffer drains (queryable via `getAudioRemainingMs`)
+// Capped at `maxWaitMs` end-to-end so a stuck model can't deadlock.
+async function waitForModelSpeechEnd(
+  session: {
+    addEventListener: (t: string, h: () => void) => void
+    removeEventListener: (t: string, h: () => void) => void
+  },
+  getAudioRemainingMs: () => number,
+  maxWaitMs: number,
+): Promise<void> {
+  const startedAt = Date.now()
+  // Phase 1+2: wait for first audio chunk + turn-complete.
+  await new Promise<void>((resolve) => {
+    let heardAudio = false
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      session.removeEventListener('turn-complete', onTurnComplete)
+      session.removeEventListener('audio-chunk', onAudio)
+      clearTimeout(timer)
+      resolve()
+    }
+    const onAudio = () => {
+      heardAudio = true
+    }
+    const onTurnComplete = () => {
+      if (heardAudio) finish()
+    }
+    session.addEventListener('audio-chunk', onAudio)
+    session.addEventListener('turn-complete', onTurnComplete)
+    const timer = setTimeout(finish, maxWaitMs)
+  })
+  // Phase 3: wait for the WebAudio queue to drain. We can compute exactly
+  // how many ms remain because each chunk's duration was added to
+  // `nextAudioStart` when it was scheduled.
+  const elapsed = Date.now() - startedAt
+  const budget = Math.max(0, maxWaitMs - elapsed)
+  const remaining = Math.min(getAudioRemainingMs(), budget)
+  if (remaining > 0) {
+    await new Promise((r) => setTimeout(r, remaining + PLAYBACK_TAIL_MS))
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
 interface Props {
-  // Pushed up so the parent can render result cards in the main column.
   onResults: (response: CuratedSearchResponse | null) => void
   onSearchingChange: (searching: boolean) => void
   onDuration: (seconds: number | null) => void
@@ -41,49 +192,25 @@ export function AvatarSearchPanel({ onResults, onSearchingChange, onDuration }: 
   const avatarId = avatars?.[0]?.id ?? null
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  // Mic is off by default — click-to-talk. Without this the avatar's own
-  // audio coming back through the speakers would feed into the mic and
-  // get re-transcribed as a user query, kicking off another search.
-  const [muted, setMuted] = useState(true)
-  // Locks the speak button while a search round-trip is in flight. Cleared
-  // when the search response returns; the user re-enables the mic by
-  // clicking Speak again (still muted by default after that).
-  const [searching, setSearching] = useState(false)
-  // Warm-up gate. Status flips to 'connected' on setupComplete, but the
-  // model needs a beat to be reliable about handling user audio. Without
-  // this gate, clicking Speak immediately on connect produces a confused
-  // model response (random greeting, no tool call).
+  const [state, dispatch] = useReducer(pipelineReducer, INITIAL_STATE)
   const [ready, setReady] = useState(false)
-  // Latches when the user explicitly disconnects — stops the auto-start
-  // effect inside useAvatarLiveSession from immediately reconnecting.
   const [disconnected, setDisconnected] = useState(false)
-  const [latestUserText, setLatestUserText] = useState('')
-  // Locks against the next search firing while the previous is in flight.
-  // Without this, a user who keeps speaking can fan out parallel searches.
-  const inFlightRef = useRef(false)
-  // Latches true on the first tool-call event of this session. While true,
-  // the fallback transcript path is dead — the model owns the trigger.
-  const toolCallSeenRef = useRef(false)
-  // Gemini Live emits `inputTranscription` events as either deltas or
-  // cumulative text, and `finished` doesn't always arrive — so we buffer
-  // until either isFinal hits or the user goes quiet for a beat. Used by
-  // the fallback path only.
+
+  // Refs the side effects need outside the reducer.
   const transcriptBufferRef = useRef('')
-  const transcriptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Speculative search slot. Filled when the user mutes (turn ended) by
-  // firing searchApi against the live transcript in parallel with the
-  // model's ~2s VAD wait. The tool-call handler and the fallback path
-  // await this promise before falling back to a fresh search — so a
-  // tool-call that lands while the prefetch is still in flight reuses
-  // it instead of fanning out into a parallel search.
-  //
-  // The query is the user's transcript (intent), not the model's possibly-
-  // paraphrased tool-call query — but the curator handles paraphrase
-  // translation server-side, so this is fine.
-  const prefetchRef = useRef<{
-    query: string
-    promise: Promise<CuratedSearchResponse>
-  } | null>(null)
+  // Auto-stop timer: while listening, each new transcript chunk resets it.
+  // When it fires (no chunk for AUTO_STOP_MS), we treat it as end-of-speech
+  // and kick off the pipeline.
+  const autoStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Mirrors `state.kind` synchronously so event handlers (which capture the
+  // initial closure) can read the current state.
+  const stateKindRef = useRef<PipelineState['kind']>(state.kind)
+  useEffect(() => {
+    stateKindRef.current = state.kind
+  }, [state.kind])
+  // Stable ref to runPipeline so the transcript handler closure always
+  // sees the latest version without re-binding the listener.
+  const runPipelineRef = useRef<(query: string) => Promise<void>>(async () => {})
 
   const live = useAvatarLiveSession({
     avatarId: avatarId ?? '',
@@ -92,257 +219,193 @@ export function AvatarSearchPanel({ onResults, onSearchingChange, onDuration }: 
     mode: 'search',
   })
 
-  // Apply the initial muted=true to AudioCapture as soon as it spins up.
-  // Re-applies on every status change so we recover after teardown→reconnect.
-  // Also resets toolCallSeenRef so the fallback path is re-armed across
-  // session reboots — a single tool-call in a previous session shouldn't
-  // permanently disable the fallback.
+  // Mic is muted iff we are NOT in 'listening'. Single source of truth.
+  const muted = state.kind !== 'listening'
+  const isWorking = state.kind === 'asking' || state.kind === 'summarising'
+
+  // Surface "searching" upward so the parent can disable its own affordances.
+  useEffect(() => {
+    onSearchingChange(isWorking)
+  }, [isWorking, onSearchingChange])
+
+  // Sync the mic to the FSM. Anything other than `listening` mutes it.
+  useEffect(() => {
+    live.captureRef.current?.setMuted(muted)
+  }, [muted, live.captureRef])
+
+  // Connection lifecycle: reset FSM and warm-up gate when the session
+  // (re)connects.
   useEffect(() => {
     if (live.status === 'connecting') {
-      toolCallSeenRef.current = false
-      prefetchRef.current = null
       setReady(false)
+      transcriptBufferRef.current = ''
+      if (autoStopTimerRef.current) {
+        clearTimeout(autoStopTimerRef.current)
+        autoStopTimerRef.current = null
+      }
+      dispatch({ type: 'reset' })
     }
     if (live.status === 'connected') {
-      live.captureRef.current?.setMuted(muted)
-      // 2-second warm-up. setupComplete arrives almost instantly but the
-      // model isn't actually ready to handle user audio for ~1.5s after.
-      const t = setTimeout(() => setReady(true), 2000)
+      const t = setTimeout(() => setReady(true), WARM_UP_MS)
       return () => clearTimeout(t)
     }
     setReady(false)
-  }, [live.status, live.captureRef, muted])
+  }, [live.status])
 
-  // Shared search runner. Returns a tuple [response | null, durationSec].
-  // Mutes mic + flips local UI state up front; clears them in a finally.
-  // The PRIMARY tool-call path uses this and sends a toolResponse on top.
-  // The FALLBACK transcript path uses this and sends a combined sendText.
-  const runSearch = async (
-    rawQuery: string,
-  ): Promise<[CuratedSearchResponse | null, number]> => {
-    const query = rawQuery.trim()
-    if (!query) return [null, 0]
-    // Auto-mute: the avatar is about to narrate; without muting, that audio
-    // would spill back into the mic and re-trigger.
-    live.captureRef.current?.setMuted(true)
-    setMuted(true)
-    setSearching(true)
-    onSearchingChange(true)
-    onDuration(null)
-    const start = performance.now()
-    try {
-      const response: CuratedSearchResponse = await searchApi.searchVideos(query, 20)
-      const durationSec = Math.round((performance.now() - start) / 100) / 10
-      onResults(response)
-      onDuration(durationSec)
-      // eslint-disable-next-line no-console
-      console.log('[AvatarSearchPanel] search returned', {
-        query,
-        recommendations: response.recommendations.length,
-        interpreted: response.interpreted_query,
-      })
-      return [response, durationSec]
-    } finally {
-      onSearchingChange(false)
-      setSearching(false)
+  // Cancel any pending auto-stop timer when we leave the listening state.
+  useEffect(() => {
+    if (state.kind !== 'listening' && autoStopTimerRef.current) {
+      clearTimeout(autoStopTimerRef.current)
+      autoStopTimerRef.current = null
     }
-  }
+  }, [state.kind])
 
-  // PRIMARY path — tool calling.
-  // Model emits `tool-call` → we run the search → reply with `toolResponse`.
-  // The model is paused while waiting for the response, then narrates the
-  // result naturally as a single coherent spoken turn. No race, no bookend.
+  // Listen for user input transcription so the FSM has live transcript
+  // text to consume on click-stop.
   useEffect(() => {
     const session = live.sessionRef.current
     if (!session) return
-
-    const handler = async (e: Event) => {
-      const detail = (e as CustomEvent).detail as {
-        id: string
-        name: string
-        args: Record<string, unknown>
-      }
-      if (detail.name !== 'search_movies') return
-      // eslint-disable-next-line no-console
-      console.log('[AvatarSearchPanel] tool-call', detail)
-      toolCallSeenRef.current = true
-      // Cancel any pending fallback timer — the primary path owns this turn.
-      if (transcriptTimerRef.current) {
-        clearTimeout(transcriptTimerRef.current)
-        transcriptTimerRef.current = null
-      }
-      transcriptBufferRef.current = ''
-
-      // Fast path: speculative search fired on mute. Await the promise
-      // (which may already be resolved, or still in flight). Saves the
-      // ~1s tool-round-trip and the avatar starts narrating immediately.
-      // We trust the user's transcript over the model's possibly-paraphrased
-      // tool-call query; the curator handles paraphrase translation
-      // server-side.
-      const cached = prefetchRef.current
-      if (cached) {
-        prefetchRef.current = null
-        try {
-          const response = await cached.promise
-          session.sendToolResponse(detail.id, detail.name, {
-            summary: response.response_text || 'No matching results were found.',
-            result_count: response.recommendations.length,
-            interpreted_query: response.interpreted_query,
-          })
-          // eslint-disable-next-line no-console
-          console.log('[AvatarSearchPanel] tool returned (prefetched)', {
-            result_count: response.recommendations.length,
-          })
-          return
-        } catch (err) {
-          session.sendToolResponse(detail.id, detail.name, {
-            error: err instanceof Error ? err.message : 'search failed',
-          })
-          // eslint-disable-next-line no-console
-          console.error('[AvatarSearchPanel] prefetched search failed', err)
-          return
-        }
-      }
-
-      if (inFlightRef.current) {
-        // Another search path snuck in. Tell the model so it doesn't wait.
-        session.sendToolResponse(detail.id, detail.name, {
-          error: 'a search is already in progress',
-        })
-        return
-      }
-      inFlightRef.current = true
-
-      const query = String(detail.args.query ?? '').trim()
-      if (!query) {
-        session.sendToolResponse(detail.id, detail.name, { error: 'empty query' })
-        inFlightRef.current = false
-        return
-      }
-      try {
-        const [response] = await runSearch(query)
-        if (!response) {
-          session.sendToolResponse(detail.id, detail.name, { result_count: 0 })
-          return
-        }
-        session.sendToolResponse(detail.id, detail.name, {
-          summary: response.response_text || 'No matching results were found.',
-          result_count: response.recommendations.length,
-          interpreted_query: response.interpreted_query,
-        })
-        // eslint-disable-next-line no-console
-        console.log('[AvatarSearchPanel] tool returned', {
-          result_count: response.recommendations.length,
-        })
-      } catch (err) {
-        session.sendToolResponse(detail.id, detail.name, {
-          error: err instanceof Error ? err.message : 'search failed',
-        })
-        // eslint-disable-next-line no-console
-        console.error('[AvatarSearchPanel] tool search failed', err)
-      } finally {
-        inFlightRef.current = false
-      }
-    }
-
-    session.addEventListener('tool-call', handler)
-    return () => session.removeEventListener('tool-call', handler)
-  }, [live.status, live.sessionRef, onResults, onSearchingChange, onDuration])
-
-  // FALLBACK path — transcript + quiet timeout + single combined sendText.
-  // Only fires if no tool-call has been seen this session. Identical to the
-  // pre-tool-calling shipped behaviour.
-  useEffect(() => {
-    const session = live.sessionRef.current
-    if (!session) return
-
-    const fireFallback = async (raw: string) => {
-      if (toolCallSeenRef.current || inFlightRef.current) return
-      const text = raw.trim()
-      if (!text) return
-      inFlightRef.current = true
-      transcriptBufferRef.current = ''
-      // eslint-disable-next-line no-console
-      console.log('[AvatarSearchPanel] fallback: no tool-call seen, firing manual search for:', text)
-      try {
-        // Prefer the prefetched promise if one was fired on mute — same
-        // turn, same query, no need to round-trip again.
-        const cached = prefetchRef.current
-        let response: CuratedSearchResponse | null
-        if (cached) {
-          prefetchRef.current = null
-          try {
-            response = await cached.promise
-          } catch {
-            const [r] = await runSearch(text)
-            response = r
-          }
-        } else {
-          const [r] = await runSearch(text)
-          response = r
-        }
-        const summary = response?.response_text || 'No matching results were found.'
-        // Single combined turn — see comment in plan: two separate turns race.
-        session.sendText(
-          `The user just asked: "${text}".\n\n` +
-            `[SEARCH_RESULTS]\n${summary}\n\n` +
-            'Reply in this exact order, as one continuous spoken response:\n' +
-            '1. A brief acknowledgment ("Here\'s what I found…" or similar — one short clause).\n' +
-            '2. A 1-2 sentence summary of the results above.\n' +
-            'Stay grounded in the [SEARCH_RESULTS] text. Do not invent details. ' +
-            'Do not name films, actors, or scenes that are not in the [SEARCH_RESULTS] payload.',
-        )
-      } catch (err) {
-        session.sendText(
-          'Tell the user the search hit an error and ask them to try again, in one short sentence.',
-        )
-        // eslint-disable-next-line no-console
-        console.error('[AvatarSearchPanel] fallback search failed', err)
-      } finally {
-        inFlightRef.current = false
-      }
-    }
-
-    const scheduleQuietTrigger = () => {
-      if (transcriptTimerRef.current) clearTimeout(transcriptTimerRef.current)
-      transcriptTimerRef.current = setTimeout(() => {
-        if (toolCallSeenRef.current) return
-        const buf = transcriptBufferRef.current
-        if (buf.trim()) void fireFallback(buf)
-      }, 900)
-    }
-
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as {
         role: 'user' | 'model'
         text: string
-        isFinal: boolean
       }
       if (detail.role !== 'user') return
-      // Even if the primary path will end up handling this, we still update
-      // the user-facing transcript caption here.
+      // Cumulative-vs-delta heuristic — Gemini Live sends either depending
+      // on the build. We end up with the longest coherent prefix.
       const incoming = detail.text
       const buf = transcriptBufferRef.current
       transcriptBufferRef.current = incoming.startsWith(buf)
         ? incoming
         : (buf + incoming).trim()
       const merged = transcriptBufferRef.current.trim()
-      if (merged) setLatestUserText(merged)
-      if (toolCallSeenRef.current) return
-      if (detail.isFinal && merged) {
-        if (transcriptTimerRef.current) clearTimeout(transcriptTimerRef.current)
-        void fireFallback(merged)
-        return
+      // Only push into FSM state during listening; otherwise the late
+      // transcript would mutate the displayed query mid-pipeline.
+      if (stateKindRef.current === 'listening' && merged) {
+        dispatch({ type: 'transcript-update', text: merged })
+        // Reset auto-stop. Pipeline kicks off when no new chunk arrives
+        // for AUTO_STOP_MS — i.e., the user has paused.
+        if (autoStopTimerRef.current) clearTimeout(autoStopTimerRef.current)
+        autoStopTimerRef.current = setTimeout(() => {
+          autoStopTimerRef.current = null
+          if (stateKindRef.current !== 'listening') return
+          const finalQuery = transcriptBufferRef.current.trim()
+          if (!finalQuery) return
+          dispatch({ type: 'pipeline-start', query: finalQuery })
+          void runPipelineRef.current(finalQuery)
+        }, AUTO_STOP_MS)
       }
-      scheduleQuietTrigger()
     }
-
     session.addEventListener('transcript', handler)
-    return () => {
-      session.removeEventListener('transcript', handler)
-      if (transcriptTimerRef.current) clearTimeout(transcriptTimerRef.current)
+    return () => session.removeEventListener('transcript', handler)
+  }, [live.status, live.sessionRef])
+
+  // Event-driven pipeline. Search does NOT fire until the ack response has
+  // finished — this matches the user-facing intent that the avatar responds
+  // first, *then* the search begins. Phase transitions trigger on actual
+  // events (`turn-complete`, search-promise resolving), not timers.
+  //
+  // Sequence:
+  //   1. sendText(ack)               — avatar paraphrases the request
+  //   2. await ack-turn-complete
+  //   3. fire searchApi(query)       + sendText(filler) in parallel
+  //   4. race: filler-turn-complete vs search resolve
+  //      - search wins:   summary fires now, interrupts filler mid-sentence
+  //      - filler wins:   await searchPromise, then summary
+  //   5. cards render, FSM → summarising, sendText(summary)
+  const runPipeline = async (query: string) => {
+    const session = live.sessionRef.current
+    if (!session) return
+    onDuration(null)
+    // eslint-disable-next-line no-console
+    console.log('[AvatarSearchPanel] pipeline start:', query)
+
+    const remainingMs = () => live.sinkRef.current?.audioRemainingMs() ?? 0
+
+    try {
+      // Step 1: ack. Attach listener BEFORE sendText so we don't miss the
+      // signal. waitForModelSpeechEnd resolves only after both the server
+      // turn-complete arrives AND the local audio queue has fully drained.
+      const ackDone = waitForModelSpeechEnd(session, remainingMs, TURN_MAX_WAIT_MS)
+      session.sendText(
+        `Briefly acknowledge that you're searching for: "${query}". ` +
+          'One short spoken sentence; add a touch of warmth if the request feels emotional. ' +
+          'Do not name any movies, actors, or scenes — you do not know yet what will come back.',
+      )
+      await ackDone
+
+      // Step 2: NOW fire search, and at the same instant send the filler.
+      // Both run in parallel from this point — the avatar speaks the filler
+      // while the JSON is in flight.
+      const startTime = performance.now()
+      const searchPromise: Promise<CuratedSearchResponse | null> = (
+        searchApi.searchVideos(query, 20) as Promise<CuratedSearchResponse>
+      ).catch(() => null)
+
+      const fillerDone = waitForModelSpeechEnd(session, remainingMs, TURN_MAX_WAIT_MS)
+      session.sendText(
+        "Tell the user you're trying to find a few titles or clips for them. " +
+          'One short spoken sentence; do not name any movies, actors, or scenes.',
+      )
+
+      // Step 3: race — whichever finishes first lets us proceed.
+      // - search wins  → we send summary now and interrupt the filler.
+      // - filler wins  → we fall through and await searchPromise below.
+      await Promise.race([searchPromise, fillerDone])
+
+      // Step 4: ensure search is done; render cards.
+      const response = await searchPromise
+      if (response) {
+        onResults(response)
+        onDuration(Math.round((performance.now() - startTime) / 100) / 10)
+      }
+      dispatch({ type: 'search-resolved' })
+
+      // Step 5: summary (or apology if search failed). Wait for it to
+      // finish playing too so the panel returns to idle in lockstep with
+      // the avatar going quiet — important for back-to-back demo queries.
+      const summaryDone = waitForModelSpeechEnd(session, remainingMs, TURN_MAX_WAIT_MS)
+      if (!response) {
+        session.sendText(
+          'Tell the user the search hit an error and ask them to try again, in one short sentence.',
+        )
+      } else {
+        const summary = response.response_text || 'No matching results were found.'
+        session.sendText(
+          `[SEARCH_RESULTS]\n${summary}\n\n` +
+            'Summarise this for the user in 1-2 short spoken sentences. ' +
+            'Stay grounded in the [SEARCH_RESULTS] text. ' +
+            'Do not name any film, actor, or scene that is not in it.',
+        )
+      }
+      await summaryDone
+    } finally {
+      // Reset every per-query ref so the next pipeline starts clean.
+      transcriptBufferRef.current = ''
+      if (autoStopTimerRef.current) {
+        clearTimeout(autoStopTimerRef.current)
+        autoStopTimerRef.current = null
+      }
+      dispatch({ type: 'narration-sent' })
     }
-  }, [live.status, live.sessionRef, onResults, onSearchingChange, onDuration])
+  }
+
+  // Always have a fresh runPipeline reference for the auto-stop closure.
+  useEffect(() => {
+    runPipelineRef.current = runPipeline
+  })
+
+  const handleSpeakClick = () => {
+    if (live.status !== 'connected' || !ready) return
+    // Listening transitions out automatically on pause (1.2s of no new
+    // transcript chunks), so the only click we honour is idle → listening.
+    if (state.kind !== 'idle') return
+    transcriptBufferRef.current = ''
+    dispatch({ type: 'mic-on' })
+    // Kick the audio sinks so browser autoplay policy lets them play.
+    void live.sinkRef.current?.resume()
+    void live.audioPlayerRef.current?.resume()
+  }
 
   const handleDisconnect = () => {
     live.teardown()
@@ -353,57 +416,6 @@ export function AvatarSearchPanel({ onResults, onSearchingChange, onDuration }: 
   const handleReconnect = () => {
     live.setError(null)
     setDisconnected(false)
-  }
-
-  const toggleMute = () => {
-    if (!ready || searching) return
-    const next = !muted
-    setMuted(next)
-    live.captureRef.current?.setMuted(next)
-    void live.sinkRef.current?.resume()
-    void live.audioPlayerRef.current?.resume()
-
-    if (next === false) {
-      // Going from muted → listening: a new turn is starting. Drop any stale
-      // prefetch from a prior turn so it can't bleed into this one's response.
-      prefetchRef.current = null
-      return
-    }
-
-    // Going from listening → muted: speculative prefetch using whatever the
-    // live transcription has captured. Runs in parallel with the model's VAD
-    // wait + tool-call decision; the result is consumed by either the
-    // tool-call handler or the fallback path. Cards render optimistically
-    // when the prefetch resolves, ~1s ahead of the avatar's narration.
-    const text = transcriptBufferRef.current.trim()
-    if (!text || prefetchRef.current || inFlightRef.current) return
-
-    setSearching(true)
-    onSearchingChange(true)
-    onDuration(null)
-    const startTime = performance.now()
-    // eslint-disable-next-line no-console
-    console.log('[AvatarSearchPanel] prefetch firing for:', text)
-    const promise = searchApi.searchVideos(text, 20) as Promise<CuratedSearchResponse>
-    prefetchRef.current = { query: text, promise }
-    promise
-      .then((response) => {
-        // Optimistic UI: cards land before the avatar starts narrating.
-        onResults(response)
-        onDuration(Math.round((performance.now() - startTime) / 100) / 10)
-        // eslint-disable-next-line no-console
-        console.log('[AvatarSearchPanel] prefetch resolved', {
-          recommendations: response.recommendations.length,
-        })
-      })
-      .catch((err) => {
-        // eslint-disable-next-line no-console
-        console.error('[AvatarSearchPanel] prefetch failed', err)
-      })
-      .finally(() => {
-        setSearching(false)
-        onSearchingChange(false)
-      })
   }
 
   if (loadingAvatars) {
@@ -455,50 +467,124 @@ export function AvatarSearchPanel({ onResults, onSearchingChange, onDuration }: 
 
       <CardContent className="p-3 space-y-2">
         {live.error && <p className="text-xs text-destructive">{live.error}</p>}
-        {latestUserText && (
-          <p className="text-xs text-muted-foreground italic line-clamp-2">
-            “{latestUserText}”
-          </p>
-        )}
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant={searching ? 'secondary' : muted ? 'default' : 'destructive'}
-            onClick={toggleMute}
-            disabled={!ready || searching}
-            className="flex-1"
-            title={
-              !ready
-                ? 'Avatar warming up…'
-                : searching
-                  ? 'Searching — please wait'
-                  : muted
-                    ? 'Click and speak'
-                    : 'Click to stop listening'
-            }
-          >
-            {!ready ? (
-              <>
-                <Loader2 size={14} className="mr-1.5 animate-spin" /> Warming up…
-              </>
-            ) : searching ? (
-              <>
-                <Loader2 size={14} className="mr-1.5 animate-spin" /> Searching…
-              </>
-            ) : muted ? (
-              <>
-                <Mic size={14} className="mr-1.5" /> Click to speak
-              </>
-            ) : (
-              <>
-                <MicOff size={14} className="mr-1.5" /> Listening… (click to stop)
-              </>
-            )}
-          </Button>
-        </div>
+        <PipelineStatus state={state} ready={ready} liveStatus={live.status} />
+        <SpeakButton
+          state={state}
+          ready={ready}
+          liveStatus={live.status}
+          muted={muted}
+          onClick={handleSpeakClick}
+        />
       </CardContent>
     </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Subcomponents
+// ---------------------------------------------------------------------------
+
+function PipelineStatus({
+  state,
+  ready,
+  liveStatus,
+}: {
+  state: PipelineState
+  ready: boolean
+  liveStatus: AvatarLiveStatus
+}) {
+  if (liveStatus !== 'connected' || !ready) return null
+
+  // Only show the user-facing transcript / last query as a caption.
+  // Phase status (Searching… / Narrating…) is owned by the button, so we
+  // don't repeat it here.
+  let text = ''
+  switch (state.kind) {
+    case 'idle':
+      text = state.lastQuery
+      break
+    case 'listening':
+      text = state.transcript
+      break
+    case 'asking':
+    case 'summarising':
+      text = state.query
+      break
+  }
+  if (!text) return null
+  return <p className="text-xs text-muted-foreground italic line-clamp-3">“{text}”</p>
+}
+
+function SpeakButton({
+  state,
+  ready,
+  liveStatus,
+  muted,
+  onClick,
+}: {
+  state: PipelineState
+  ready: boolean
+  liveStatus: AvatarLiveStatus
+  muted: boolean
+  onClick: () => void
+}) {
+  const isWorking = state.kind === 'asking' || state.kind === 'summarising'
+  // Button is now an idle-only action: clicking it starts listening; pause
+  // detection auto-transitions out. So once we're past idle, it's disabled.
+  const disabled = liveStatus !== 'connected' || !ready || state.kind !== 'idle'
+
+  let label: React.ReactNode
+  let title: string
+  if (!ready || liveStatus !== 'connected') {
+    label = (
+      <>
+        <Loader2 size={14} className="mr-1.5 animate-spin" /> Warming up…
+      </>
+    )
+    title = 'Avatar warming up…'
+  } else if (state.kind === 'asking') {
+    label = (
+      <>
+        <Loader2 size={14} className="mr-1.5 animate-spin" /> Searching…
+      </>
+    )
+    title = 'Searching — please wait'
+  } else if (state.kind === 'summarising') {
+    label = (
+      <>
+        <Loader2 size={14} className="mr-1.5 animate-spin" /> Narrating results…
+      </>
+    )
+    title = 'Avatar narrating results — please wait'
+  } else if (state.kind === 'listening') {
+    label = (
+      <>
+        <MicOff size={14} className="mr-1.5" /> Listening… (pause to send)
+      </>
+    )
+    title = 'Stop talking for ~1 s to auto-send'
+  } else {
+    // idle
+    label = (
+      <>
+        <Mic size={14} className="mr-1.5" /> Click to speak
+      </>
+    )
+    title = 'Click and speak'
+  }
+
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant={isWorking ? 'secondary' : muted ? 'default' : 'destructive'}
+      onClick={onClick}
+      disabled={disabled}
+      className="flex-1 w-full"
+      title={title}
+    >
+      {label}
+    </Button>
   )
 }
 

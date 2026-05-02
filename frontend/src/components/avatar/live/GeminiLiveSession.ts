@@ -18,6 +18,7 @@ export type LiveMessage =
       name: string
       args: Record<string, unknown>
     }
+  | { type: 'turn-complete' }
   | { type: 'error'; error: Error }
 
 export class GeminiLiveSession extends EventTarget {
@@ -194,6 +195,13 @@ export class GeminiLiveSession extends EventTarget {
           text: it.text,
           isFinal: !!it.finished,
         })
+      }
+      // End-of-turn signal. Only `turnComplete` is reliable — it fires
+      // after all audio has been delivered. `generationComplete` fires
+      // earlier (when token generation finishes) while audio is still
+      // streaming, so listening to it gives premature end-of-turn signals.
+      if (sc.turnComplete) {
+        this._dispatch({ type: 'turn-complete' })
       }
     }
 

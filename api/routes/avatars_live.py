@@ -15,7 +15,6 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from api.models.schemas.avatars import Avatar
 from config import settings
 from libs.avatar_service import (
-    SEARCH_TOOL_DECLARATION,
     LiveMode,
     build_system_instruction,
 )
@@ -98,16 +97,12 @@ def _build_setup_frame(avatar: Avatar, mode: LiveMode = "default") -> dict:
     # but on this preview model the field destabilised the session: the model
     # stopped emitting `toolCall` frames entirely and produced silent audio.
     # The default VAD timing is what works.
-    # Tools are an array of tool blocks; grounding and functionDeclarations
-    # coexist. Search mode adds the search_movies tool so the model can fetch
-    # results itself instead of us injecting them mid-turn (which races).
-    tools: list[dict] = []
+    # Search mode used to declare a `search_movies` functionDeclaration here;
+    # we now run a sequential pipeline on the frontend (ack → search → narrate)
+    # so the model never calls a tool. Grounding (googleSearch) is the only
+    # tool block that can appear, opt-in per avatar.
     if avatar.enable_grounding:
-        tools.append({"googleSearch": {}})
-    if mode == "search":
-        tools.append({"functionDeclarations": [SEARCH_TOOL_DECLARATION]})
-    if tools:
-        setup["tools"] = tools
+        setup["tools"] = [{"googleSearch": {}}]
     if not audio_only:
         setup["avatarConfig"] = {"avatarName": preset_name}
     return {"setup": setup}

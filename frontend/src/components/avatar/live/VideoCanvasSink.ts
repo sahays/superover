@@ -115,6 +115,17 @@ export class VideoCanvasSink {
     }
   }
 
+  /** Milliseconds of buffered audio still scheduled to play. Returns 0 if
+   * the audio context is closed or the buffer has fully drained. Useful for
+   * pipeline coordination — `turn-complete` from Gemini Live signals end of
+   * server-side generation, but local WebAudio scheduling can still have
+   * 1–2 s queued for playback. */
+  audioRemainingMs(): number {
+    if (!this.audioCtx) return 0
+    const remainingSec = this.nextAudioStart - this.audioCtx.currentTime
+    return remainingSec > 0 ? remainingSec * 1000 : 0
+  }
+
   private _ensureAudioContext() {
     if (!this.audioCtx) {
       this.audioCtx = new AudioContext()

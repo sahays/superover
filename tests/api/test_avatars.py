@@ -141,11 +141,16 @@ class TestSystemInstruction:
 
         avatar = Avatar(id="av-z", name="Hana", preset_name="Hana")
         sys_inst = build_system_instruction(avatar, mode="search")
+        # The search-mode overlay teaches the model two response shapes:
+        # an ack (when the user asks) and a narration (when the system
+        # injects a [SEARCH_RESULTS] message). The frontend orchestrates
+        # the pipeline; the model just follows.
         assert "MODE: SEARCH ASSISTANT" in sys_inst
-        assert "search_movies" in sys_inst
-        # Strict 3-step ordering must be present.
-        assert "STEP 1" in sys_inst and "STEP 2" in sys_inst and "STEP 3" in sys_inst
+        assert "[SEARCH_RESULTS]" in sys_inst
         assert "Never invent" in sys_inst
+        # No tool-calling or strict step ordering anymore.
+        assert "search_movies" not in sys_inst
+        assert "STEP 1" not in sys_inst
 
 
 # ----------------------------------------------------------------------------
@@ -196,22 +201,17 @@ class TestSetupFrame:
         assert _parse_mode("anything-else") == "default"
         assert _parse_mode(None) == "default"
 
-    def test_search_mode_declares_search_movies_tool(self, monkeypatch):
+    def test_search_mode_omits_search_tool(self, monkeypatch):
+        """Search mode runs a frontend-orchestrated pipeline, not function
+        calling — the setup frame must not declare search_movies."""
         from api.routes.avatars_live import _build_setup_frame
         from config import settings
 
         monkeypatch.setattr(settings, "avatar_live_project", "test-proj")
         frame = _build_setup_frame(self._avatar(), "search")
         tools = frame["setup"].get("tools", [])
-        # Find the functionDeclarations block.
-        decls = next((t for t in tools if "functionDeclarations" in t), None)
-        assert decls is not None, "search mode must include functionDeclarations"
-        names = [d["name"] for d in decls["functionDeclarations"]]
-        assert "search_movies" in names
-        # Schema sanity check.
-        tool = next(d for d in decls["functionDeclarations"] if d["name"] == "search_movies")
-        assert tool["parameters"]["required"] == ["query"]
-        assert tool["parameters"]["properties"]["query"]["type"] == "string"
+        for t in tools:
+            assert "functionDeclarations" not in t
 
     def test_default_mode_omits_search_tool(self, monkeypatch):
         from api.routes.avatars_live import _build_setup_frame
@@ -221,11 +221,11 @@ class TestSetupFrame:
         frame = _build_setup_frame(self._avatar(), "default")
         tools = frame["setup"].get("tools", [])
         for t in tools:
-            if "functionDeclarations" in t:
-                names = [d["name"] for d in t["functionDeclarations"]]
-                assert "search_movies" not in names
+            assert "functionDeclarations" not in t
 
-    def test_search_tool_coexists_with_grounding(self, monkeypatch):
+    def test_grounding_still_emits_tool_block(self, monkeypatch):
+        """googleSearch grounding is the one remaining tool block; it
+        survives the function-calling removal."""
         from api.routes.avatars_live import _build_setup_frame
         from config import settings
 
@@ -233,10 +233,9 @@ class TestSetupFrame:
         avatar = self._avatar(enable_grounding=True)
         frame = _build_setup_frame(avatar, "search")
         tools = frame["setup"]["tools"]
-        # Both tool blocks must be present, in either order.
-        has_grounding = any("googleSearch" in t for t in tools)
-        has_decls = any("functionDeclarations" in t for t in tools)
-        assert has_grounding and has_decls
+        assert any("googleSearch" in t for t in tools)
+        # …and no function declarations alongside it.
+        assert all("functionDeclarations" not in t for t in tools)
 
 
 # ----------------------------------------------------------------------------
