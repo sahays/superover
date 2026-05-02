@@ -114,6 +114,9 @@ export interface Avatar {
   name: string
   style: AvatarStyle
   persona_prompt: string
+  /** Free-form behavioural rules layered onto the persona (language match,
+   * gendered grammar, formality, etc.). Optional; defaults to "" server-side. */
+  behavior_instructions?: string
   voice: AvatarVoice
   preset_name: string
   language: string

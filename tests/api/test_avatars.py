@@ -162,36 +162,47 @@ class TestSetupFrame:
     def _avatar(self, **overrides):
         from api.models.schemas.avatars import Avatar
 
-        base = dict(id="av-frame", name="Hana", preset_name="Hana", default_greeting="Hi! Talk cricket.")
+        base = dict(id="av-frame", name="Hana", preset_name="Hana")
         base.update(overrides)
         return Avatar(**base)
 
-    def test_default_mode_uses_avatar_greeting(self, monkeypatch):
+    def test_default_mode_omits_greeting_directive(self, monkeypatch):
+        """The default-greeting feature is intentionally gone — the model
+        improvises an opening line on connect rather than reciting a
+        configured one. Make sure no `Open the conversation` directive
+        sneaks back in."""
         from api.routes.avatars_live import _build_setup_frame
         from config import settings
 
         monkeypatch.setattr(settings, "avatar_live_project", "test-proj")
         frame = _build_setup_frame(self._avatar())
         text = frame["setup"]["systemInstruction"]["parts"][0]["text"]
-        assert "Hi! Talk cricket." in text
+        assert "Open the conversation" not in text
         assert "MODE: SEARCH ASSISTANT" not in text
 
-    def test_search_mode_drops_greeting(self, monkeypatch):
-        """Search mode skips the greeting directive entirely — the desired
-        flow is user-speaks → ack → tool-call → narrate, with the avatar
-        silent until the user actually says something."""
+    def test_search_mode_overlay_still_applies(self, monkeypatch):
+        """Search mode keeps its overlay regardless of greeting handling."""
         from api.routes.avatars_live import _build_setup_frame
         from config import settings
 
         monkeypatch.setattr(settings, "avatar_live_project", "test-proj")
         frame = _build_setup_frame(self._avatar(), "search")
         text = frame["setup"]["systemInstruction"]["parts"][0]["text"]
-        # The avatar's own greeting must not leak in either.
-        assert "Hi! Talk cricket." not in text
-        # No "Open the conversation by saying exactly" directive at all.
         assert "Open the conversation" not in text
-        # Search overlay still applies.
         assert "MODE: SEARCH ASSISTANT" in text
+
+    def test_behavior_instructions_appear_in_system_text(self, monkeypatch):
+        """Behaviour instructions configured on the avatar are layered into
+        the system prompt — drives language matching, gendered grammar."""
+        from api.routes.avatars_live import _build_setup_frame
+        from config import settings
+
+        monkeypatch.setattr(settings, "avatar_live_project", "test-proj")
+        avatar = self._avatar(behavior_instructions="Reply in Hindi using feminine grammar.")
+        frame = _build_setup_frame(avatar)
+        text = frame["setup"]["systemInstruction"]["parts"][0]["text"]
+        assert "Behaviour rules" in text
+        assert "feminine grammar" in text
 
     def test_parse_mode_constrains_to_known_values(self):
         from api.routes.avatars_live import _parse_mode

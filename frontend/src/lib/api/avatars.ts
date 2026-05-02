@@ -23,6 +23,7 @@ export const avatarsApi = {
     name: string
     style?: AvatarStyle
     persona_prompt?: string
+    behavior_instructions?: string
     voice: AvatarVoice
     preset_name: string
     language?: string
@@ -34,7 +35,7 @@ export const avatarsApi = {
   },
   update: async (
     id: string,
-    data: Partial<Pick<Avatar, 'name' | 'style' | 'persona_prompt' | 'voice' | 'language' | 'default_greeting' | 'enable_grounding'>>,
+    data: Partial<Pick<Avatar, 'name' | 'style' | 'persona_prompt' | 'behavior_instructions' | 'voice' | 'language' | 'default_greeting' | 'enable_grounding'>>,
   ): Promise<Avatar> => {
     const res = await apiClient.patch(`/api/avatars/${id}`, data)
     return res.data

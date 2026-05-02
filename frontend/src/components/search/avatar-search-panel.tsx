@@ -182,14 +182,38 @@ async function waitForModelSpeechEnd(
 // ---------------------------------------------------------------------------
 
 interface Props {
+  /** Currently selected avatar id (typically driven by `?avatar=<id>` URL param). */
+  avatarId?: string | null
+  /** Called when the panel auto-selects or the user picks an avatar. */
+  onSelectAvatar?: (id: string) => void
   onResults: (response: CuratedSearchResponse | null) => void
   onSearchingChange: (searching: boolean) => void
   onDuration: (seconds: number | null) => void
 }
 
-export function AvatarSearchPanel({ onResults, onSearchingChange, onDuration }: Props) {
+export function AvatarSearchPanel({
+  avatarId: avatarIdProp,
+  onSelectAvatar,
+  onResults,
+  onSearchingChange,
+  onDuration,
+}: Props) {
   const { data: avatars, isLoading: loadingAvatars } = useAvatars()
-  const avatarId = avatars?.[0]?.id ?? null
+  // Resolve the active avatar:
+  //   1. if the parent supplied a valid id, use it
+  //   2. else if exactly one avatar exists, auto-select it (notify parent)
+  //   3. else (>1 avatar, none selected) leave null → picker UI renders
+  const validProvided =
+    avatarIdProp && avatars?.some((a) => a.id === avatarIdProp) ? avatarIdProp : null
+  const avatarId =
+    validProvided ?? (avatars && avatars.length === 1 ? avatars[0].id : null)
+  // Push an auto-selected single-avatar id back up to the parent so the URL
+  // stays in sync. Effect runs once per resolution change.
+  useEffect(() => {
+    if (!validProvided && avatarId && onSelectAvatar) {
+      onSelectAvatar(avatarId)
+    }
+  }, [validProvided, avatarId, onSelectAvatar])
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [state, dispatch] = useReducer(pipelineReducer, INITIAL_STATE)
@@ -429,15 +453,43 @@ export function AvatarSearchPanel({ onResults, onSearchingChange, onDuration }: 
   }
 
   if (!avatarId) {
+    // No avatar selected. Either zero avatars exist (offer to create one)
+    // or multiple exist and none was picked yet (show picker).
+    if (!avatars || avatars.length === 0) {
+      return (
+        <Card className="w-72">
+          <CardContent className="p-4 text-sm space-y-2">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <UserIcon className="h-4 w-4" /> No avatar configured
+            </div>
+            <Link to="/avatars/create" className="text-primary hover:underline">
+              Create one to enable Avatar mode →
+            </Link>
+          </CardContent>
+        </Card>
+      )
+    }
     return (
       <Card className="w-72">
-        <CardContent className="p-4 text-sm space-y-2">
+        <CardContent className="p-4 text-sm space-y-3">
           <div className="flex items-center gap-2 text-muted-foreground">
-            <UserIcon className="h-4 w-4" /> No avatar configured
+            <UserIcon className="h-4 w-4" /> Pick an avatar
           </div>
-          <Link to="/avatars/create" className="text-primary hover:underline">
-            Create one to enable Avatar mode →
-          </Link>
+          <div className="space-y-1.5">
+            {avatars.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => onSelectAvatar?.(a.id)}
+                className="w-full text-left px-3 py-2 rounded-md border border-muted-foreground/20 hover:border-primary/50 hover:bg-accent transition-colors"
+              >
+                <div className="font-medium">{a.name}</div>
+                <div className="text-xs text-muted-foreground capitalize">
+                  {a.style.replace(/_/g, ' ')} · {a.voice}
+                </div>
+              </button>
+            ))}
+          </div>
         </CardContent>
       </Card>
     )

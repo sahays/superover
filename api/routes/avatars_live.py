@@ -59,17 +59,10 @@ def _build_speech_config(avatar: Avatar) -> dict:
 
 
 def _build_system_instruction(avatar: Avatar, mode: LiveMode) -> str:
-    """Wedge the default greeting into the system prompt so the model speaks
-    it on connect — Gemini Live has no separate `default_greeting` slot.
-
-    Search mode skips the greeting entirely: the desired flow there is
-    user-speaks → ack → tool-call → narrate, with no opening utterance from
-    the avatar before the user has said anything.
+    """Thin wrapper around build_system_instruction. Kept as a hook in case
+    we need mode-specific overlays later — currently it's a passthrough.
     """
-    text = build_system_instruction(avatar, mode=mode)
-    if mode != "search" and avatar.default_greeting:
-        text += f'\n\nOpen the conversation by saying exactly: "{avatar.default_greeting.strip()}"'
-    return text
+    return build_system_instruction(avatar, mode=mode)
 
 
 def _build_setup_frame(avatar: Avatar, mode: LiveMode = "default") -> dict:
@@ -430,11 +423,11 @@ async def avatar_live(ws: WebSocket, avatar_id: str):
 
     try:
         await upstream_ws.send(setup_frame)
-        # Kickstart only in default (avatar-page) mode so the avatar speaks
-        # its configured `default_greeting` on connect. In search mode the
-        # desired flow is user-speaks → ack → tool-call → narrate with no
-        # opening utterance, so we skip the kickstart entirely and the
-        # model stays silent until the user clicks Speak and talks.
+        # Kickstart only in default (avatar-page) mode so the avatar greets
+        # the user on connect. In search mode the desired flow is
+        # user-speaks → ack → search → narrate with no opening utterance,
+        # so we skip the kickstart entirely and the model stays silent
+        # until the user clicks Speak and talks.
         kickstart_frame: Optional[str] = None
         if mode != "search":
             kickstart_frame = json.dumps(

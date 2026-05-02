@@ -60,6 +60,8 @@ def build_system_instruction(avatar: Avatar, mode: LiveMode = "default") -> str:
     """
     style_note = STYLE_INSTRUCTIONS.get(avatar.style, STYLE_INSTRUCTIONS[AvatarStyle.to_the_point])
     persona_block = f"\nPersona note: {avatar.persona_prompt.strip()}" if avatar.persona_prompt else ""
+    behavior = (avatar.behavior_instructions or "").strip()
+    behavior_block = f"\nBehaviour rules:\n{behavior}" if behavior else ""
     base = (
         f"You are {avatar.name}, an AI avatar that converses with the user "
         f"in real time over voice and video.{persona_block}\n"
@@ -68,6 +70,7 @@ def build_system_instruction(avatar: Avatar, mode: LiveMode = "default") -> str:
         "- Keep replies short and conversational — one or two sentences unless asked.\n"
         "- No markdown, no lists, no preamble like 'Sure!' or 'Of course'.\n"
         "- Be specific and answer the question; do not filler-pad."
+        f"{behavior_block}"
     )
     if mode == "search":
         return base + SEARCH_MODE_OVERLAY

@@ -37,6 +37,7 @@ def _serialize(record: dict) -> AvatarResponse:
         name=avatar.name,
         style=avatar.style,
         persona_prompt=avatar.persona_prompt,
+        behavior_instructions=avatar.behavior_instructions,
         voice=avatar.voice,
         preset_name=avatar.preset_name,
         language=avatar.language,
@@ -69,6 +70,7 @@ async def create_avatar(body: CreateAvatarRequest):
         name=body.name.strip() or "Untitled",
         style=body.style,
         persona_prompt=body.persona_prompt.strip(),
+        behavior_instructions=body.behavior_instructions.strip(),
         voice=body.voice,
         preset_name=body.preset_name,
         language=body.language or "en-US",
@@ -86,7 +88,7 @@ async def update_avatar(avatar_id: str, body: UpdateAvatarRequest):
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
     # Strip strings to keep the persona prompt and greeting tidy in storage.
-    for key in ("name", "persona_prompt", "default_greeting"):
+    for key in ("name", "persona_prompt", "behavior_instructions", "default_greeting"):
         if key in updates and isinstance(updates[key], str):
             updates[key] = updates[key].strip()
     record = get_db().update_avatar(avatar_id, updates)

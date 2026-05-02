@@ -75,6 +75,11 @@ class Avatar(BaseModel):
     name: str
     style: AvatarStyle = AvatarStyle.to_the_point
     persona_prompt: str = ""
+    # Free-form behavioural rules layered on top of the persona — language
+    # matching, gendered grammar, formality, etc. Kept separate from
+    # `persona_prompt` so "who they are" stays distinct from "how they
+    # respond". Injected verbatim into the system instruction.
+    behavior_instructions: str = ""
     voice: AvatarVoice = AvatarVoice.Kore
     # Maps to Gemini Live's avatarConfig.avatarName — required.
     preset_name: str
@@ -92,6 +97,7 @@ class CreateAvatarRequest(BaseModel):
     name: str
     style: AvatarStyle = AvatarStyle.to_the_point
     persona_prompt: str = ""
+    behavior_instructions: str = ""
     voice: AvatarVoice = AvatarVoice.Kore
     preset_name: str
     language: str = "en-US"
@@ -103,6 +109,7 @@ class UpdateAvatarRequest(BaseModel):
     name: Optional[str] = None
     style: Optional[AvatarStyle] = None
     persona_prompt: Optional[str] = None
+    behavior_instructions: Optional[str] = None
     voice: Optional[AvatarVoice] = None
     language: Optional[str] = None
     default_greeting: Optional[str] = None
@@ -114,6 +121,7 @@ class AvatarResponse(BaseModel):
     name: str
     style: AvatarStyle
     persona_prompt: str
+    behavior_instructions: str = ""
     voice: AvatarVoice
     preset_name: str
     language: str

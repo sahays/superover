@@ -176,20 +176,25 @@ class TestAdminAuthRoutes:
         kwargs = mock_db.create_invite_code.call_args.kwargs
         assert kwargs["is_admin"] is True
 
-    def test_admin_can_revoke(self, client, mock_admin_auth, mock_db):
-        mock_db.update_invite_code.return_value = {
-            "id": "abc",
-            "code": "X",
-            "is_active": False,
-            "is_admin": False,
-        }
+    def test_admin_blocked_from_revoke(self, client, mock_admin_auth, mock_db):
+        """Revoke is master-only — admins must not be able to deactivate
+        another user's invite code."""
         res = client.post("/api/auth/codes/abc/revoke", headers=ADMIN)
-        assert res.status_code == 200
+        assert res.status_code == 403
+        mock_db.update_invite_code.assert_not_called()
 
-    def test_admin_can_delete(self, client, mock_admin_auth, mock_db):
-        mock_db.get_invite_code.return_value = {"id": "abc"}
+    def test_admin_blocked_from_activate(self, client, mock_admin_auth, mock_db):
+        """Activate is the inverse of revoke — also master-only."""
+        res = client.post("/api/auth/codes/abc/activate", headers=ADMIN)
+        assert res.status_code == 403
+        mock_db.update_invite_code.assert_not_called()
+
+    def test_admin_blocked_from_delete(self, client, mock_admin_auth, mock_db):
+        """Delete is master-only — admins must not be able to remove other
+        users' invite codes."""
         res = client.delete("/api/auth/codes/abc", headers=ADMIN)
-        assert res.status_code == 204
+        assert res.status_code == 403
+        mock_db.delete_invite_code.assert_not_called()
 
     def test_admin_can_patch_label(self, client, mock_admin_auth, mock_db):
         mock_db.update_invite_code.return_value = {

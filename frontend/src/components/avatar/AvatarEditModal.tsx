@@ -43,8 +43,8 @@ export function AvatarEditModal({ avatar, open, onOpenChange, onSaved }: Props) 
   const [name, setName] = useState(avatar.name)
   const [style, setStyle] = useState<AvatarStyle>(avatar.style)
   const [persona, setPersona] = useState(avatar.persona_prompt || '')
+  const [behavior, setBehavior] = useState(avatar.behavior_instructions || '')
   const [language, setLanguage] = useState(avatar.language || 'en-US')
-  const [greeting, setGreeting] = useState(avatar.default_greeting || '')
   const [grounding, setGrounding] = useState(avatar.enable_grounding)
   const [error, setError] = useState<string | null>(null)
 
@@ -55,8 +55,8 @@ export function AvatarEditModal({ avatar, open, onOpenChange, onSaved }: Props) 
     setName(avatar.name)
     setStyle(avatar.style)
     setPersona(avatar.persona_prompt || '')
+    setBehavior(avatar.behavior_instructions || '')
     setLanguage(avatar.language || 'en-US')
-    setGreeting(avatar.default_greeting || '')
     setGrounding(avatar.enable_grounding)
     setError(null)
   }, [avatar])
@@ -69,8 +69,8 @@ export function AvatarEditModal({ avatar, open, onOpenChange, onSaved }: Props) 
         name: name.trim(),
         style,
         persona_prompt: persona.trim(),
+        behavior_instructions: behavior.trim(),
         language,
-        default_greeting: greeting.trim(),
         enable_grounding: grounding,
       }
       await update.mutateAsync(patch)
@@ -128,31 +128,37 @@ export function AvatarEditModal({ avatar, open, onOpenChange, onSaved }: Props) 
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Language</Label>
-              <Select value={language} onValueChange={setLanguage}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {LANGUAGE_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="avatar-greeting">Greeting</Label>
-              <Input
-                id="avatar-greeting"
-                value={greeting}
-                onChange={(e) => setGreeting(e.target.value)}
-                placeholder="Hi! What can I help you with?"
-              />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="avatar-behavior">Behaviour instructions</Label>
+            <Textarea
+              id="avatar-behavior"
+              value={behavior}
+              onChange={(e) => setBehavior(e.target.value)}
+              rows={4}
+              placeholder={
+                'Always reply in the same language the user spoke.\n' +
+                "Use feminine grammar in Hindi (e.g. 'main aa rahi hoon')."
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              Language-matching, gendered grammar, formality, etc.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Language</Label>
+            <Select value={language} onValueChange={setLanguage}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LANGUAGE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex items-center justify-between rounded-lg border p-3">

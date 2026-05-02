@@ -24,6 +24,8 @@ interface NavItem {
   href: string
   icon: React.ComponentType<{ className?: string }>
   description: string
+  /** When true, only the env-var master role sees this entry. Admins do not. */
+  masterOnly?: boolean
 }
 
 const featureItems: NavItem[] = [
@@ -86,14 +88,22 @@ const adminItems: NavItem[] = [
     href: '/invite-codes',
     icon: KeyRound,
     description: 'Manage access codes',
+    masterOnly: true,
   },
 ]
 
-// Hrefs that should only match exactly (not their sub-paths)
-const exactMatchOnly = new Set(['/search'])
+// Hrefs whose active state is controlled by an explicit allow-list rather
+// than the default startsWith match — used when a sub-path belongs to a
+// different sidebar entry (e.g. /search/sync is its own item, so /search
+// must not also light up there).
+const explicitMatches: Record<string, string[]> = {
+  '/search': ['/search', '/search/avatar'],
+}
 
 function isNavActive(pathname: string, href: string): boolean {
-  if (href === '/' || exactMatchOnly.has(href)) return pathname === href
+  if (href === '/') return pathname === href
+  const explicit = explicitMatches[href]
+  if (explicit) return explicit.includes(pathname)
   return pathname === href || pathname.startsWith(href + '/')
 }
 
@@ -237,9 +247,11 @@ export function Sidebar() {
                 <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
                   Admin
                 </p>
-                {adminItems.map((item) => (
-                  <NavLink key={item.href} item={item} pathname={pathname} />
-                ))}
+                {adminItems
+                  .filter((item) => isMaster || !item.masterOnly)
+                  .map((item) => (
+                    <NavLink key={item.href} item={item} pathname={pathname} />
+                  ))}
               </div>
             </>
           )}

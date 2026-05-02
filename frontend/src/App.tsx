@@ -59,6 +59,7 @@ export function App() {
         {elevated && <Route path="/prompts/new" element={<CreatePromptPage />} />}
         <Route path="/prompts/:promptId" element={<EditPromptPage />} />
         <Route path="/search" element={<SearchPage />} />
+        <Route path="/search/avatar" element={<SearchPage />} />
         {elevated && (
           <>
             <Route path="/avatars" element={<AvatarsPage />} />
@@ -66,9 +67,9 @@ export function App() {
             <Route path="/avatars/:id" element={<AvatarPage />} />
             <Route path="/search/sync" element={<SearchSyncPage />} />
             <Route path="/branding" element={<BrandingPage />} />
-            <Route path="/invite-codes" element={<InviteCodesPage />} />
           </>
         )}
+        {isMaster && <Route path="/invite-codes" element={<InviteCodesPage />} />}
       </Routes>
     </AppLayout>
   )

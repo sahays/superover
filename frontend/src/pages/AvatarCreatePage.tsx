@@ -36,8 +36,12 @@ export default function AvatarCreatePage() {
   const [voice, setVoice] = useState<AvatarVoice>('Kore')
   const [style, setStyle] = useState<AvatarStyle>('to_the_point')
   const [persona, setPersona] = useState('')
+  const [behavior, setBehavior] = useState(
+    'Always reply in the same language the user spoke.\n' +
+      'Use grammar that matches your gender (e.g. in Hindi a female speaker says ' +
+      "'main aa rahi hoon', not 'main aa raha hoon').",
+  )
   const [language, setLanguage] = useState('en-US')
-  const [greeting, setGreeting] = useState(PRESET_CATALOG[0].defaultGreeting)
   const [grounding, setGrounding] = useState(false)
 
   const onPresetChange = (id: string) => {
@@ -45,7 +49,6 @@ export default function AvatarCreatePage() {
     const preset = PRESET_CATALOG.find((p) => p.id === id)
     if (preset) {
       setName(preset.displayName)
-      setGreeting(preset.defaultGreeting)
     }
   }
 
@@ -58,8 +61,8 @@ export default function AvatarCreatePage() {
         voice,
         style,
         persona_prompt: persona.trim(),
+        behavior_instructions: behavior.trim(),
         language,
-        default_greeting: greeting.trim(),
         enable_grounding: grounding,
       })
       toast.success('Avatar created')
@@ -176,15 +179,20 @@ export default function AvatarCreatePage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="avatar-greeting">Opening greeting</Label>
-              <Input
-                id="avatar-greeting"
-                value={greeting}
-                onChange={(e) => setGreeting(e.target.value)}
-                placeholder="Hi! Ready to talk cricket?"
+              <Label htmlFor="avatar-behavior">Behaviour instructions</Label>
+              <Textarea
+                id="avatar-behavior"
+                value={behavior}
+                onChange={(e) => setBehavior(e.target.value)}
+                rows={4}
+                placeholder={
+                  'Always reply in the same language the user spoke.\n' +
+                  "Use feminine grammar in Hindi (e.g. 'main aa rahi hoon')."
+                }
               />
               <p className="text-xs text-muted-foreground">
-                The avatar speaks this exact line when the session opens. Leave blank to let the model decide.
+                Layered onto the system prompt every turn. Use it for
+                language-matching, gendered grammar, formality, etc.
               </p>
             </div>
 

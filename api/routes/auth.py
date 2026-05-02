@@ -130,8 +130,9 @@ async def update_code(request: Request, code_id: str, body: UpdateInviteCodeRequ
 
 @router.post("/codes/{code_id}/revoke", response_model=InviteCodeResponse)
 async def revoke_code(request: Request, code_id: str):
-    """Deactivate an invite code (master or admin)."""
-    _require_elevated(request)
+    """Deactivate an invite code (master only — admins can't revoke other
+    users' access)."""
+    _require_master(request)
     db = get_db()
     result = db.update_invite_code(code_id, {"is_active": False})
     if not result:
@@ -141,8 +142,8 @@ async def revoke_code(request: Request, code_id: str):
 
 @router.post("/codes/{code_id}/activate", response_model=InviteCodeResponse)
 async def activate_code(request: Request, code_id: str):
-    """Reactivate an invite code (master or admin)."""
-    _require_elevated(request)
+    """Reactivate an invite code (master only — paired with /revoke)."""
+    _require_master(request)
     db = get_db()
     result = db.update_invite_code(code_id, {"is_active": True})
     if not result:
@@ -152,8 +153,9 @@ async def activate_code(request: Request, code_id: str):
 
 @router.delete("/codes/{code_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_code(request: Request, code_id: str):
-    """Delete an invite code (master or admin)."""
-    _require_elevated(request)
+    """Delete an invite code (master only — admins can't remove other
+    users)."""
+    _require_master(request)
     db = get_db()
     existing = db.get_invite_code(code_id)
     if not existing:

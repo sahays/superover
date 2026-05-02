@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import {
   Search,
   Film,
@@ -92,6 +92,8 @@ function SearchLoadingAnimation() {
 
 export default function SearchPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { isMaster, isAdmin } = useAuthStore()
   const elevated = isMaster || isAdmin
   const [query, setQuery] = useState('')
@@ -99,8 +101,26 @@ export default function SearchPage() {
     useState<CuratedSearchResponse | null>(null)
   const [searching, setSearching] = useState(false)
   const [searchDuration, setSearchDuration] = useState<number | null>(null)
-  const [avatarMode, setAvatarMode] = useState(false)
+  // Avatar mode is now URL-driven: `/search/avatar` enables it, `/search`
+  // disables it. The optional `?avatar=<id>` query param picks a specific
+  // avatar when more than one exists.
+  const avatarMode = location.pathname === '/search/avatar'
+  const selectedAvatarId = searchParams.get('avatar')
   const hasSearchedRef = useRef(false)
+
+  const handleSelectAvatar = useCallback(
+    (id: string) => {
+      const params = new URLSearchParams(searchParams)
+      params.set('avatar', id)
+      setSearchParams(params, { replace: true })
+    },
+    [searchParams, setSearchParams],
+  )
+
+  const toggleAvatarMode = () => {
+    if (avatarMode) navigate('/search')
+    else navigate('/search/avatar')
+  }
 
   const {
     isRecording,
@@ -222,6 +242,8 @@ export default function SearchPage() {
       {avatarMode && (
         <div className="fixed top-20 right-6 z-30">
           <AvatarSearchPanel
+            avatarId={selectedAvatarId}
+            onSelectAvatar={handleSelectAvatar}
             onResults={setCuratedResponse}
             onSearchingChange={setSearching}
             onDuration={setSearchDuration}
@@ -236,7 +258,7 @@ export default function SearchPage() {
           {elevated && (
             <button
               type="button"
-              onClick={() => setAvatarMode((v) => !v)}
+              onClick={toggleAvatarMode}
               className={`shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                 avatarMode
                   ? 'bg-primary text-primary-foreground border-primary'
