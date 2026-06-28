@@ -200,11 +200,13 @@ if [ "$DEPLOY_WORKER" = true ]; then
         --no-cpu-throttling
 fi
 
-# ── 3. Clean up old revisions (keep latest 3) ─────────
+# ── 3. Clean up old revisions (keep latest 5) ─────────
 cleanup_revisions() {
     local service="$1"
+    # Revisions are listed newest-first; keep the top 5, delete the rest.
+    # (A revision serving traffic can't be deleted — gcloud skips it harmlessly.)
     local old=$(gcloud run revisions list --service "$service" \
-        --region "$REGION" --format="value(name)" 2>/dev/null | tail -n +4)
+        --region "$REGION" --format="value(name)" 2>/dev/null | tail -n +6)
     if [ -z "$old" ]; then
         echo "   No old revisions to clean up for $service"
         return
