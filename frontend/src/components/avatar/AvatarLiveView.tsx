@@ -2,7 +2,7 @@
 // control bar. All session lifecycle lives in `useAvatarLiveSession` — this
 // component is purely UI.
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, Loader2, Mic, MicOff, Pencil, Power, Send } from 'lucide-react'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -33,6 +33,12 @@ export function AvatarLiveView({ avatar }: Props) {
     enabled: elevated && !disconnected,
     canvasRef,
   })
+
+  // Capture starts muted by default; sync our local mute state to it once
+  // the capture is actually created (on session connect).
+  useEffect(() => {
+    live.captureRef.current?.setMuted(muted)
+  }, [muted, live.captureRef, live.status])
 
   const handleDisconnect = () => {
     live.teardown()

@@ -253,9 +253,14 @@ export function AvatarSearchPanel({
   }, [isWorking, onSearchingChange])
 
   // Sync the mic to the FSM. Anything other than `listening` mutes it.
+  // Re-fire on `live.status` so the desired mute state is applied as soon
+  // as the capture exists — the capture is created inside the connect
+  // effect, after this component has already mounted, so without the
+  // status dep an initial idle→muted transition would no-op against a
+  // null captureRef and never re-run.
   useEffect(() => {
     live.captureRef.current?.setMuted(muted)
-  }, [muted, live.captureRef])
+  }, [muted, live.captureRef, live.status])
 
   // Connection lifecycle: reset FSM and warm-up gate when the session
   // (re)connects.

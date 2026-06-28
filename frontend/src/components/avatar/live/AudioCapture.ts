@@ -10,7 +10,11 @@ export class AudioCapture {
   private node: AudioWorkletNode | null = null
   private source: MediaStreamAudioSourceNode | null = null
   private stream: MediaStream | null = null
-  private muted = false
+  // Default to muted: callers explicitly setMuted(false) when they're ready
+  // to send audio. Otherwise the worklet would stream the user's voice up to
+  // the model the instant getUserMedia resolves, before the consumer's FSM
+  // has had a chance to gate it.
+  private muted = true
 
   async start(onChunk: (pcm: ArrayBuffer) => void): Promise<void> {
     this.stream = await navigator.mediaDevices.getUserMedia({
