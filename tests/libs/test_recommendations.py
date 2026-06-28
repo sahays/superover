@@ -3,6 +3,8 @@
 import pytest
 
 from libs.engagement.recommendations import (
+    MinuteSlice,
+    bind_callouts_to_minutes,
     compute_entity_deltas,
     compute_stats,
     find_high_minutes,
@@ -13,6 +15,50 @@ from libs.engagement.scene_extract import Entity
 
 
 pytestmark = pytest.mark.unit
+
+
+def _minute(idx, avg):
+    return MinuteSlice(
+        minute_index=idx,
+        minute_start_sec=idx * 60.0,
+        minute_end_sec=(idx + 1) * 60.0,
+        avg_score=avg,
+        point_count=12,
+    )
+
+
+def test_bind_callouts_overwrites_window_and_attaches_rating():
+    """A callout's window + avg_score come from the real bucket, not the LLM."""
+    low = [_minute(5, 2.345), _minute(9, 1.1)]
+    callouts = [
+        {
+            "minute_index": 5,
+            "minute_start_sec": 999.0,  # LLM drift — must be overwritten
+            "minute_end_sec": 999.0,
+            "what_happened": "slow exposition",
+            "why_it_dipped": "no conflict",
+            "alternative": "cut to the chase",
+        }
+    ]
+    bound = bind_callouts_to_minutes(callouts, low)
+    assert len(bound) == 1
+    co = bound[0]
+    assert co["minute_start_sec"] == 300.0
+    assert co["minute_end_sec"] == 360.0
+    assert co["avg_score"] == 2.345
+    assert co["what_happened"] == "slow exposition"  # prose preserved
+
+
+def test_bind_callouts_drops_unmapped_indices():
+    """Callouts referencing a minute that isn't a supplied low minute are dropped."""
+    low = [_minute(5, 2.0)]
+    callouts = [
+        {"minute_index": 5, "what_happened": "a", "why_it_dipped": "b", "alternative": "c"},
+        {"minute_index": 42, "what_happened": "x", "why_it_dipped": "y", "alternative": "z"},
+        {"what_happened": "no index", "why_it_dipped": "b", "alternative": "c"},
+    ]
+    bound = bind_callouts_to_minutes(callouts, low)
+    assert [c["minute_index"] for c in bound] == [5]
 
 
 def _entity(name, *appearances, kind="character"):

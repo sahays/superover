@@ -482,6 +482,7 @@ export const engagementApi = {
       kind: string
       appearances: { start_sec: number; end_sec: number }[]
       mention_count: number
+      avg_intensity?: number | null
     }>
   },
 
@@ -493,6 +494,29 @@ export const engagementApi = {
       text: string
       kind: string
       speaker: string
+      sentiment?: string
+    }>
+  },
+
+  getScenes: async (jobId: string) => {
+    const response = await apiClient.get(`/api/engagement/jobs/${jobId}/scenes`)
+    return response.data as Array<{
+      chunk_index?: number
+      start_sec: number | null
+      end_sec: number | null
+      title?: string
+      summary: string
+      location?: string
+    }>
+  },
+
+  getMarkers: async (jobId: string) => {
+    const response = await apiClient.get(`/api/engagement/jobs/${jobId}/markers`)
+    return response.data as Array<{
+      start_sec: number
+      type: string
+      label: string
+      kind: 'moment' | 'beat'
     }>
   },
 
@@ -513,8 +537,10 @@ export const engagementApi = {
         evidence?: { entity?: string; delta_pct?: number; sample_size?: number; anchor_timestamps?: number[] }
       }>
       per_minute_callouts: Array<{
+        minute_index?: number
         minute_start_sec: number
         minute_end_sec: number
+        avg_score?: number
         what_happened: string
         why_it_dipped: string
         alternative: string

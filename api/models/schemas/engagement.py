@@ -48,6 +48,7 @@ class EngagementExtremum(BaseModel):
 class EngagementResults(BaseModel):
     peaks: List[EngagementExtremum] = []
     valleys: List[EngagementExtremum] = []
+    episode_summary: Optional[str] = None
     timeseries_gcs_path: Optional[str] = None
     barc_time_column: Optional[str] = None
     barc_score_column: Optional[str] = None

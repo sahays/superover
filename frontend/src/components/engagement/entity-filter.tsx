@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
-import { Users, Sparkles, MapPin, Box } from 'lucide-react'
+import { Users, Sparkles, MapPin, Box, Heart } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { entityColor, withAlpha } from '@/lib/engagement-moment'
 
 export interface EngagementEntity {
   name: string
@@ -22,6 +23,7 @@ interface EntityFilterProps {
 
 const KIND_ICONS: Record<string, typeof Users> = {
   character: Users,
+  emotion: Heart,
   event: Sparkles,
   location: MapPin,
   object: Box,
@@ -52,18 +54,28 @@ export function EntityFilter({
         {sorted.map((e) => {
           const Icon = KIND_ICONS[e.kind] || Users
           const isOn = selected.has(e.name)
+          const color = entityColor(e.name, e.kind)
           return (
             <button
               key={`${e.kind}-${e.name}`}
               onClick={() => onToggle(e.name)}
               className={cn(
-                'flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+                'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
                 isOn
-                  ? 'border-green-600/40 bg-green-50 text-green-900 dark:bg-green-950/40 dark:text-green-100'
+                  ? 'text-foreground'
                   : 'border-border bg-background text-muted-foreground hover:bg-muted/50'
               )}
+              style={
+                isOn
+                  ? { borderColor: color, backgroundColor: withAlpha(color, 0.16), boxShadow: `inset 0 0 0 1px ${color}` }
+                  : undefined
+              }
               title={`${e.kind} · ${e.mention_count} mentions`}
             >
+              <span
+                className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ backgroundColor: color }}
+              />
               <Icon className="h-3 w-3" />
               <span className="max-w-[160px] truncate">{e.name}</span>
               <span className="rounded-full bg-muted/70 px-1 text-[10px] tabular-nums">

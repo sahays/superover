@@ -170,6 +170,18 @@ async def get_engagement_cues(job_id: str):
     return _load_results_artifact(job_id, "cues_gcs_path", "cues")
 
 
+@router.get("/jobs/{job_id}/scenes")
+async def get_engagement_scenes(job_id: str):
+    """Fetch scene strip (segments or chunk summaries) — powers chart hover + panel."""
+    return _load_results_artifact(job_id, "scenes_gcs_path", "scenes")
+
+
+@router.get("/jobs/{job_id}/markers")
+async def get_engagement_markers(job_id: str):
+    """Fetch timeline markers (key moments + story beats) — powers ribbon glyphs."""
+    return _load_results_artifact(job_id, "markers_gcs_path", "markers")
+
+
 @router.get("/jobs/{job_id}/recommendations")
 async def get_engagement_recommendations(job_id: str):
     """Fetch grounded 'do more / do less / per-minute' recommendations."""

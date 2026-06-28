@@ -29,14 +29,42 @@ class Cue:
     text: str
     kind: str = "dialogue"
     speaker: str = ""
+    sentiment: str = ""  # positive / neutral / negative (optional, structured only)
 
 
 @dataclass
 class Entity:
     name: str
-    kind: str  # character / object / location / event
+    kind: str  # character / object / location / event / emotion
     appearances: List[Tuple[float, float]] = field(default_factory=list)
     mention_count: int = 0
+    # Raw intensity samples (emotions / events). avg_intensity() summarizes them.
+    intensity_values: List[float] = field(default_factory=list)
+
+    def avg_intensity(self) -> Optional[float]:
+        if not self.intensity_values:
+            return None
+        return sum(self.intensity_values) / len(self.intensity_values)
+
+
+@dataclass
+class Segment:
+    """A finer-than-chunk scene beat (from scene-analysis `segments`)."""
+
+    start_sec: float
+    end_sec: float
+    title: str
+    synopsis: str
+    location: str = ""
+
+
+@dataclass
+class KeyMoment:
+    """A standout narrative beat (from scene-analysis `key_moments`)."""
+
+    start_sec: float
+    type: str
+    label: str
 
 
 # Tokens we never want as character names even if they appear capitalized.
@@ -117,7 +145,7 @@ def extract_from_scene_results(
 
 def _is_structured(result: Dict[str, Any]) -> bool:
     rd = result.get("result_data") or {}
-    return any(k in rd for k in ("cues", "entities", "events"))
+    return any(k in rd for k in ("cues", "entities", "events", "emotions"))
 
 
 def _extract_structured(
@@ -137,6 +165,7 @@ def _extract_structured(
                     text=str(c.get("text", "")),
                     kind=str(c.get("kind") or "dialogue"),
                     speaker=str(c.get("speaker") or ""),
+                    sentiment=str(c.get("sentiment") or ""),
                 )
                 cues.append(cue)
             except (KeyError, TypeError, ValueError):
@@ -178,6 +207,33 @@ def _extract_structured(
                 if rng is not None:
                     entity.appearances.append(rng)
                     entity.mention_count += 1
+                    intensity = _coerce_float(ev.get("intensity"))
+                    if intensity is not None:
+                        entity.intensity_values.append(intensity)
+            except (KeyError, TypeError, ValueError):
+                continue
+
+        # Emotions are time-bounded affect segments. Surface each as an entity
+        # of kind="emotion" so the engagement-influence delta logic (avg rating
+        # during the segment vs overall) and the frontend chip/ranking UI treat
+        # them uniformly with characters and events.
+        for em in rd.get("emotions") or []:
+            try:
+                label = str(em["emotion"]).strip()
+                if not label:
+                    continue
+                key = (_normalize(label), "emotion")
+                entity = entities_by_key.get(key)
+                if entity is None:
+                    entity = Entity(name=label, kind="emotion", appearances=[], mention_count=0)
+                    entities_by_key[key] = entity
+                rng = _coerce_range({"start_sec": em["start_sec"], "end_sec": em["end_sec"]})
+                if rng is not None:
+                    entity.appearances.append(rng)
+                    entity.mention_count += 1
+                    intensity = _coerce_float(em.get("intensity"))
+                    if intensity is not None:
+                        entity.intensity_values.append(intensity)
             except (KeyError, TypeError, ValueError):
                 continue
 
@@ -190,6 +246,93 @@ def _extract_structured(
         ent.appearances = _merge_ranges(ent.appearances, gap=5.0)
     entities.sort(key=lambda e: -e.mention_count)
     return cues, entities
+
+
+def extract_segments(results: List[Dict[str, Any]]) -> List[Segment]:
+    """Collect finer-than-chunk scene beats from `segments`, sorted by start.
+
+    Returns [] when no chunk carries a `segments` array (old jobs) — the caller
+    falls back to chunk-level `summary`.
+    """
+    out: List[Segment] = []
+    for r in results or []:
+        rd = r.get("result_data") or {}
+        for seg in rd.get("segments") or []:
+            try:
+                out.append(
+                    Segment(
+                        start_sec=float(seg["start_sec"]),
+                        end_sec=float(seg["end_sec"]),
+                        title=str(seg.get("title") or ""),
+                        synopsis=str(seg.get("synopsis") or ""),
+                        location=str(seg.get("location") or ""),
+                    )
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+    out.sort(key=lambda s: s.start_sec)
+    return out
+
+
+def extract_key_moments(results: List[Dict[str, Any]]) -> List[KeyMoment]:
+    """Collect standout beats from `key_moments`, sorted by start."""
+    out: List[KeyMoment] = []
+    for r in results or []:
+        rd = r.get("result_data") or {}
+        for m in rd.get("key_moments") or []:
+            try:
+                kind = str(m["type"]).strip()
+                if not kind:
+                    continue
+                out.append(
+                    KeyMoment(
+                        start_sec=float(m["start_sec"]),
+                        type=kind,
+                        label=str(m.get("label") or ""),
+                    )
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+    out.sort(key=lambda m: m.start_sec)
+    return out
+
+
+def extract_narrative_beats(results: List[Dict[str, Any]]) -> List[KeyMoment]:
+    """Collect classical story beats from `narrative_beats` as point markers.
+
+    Mapped onto KeyMoment (type = beat name, label = supplied label or the beat
+    name) so the timeline can render act markers alongside key_moments.
+    """
+    out: List[KeyMoment] = []
+    for r in results or []:
+        rd = r.get("result_data") or {}
+        for b in rd.get("narrative_beats") or []:
+            try:
+                beat = str(b["beat"]).strip()
+                if not beat:
+                    continue
+                out.append(
+                    KeyMoment(
+                        start_sec=float(b["start_sec"]),
+                        type=beat,
+                        label=str(b.get("label") or beat.replace("_", " ")),
+                    )
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+    out.sort(key=lambda m: m.start_sec)
+    return out
+
+
+def _coerce_float(value: Any) -> Optional[float]:
+    """Parse a numeric cell to float, or None if absent/unparseable."""
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return f if f == f else None  # drop NaN
 
 
 def _coerce_range(item: Any) -> Optional[Tuple[float, float]]:

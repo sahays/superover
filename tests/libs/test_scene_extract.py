@@ -4,6 +4,9 @@ import pytest
 
 from libs.engagement.scene_extract import (
     extract_from_scene_results,
+    extract_key_moments,
+    extract_narrative_beats,
+    extract_segments,
 )
 
 
@@ -102,6 +105,133 @@ def test_structured_path_lifts_events_to_entities():
     assert by_name["fight"].kind == "event"
     assert by_name["fight"].mention_count == 2
     assert by_name["song"].mention_count == 1
+
+
+def test_structured_path_lifts_emotions_to_entities():
+    """Time-bounded emotion segments become entities of kind='emotion' so the
+    influence-delta logic and chip UI treat them like characters/events."""
+    results = [
+        {
+            "result_data": {
+                "cues": [],
+                "entities": [],
+                "events": [],
+                "emotions": [
+                    {"start_sec": 10.0, "end_sec": 20.0, "emotion": "tension", "intensity": 0.8},
+                    {"start_sec": 12.0, "end_sec": 25.0, "emotion": "tension", "intensity": 0.6},  # merges with above
+                    {"start_sec": 90.0, "end_sec": 110.0, "emotion": "romance", "intensity": 0.4},
+                ],
+            }
+        },
+    ]
+    _, entities = extract_from_scene_results(results)
+    by_name = {e.name: e for e in entities}
+    assert by_name["tension"].kind == "emotion"
+    assert by_name["tension"].mention_count == 2
+    assert by_name["tension"].appearances == [(10.0, 25.0)]  # merged within 5s
+    assert by_name["romance"].kind == "emotion"
+    assert by_name["romance"].appearances == [(90.0, 110.0)]
+
+
+def test_emotions_key_alone_triggers_structured_path():
+    """A chunk carrying only `emotions` (no cues/entities/events) is structured."""
+    results = [
+        {
+            "result_data": {
+                "emotions": [
+                    {"start_sec": 5.0, "end_sec": 8.0, "emotion": "joy", "intensity": 0.9},
+                ],
+            }
+        },
+    ]
+    _, entities = extract_from_scene_results(results)
+    assert len(entities) == 1
+    assert entities[0].name == "joy"
+    assert entities[0].kind == "emotion"
+
+
+def test_emotion_and_event_intensity_averaged_onto_entity():
+    """avg_intensity() averages the per-segment intensities for emotions/events."""
+    results = [
+        {
+            "result_data": {
+                "cues": [],
+                "entities": [],
+                "events": [
+                    {"tag": "fight", "start_sec": 0.0, "end_sec": 5.0, "intensity": 0.8},
+                    {"tag": "fight", "start_sec": 20.0, "end_sec": 25.0, "intensity": 0.4},
+                ],
+                "emotions": [
+                    {"start_sec": 0.0, "end_sec": 5.0, "emotion": "tension", "intensity": 0.6},
+                ],
+            }
+        },
+    ]
+    _, entities = extract_from_scene_results(results)
+    by_name = {e.name: e for e in entities}
+    assert by_name["fight"].avg_intensity() == pytest.approx(0.6)  # (0.8 + 0.4) / 2
+    assert by_name["tension"].avg_intensity() == pytest.approx(0.6)
+
+
+def test_cue_sentiment_is_threaded_through():
+    results = [
+        {
+            "result_data": {
+                "cues": [
+                    {"start_sec": 1.0, "end_sec": 2.0, "text": "Yes!", "kind": "dialogue", "sentiment": "positive"},
+                ],
+                "entities": [],
+                "events": [],
+            }
+        },
+    ]
+    cues, _ = extract_from_scene_results(results)
+    assert cues[0].sentiment == "positive"
+
+
+def test_extract_segments_sorted_across_chunks():
+    results = [
+        {"result_data": {"segments": [{"start_sec": 60.0, "end_sec": 90.0, "title": "B", "synopsis": "later"}]}},
+        {
+            "result_data": {
+                "segments": [
+                    {"start_sec": 0.0, "end_sec": 30.0, "title": "A", "synopsis": "early", "location": "palace"},
+                ]
+            }
+        },
+    ]
+    segs = extract_segments(results)
+    assert [s.title for s in segs] == ["A", "B"]
+    assert segs[0].location == "palace"
+    assert segs[1].location == ""  # default when omitted
+
+
+def test_extract_key_moments_and_beats():
+    results = [
+        {
+            "result_data": {
+                "key_moments": [
+                    {"start_sec": 120.0, "type": "cliffhanger", "label": "He turns around"},
+                    {"start_sec": 10.0, "type": "hook", "label": "Cold open"},
+                ],
+                "narrative_beats": [
+                    {"beat": "inciting_incident", "start_sec": 30.0, "end_sec": 40.0},
+                ],
+            }
+        },
+    ]
+    moments = extract_key_moments(results)
+    assert [m.type for m in moments] == ["hook", "cliffhanger"]  # sorted by start
+    beats = extract_narrative_beats(results)
+    assert beats[0].type == "inciting_incident"
+    assert beats[0].label == "inciting incident"  # falls back to beat name
+
+
+def test_segments_and_markers_empty_for_old_jobs():
+    results = [{"result_data": {"cues": [], "entities": [], "events": []}}]
+    assert extract_segments(results) == []
+    assert extract_key_moments(results) == []
+    assert extract_narrative_beats(results) == []
 
 
 def test_structured_path_handles_array_appearance_form():

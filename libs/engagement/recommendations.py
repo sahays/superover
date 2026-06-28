@@ -148,6 +148,44 @@ def _bucket_minutes(
     return out
 
 
+# ── callout binding ───────────────────────────────────────────────
+
+
+def bind_callouts_to_minutes(
+    callouts: Sequence[dict],
+    low_minutes: Sequence[MinuteSlice],
+) -> List[dict]:
+    """Bind LLM per-minute callouts back to their deterministic minute buckets.
+
+    The LLM supplies the prose (what_happened / why_it_dipped / alternative) and
+    echoes a `minute_index`. We overwrite the window with the real bucket bounds
+    and attach the bucket's actual average BARC rating as `avg_score`, so the
+    times and rating shown to producers are real data — not LLM-emitted numbers
+    that can drift. Callouts whose `minute_index` doesn't map to a supplied low
+    minute are dropped.
+    """
+    low_by_index = {m.minute_index: m for m in low_minutes}
+    bound: List[dict] = []
+    for co in callouts or []:
+        raw_idx = co.get("minute_index")
+        if raw_idx is None:
+            continue
+        try:
+            idx = int(raw_idx)
+        except (TypeError, ValueError):
+            continue
+        slice_ = low_by_index.get(idx)
+        if slice_ is None:
+            continue
+        co = dict(co)
+        co["minute_index"] = idx
+        co["minute_start_sec"] = slice_.minute_start_sec
+        co["minute_end_sec"] = slice_.minute_end_sec
+        co["avg_score"] = round(slice_.avg_score, 4)
+        bound.append(co)
+    return bound
+
+
 # ── orchestration ─────────────────────────────────────────────────
 
 

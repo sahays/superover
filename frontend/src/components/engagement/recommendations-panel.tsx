@@ -22,8 +22,11 @@ export interface Recommendation {
 }
 
 export interface MinuteCallout {
+  minute_index?: number
   minute_start_sec: number
   minute_end_sec: number
+  /** Actual average BARC rating for this minute bucket (deterministic). */
+  avg_score?: number
   what_happened: string
   why_it_dipped: string
   alternative: string
@@ -39,6 +42,8 @@ export interface RecommendationsPayload {
 interface Props {
   data: RecommendationsPayload
   onAnchorClick?: (timestamp: number) => void
+  /** Current shared playhead — the callout whose window contains it is highlighted. */
+  activeTimestamp?: number | null
 }
 
 const LIFT_CLASSES: Record<string, string> = {
@@ -47,7 +52,7 @@ const LIFT_CLASSES: Record<string, string> = {
   low: 'bg-slate-500',
 }
 
-export function RecommendationsPanel({ data, onAnchorClick }: Props) {
+export function RecommendationsPanel({ data, onAnchorClick, activeTimestamp }: Props) {
   const moreOf = data.do_more_of || []
   const lessOf = data.do_less_of || []
   const minutes = data.per_minute_callouts || []
@@ -98,22 +103,41 @@ export function RecommendationsPanel({ data, onAnchorClick }: Props) {
 
         {minutes.length > 0 && (
           <div>
-            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Per-minute callouts
+            <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Lowest-rated minutes
             </h3>
+            <p className="mb-2 text-xs text-muted-foreground">
+              The weakest one-minute windows by BARC rating. Click to jump to that
+              moment in the video and timeline.
+            </p>
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {minutes.map((m, i) => (
+              {minutes.map((m, i) => {
+                const isActive =
+                  activeTimestamp != null &&
+                  activeTimestamp >= m.minute_start_sec &&
+                  activeTimestamp < m.minute_end_sec
+                return (
                 <button
                   key={i}
                   onClick={() => onAnchorClick?.(m.minute_start_sec)}
-                  className="group rounded-lg border bg-background p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/40"
+                  className={cn(
+                    'group rounded-lg border bg-background p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/40',
+                    isActive && 'border-primary ring-1 ring-primary'
+                  )}
                 >
-                  <div className="mb-1.5 flex items-center justify-between">
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
                     <span className="font-mono text-xs text-muted-foreground">
                       {formatDuration(m.minute_start_sec)}–
                       {formatDuration(m.minute_end_sec)}
                     </span>
-                    <ArrowRight className="h-3 w-3 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                    <div className="flex items-center gap-1.5">
+                      {m.avg_score !== undefined && (
+                        <Badge variant="outline" className="text-[10px] font-mono">
+                          rating {m.avg_score.toFixed(2)}
+                        </Badge>
+                      )}
+                      <ArrowRight className="h-3 w-3 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                    </div>
                   </div>
                   <p className="text-sm font-medium leading-tight">
                     {m.what_happened}
@@ -126,7 +150,8 @@ export function RecommendationsPanel({ data, onAnchorClick }: Props) {
                     {m.alternative}
                   </p>
                 </button>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}

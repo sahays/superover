@@ -21,6 +21,18 @@ ENGAGEMENT_PROMPT_TEXT = (
     "say so plainly in the explanation rather than inventing details."
 )
 
+EPISODE_SUMMARY_PROMPT_TEXT = (
+    "You are a story editor. Below are the per-chunk scene summaries of a single\n"
+    "episode, in chronological order. Write a tight episode summary for a\n"
+    "producer dashboard:\n"
+    " - 4-6 sentences in a single paragraph.\n"
+    " - Cover the main arc start to finish: who the episode follows, the central\n"
+    "   conflict, key turning points, and how it resolves or cliff-hangs.\n"
+    " - Name the recurring characters who actually drive the story.\n"
+    " - Plain, concrete language. No marketing fluff, no bullet points, no\n"
+    "   preamble. Output the paragraph only."
+)
+
 RECOMMENDATIONS_PROMPT_TEXT = (
     "You are an audience-engagement consultant for video content.\n\n"
     "You will receive deterministic statistics from the show: the overall\n"
@@ -44,9 +56,13 @@ RECOMMENDATIONS_PROMPT_TEXT = (
     "   change, e.g. 'Lean into the Ganesh-Shiva arcs and trim silent\n"
     "   exposition in minutes 12-18.'\n"
     " - `per_minute_callouts` only for minutes the producer should change.\n"
-    "   Each callout names what happened, why engagement dipped, and a\n"
-    "   concrete alternative grounded in patterns from the high-engagement\n"
-    "   minutes.\n"
+    "   Each callout MUST set `minute_index` to the index of one of the\n"
+    "   supplied low-engagement minute buckets (the integer after 'minute' in\n"
+    "   the stats). Do NOT invent minute indices. The `minute_start_sec` /\n"
+    "   `minute_end_sec` are authoritative from that bucket; the server\n"
+    "   overwrites them, so just copy the bucket's values. Each callout names\n"
+    "   what happened, why engagement dipped, and a concrete alternative\n"
+    "   grounded in patterns from the high-engagement minutes.\n"
     " - Be specific and actionable. Avoid generic advice like 'increase\n"
     "   tension' without naming who or what."
 )
@@ -118,6 +134,7 @@ RECOMMENDATIONS_RESPONSE_SCHEMA = {
             "items": {
                 "type": "object",
                 "required": [
+                    "minute_index",
                     "minute_start_sec",
                     "minute_end_sec",
                     "what_happened",
@@ -125,6 +142,10 @@ RECOMMENDATIONS_RESPONSE_SCHEMA = {
                     "alternative",
                 ],
                 "properties": {
+                    "minute_index": {
+                        "type": "integer",
+                        "description": "Index of the supplied low-engagement minute bucket this callout refers to.",
+                    },
                     "minute_start_sec": {"type": "number"},
                     "minute_end_sec": {"type": "number"},
                     "what_happened": {"type": "string"},

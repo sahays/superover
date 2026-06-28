@@ -35,6 +35,7 @@ import {
   Video,
 } from '@/lib/types'
 import { useAuthStore } from '@/store/useAuthStore'
+import { VideoThumb } from '@/components/engagement/video-thumb'
 
 function StatusBadge({ status }: { status: EngagementJobStatus }) {
   switch (status) {
@@ -80,7 +81,8 @@ function EngagementJobCard({
   onDelete?: (jobId: string) => void
 }) {
   return (
-    <Card>
+    <Card className="overflow-hidden">
+      <VideoThumb videoId={job.video_id} className="rounded-none" />
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">

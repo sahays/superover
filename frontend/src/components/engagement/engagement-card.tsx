@@ -2,14 +2,18 @@ import { TrendingUp, TrendingDown } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { EngagementExtremum } from '@/lib/types'
-import { formatDuration } from '@/lib/utils'
+import { cn, formatDuration } from '@/lib/utils'
 
 interface EngagementCardProps {
   item: EngagementExtremum
   kind: 'peak' | 'valley'
+  /** Highlighted when the shared playhead is at this moment. */
+  isActive?: boolean
+  /** Click moves the playhead to this extremum's timestamp. */
+  onSelect?: (timestampSec: number) => void
 }
 
-export function EngagementCard({ item, kind }: EngagementCardProps) {
+export function EngagementCard({ item, kind, isActive, onSelect }: EngagementCardProps) {
   const isPeak = kind === 'peak'
   const Icon = isPeak ? TrendingUp : TrendingDown
   const accentClass = isPeak ? 'text-green-600' : 'text-red-600'
@@ -22,7 +26,13 @@ export function EngagementCard({ item, kind }: EngagementCardProps) {
   ]
 
   return (
-    <Card>
+    <Card
+      onClick={onSelect ? () => onSelect(item.timestamp_sec) : undefined}
+      className={cn(
+        onSelect && 'cursor-pointer transition-colors hover:border-primary/40',
+        isActive && 'border-primary ring-1 ring-primary'
+      )}
+    >
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2">

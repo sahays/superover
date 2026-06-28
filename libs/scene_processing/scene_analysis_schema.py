@@ -6,6 +6,7 @@ Single source of truth for the JSON shape Gemini emits when the seeded
 cue timelines for engagement analytics.
 """
 
+import copy
 from typing import Any, Dict
 
 
@@ -230,3 +231,146 @@ def render_prompt(prompt_text: str, chunk_start_sec: float, chunk_end_sec: float
     return prompt_text.replace("{chunk_start_sec}", f"{chunk_start_sec:.1f}").replace(
         "{chunk_end_sec}", f"{chunk_end_sec:.1f}"
     )
+
+
+# ── Engagement-timeline variant ──────────────────────────────────────────────
+# A superset of the base scene-analysis schema that adds the fields the
+# engagement detail page consumes for its rich, playhead-driven timeline:
+#   - emotions[]            → mood ribbon + emotion-influence ranking
+#   - segments[]            → "At this moment" scene title/synopsis + hover
+#   - key_moments[]         → ribbon glyph markers
+#   - events[].intensity    → marker sizing + event-influence
+#   - narrative_beats[].label → labeled act markers
+#   - cues[].sentiment      → dialog tinting
+# All additions are OPTIONAL and backward-compatible; the base prompt still
+# works. Built from the base schema so the shared fields never drift.
+
+SCENE_ANALYSIS_ENGAGEMENT_PROMPT_NAME = "Scene Analysis (Engagement Timeline)"
+
+_EMOTION_ENUM = [
+    "joy",
+    "sadness",
+    "fear",
+    "anger",
+    "surprise",
+    "disgust",
+    "tension",
+    "suspense",
+    "romance",
+    "humor",
+    "triumph",
+    "calm",
+    "neutral",
+]
+
+_KEY_MOMENT_ENUM = [
+    "hook",
+    "reveal",
+    "twist",
+    "cliffhanger",
+    "punchline",
+    "action_peak",
+    "emotional_peak",
+    "song",
+]
+
+
+def _build_engagement_schema() -> Dict[str, Any]:
+    schema = copy.deepcopy(SCENE_ANALYSIS_SCHEMA)
+    props = schema["properties"]
+
+    # Enrich existing arrays (optional fields — not added to `required`).
+    props["cues"]["items"]["properties"]["sentiment"] = {
+        "type": "string",
+        "enum": ["positive", "neutral", "negative"],
+        "description": "Overall tone of the line.",
+    }
+    props["events"]["items"]["properties"]["intensity"] = {
+        "type": "number",
+        "description": "0.0-1.0 narrative importance/energy of this event.",
+    }
+    props["narrative_beats"]["items"]["properties"]["label"] = {
+        "type": "string",
+        "description": "Short phrase naming the beat (e.g. 'Hero accepts the quest').",
+    }
+
+    # New top-level arrays.
+    props["emotions"] = {
+        "type": "array",
+        "description": "Contiguous affective-tone spans covering the chunk (~3-8).",
+        "items": {
+            "type": "object",
+            "required": ["start_sec", "end_sec", "emotion", "intensity"],
+            "properties": {
+                "start_sec": {"type": "number"},
+                "end_sec": {"type": "number"},
+                "emotion": {"type": "string", "enum": _EMOTION_ENUM},
+                "intensity": {"type": "number", "description": "0.0-1.0 strength."},
+            },
+        },
+    }
+    props["segments"] = {
+        "type": "array",
+        "description": "Sequential, non-overlapping scene beats covering the chunk (1-5).",
+        "items": {
+            "type": "object",
+            "required": ["start_sec", "end_sec", "title", "synopsis"],
+            "properties": {
+                "start_sec": {"type": "number"},
+                "end_sec": {"type": "number"},
+                "title": {"type": "string", "description": "3-6 word scene label."},
+                "synopsis": {"type": "string", "description": "1-2 sentences."},
+                "location": {"type": "string", "description": "Setting; '' if unclear."},
+            },
+        },
+    }
+    props["key_moments"] = {
+        "type": "array",
+        "description": "Standout beats likely to move the audience.",
+        "items": {
+            "type": "object",
+            "required": ["start_sec", "type", "label"],
+            "properties": {
+                "start_sec": {"type": "number"},
+                "type": {"type": "string", "enum": _KEY_MOMENT_ENUM},
+                "label": {"type": "string", "description": "One short phrase."},
+            },
+        },
+    }
+    return schema
+
+
+SCENE_ANALYSIS_ENGAGEMENT_SCHEMA: Dict[str, Any] = _build_engagement_schema()
+
+
+_ENGAGEMENT_PROMPT_SECTIONS = """\
+## emotions  (affective tone over time)
+- Emit contiguous spans of the dominant emotional tone (3-8 per chunk) that tile
+  the chunk without large gaps. Adjacent spans may differ.
+- `emotion` must be one of: joy, sadness, fear, anger, surprise, disgust,
+  tension, suspense, romance, humor, triumph, calm, neutral.
+- `intensity` is 0.0-1.0 — how strongly that emotion reads in the span.
+
+## segments  (finer-than-chunk scene beats)
+- Break the chunk into 1-5 sequential, non-overlapping beats that cover it.
+- `title` is a 3-6 word label; `synopsis` is 1-2 sentences; `location` is the
+  setting ("" if unclear).
+
+## key_moments  (standout audience beats)
+- Only genuinely notable beats likely to move the audience. Often 0-3 per chunk.
+- `type` must be one of: hook, reveal, twist, cliffhanger, punchline,
+  action_peak, emotional_peak, song. `label` is one short phrase.
+
+## extra fields on existing arrays
+- events[].intensity: 0.0-1.0 importance/energy of the event.
+- narrative_beats[].label: short phrase naming the beat.
+- cues[].sentiment: one of positive | neutral | negative for the line's tone.
+- All new timestamps use the same absolute-video-seconds convention as above.
+
+"""
+
+# Insert the new field instructions right before the Quality bar so the model
+# reads them as part of the per-field spec.
+SCENE_ANALYSIS_ENGAGEMENT_PROMPT_TEXT = SCENE_ANALYSIS_PROMPT_TEXT.replace(
+    "## Quality bar", _ENGAGEMENT_PROMPT_SECTIONS + "## Quality bar", 1
+)

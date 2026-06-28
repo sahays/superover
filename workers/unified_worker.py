@@ -14,6 +14,7 @@ sys.path.insert(0, str(project_root))
 import logging
 import time
 import traceback
+from typing import cast
 from config import settings
 from libs.database import get_db, MediaJobStatus, SceneJobStatus, ImageJobStatus
 from libs.db.enums import EngagementJobStatus
@@ -25,8 +26,13 @@ from libs.scene_processing import get_scene_processor
 from libs.scene_processing.orchestrator import SceneOrchestrator
 from libs.engagement import parse_barc_csv, find_extrema, fetch_chunks_at
 from libs.engagement.prompts import ENGAGEMENT_PROMPT_TEXT
-from libs.engagement.scene_extract import extract_from_scene_results
-from libs.engagement.recommendations import compute_stats
+from libs.engagement.scene_extract import (
+    extract_from_scene_results,
+    extract_key_moments,
+    extract_narrative_beats,
+    extract_segments,
+)
+from libs.engagement.recommendations import bind_callouts_to_minutes, compute_stats
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -500,6 +506,22 @@ class UnifiedWorker:
         cues, entities = extract_from_scene_results(source_results)
         logger.info(f"[ENGAGEMENT] Extracted {len(cues)} cues, {len(entities)} entities from source job")
 
+        # Episode summary: synthesize one paragraph from per-chunk scene summaries.
+        chunk_summaries = []
+        for r in sorted(source_results, key=lambda x: x.get("chunk_index", 0)):
+            summary = (r.get("result_data") or {}).get("summary")
+            if summary:
+                chunk_summaries.append(str(summary))
+        episode_summary = ""
+        episode_tokens: dict = {}
+        try:
+            ep = self.engagement_analyzer.summarize_episode(chunk_summaries)
+            episode_summary = ep.get("summary", "")
+            episode_tokens = ep.get("token_usage") or {}
+            logger.info(f"[ENGAGEMENT] Episode summary generated ({len(episode_summary)} chars)")
+        except Exception as e:
+            logger.error(f"[ENGAGEMENT] Episode summary failed (non-fatal): {e}")
+
         cues_path = f"gs://{settings.results_bucket}/engagement/{job_id}/cues.json"
         self.storage.upload_bytes(
             _json.dumps(
@@ -510,6 +532,7 @@ class UnifiedWorker:
                         "text": c.text,
                         "kind": c.kind,
                         "speaker": c.speaker,
+                        "sentiment": c.sentiment,
                     }
                     for c in cues
                 ]
@@ -527,6 +550,7 @@ class UnifiedWorker:
                         "kind": e.kind,
                         "appearances": [{"start_sec": s, "end_sec": en} for (s, en) in e.appearances],
                         "mention_count": e.mention_count,
+                        "avg_intensity": e.avg_intensity(),
                     }
                     for e in entities
                 ]
@@ -534,6 +558,67 @@ class UnifiedWorker:
             entities_path,
             content_type="application/json",
         )
+
+        # 4c. Scene strip — powers the chart hover + "At this moment" panel.
+        # Prefer fine-grained `segments` (title/synopsis/location); fall back to
+        # per-chunk `summary` with bounds from the video manifest for old jobs.
+        segments = extract_segments(source_results)
+        if segments:
+            scenes = [
+                {
+                    "start_sec": s.start_sec,
+                    "end_sec": s.end_sec,
+                    "title": s.title,
+                    "summary": s.synopsis,
+                    "location": s.location,
+                }
+                for s in segments
+            ]
+        else:
+            manifest = self.db.get_manifest(video_id) or {}
+            chunks_by_index = {c["index"]: c for c in (manifest.get("chunks") or []) if "index" in c}
+            scenes = []
+            for r in source_results:
+                rd = r.get("result_data") or {}
+                ci = rd.get("chunk_index")
+                summary = rd.get("summary")
+                if ci is None or not summary:
+                    continue
+                cmeta = chunks_by_index.get(ci) or {}
+                scenes.append(
+                    {
+                        "chunk_index": ci,
+                        "start_sec": cmeta.get("start_time"),
+                        "end_sec": cmeta.get("end_time"),
+                        "summary": str(summary),
+                    }
+                )
+            scenes.sort(key=lambda s: cast(float, s.get("chunk_index") or 0))
+        scenes_path = f"gs://{settings.results_bucket}/engagement/{job_id}/scenes.json"
+        self.storage.upload_bytes(
+            _json.dumps(scenes).encode("utf-8"),
+            scenes_path,
+            content_type="application/json",
+        )
+        logger.info(f"[ENGAGEMENT] Scenes: {len(scenes)} ({'segments' if segments else 'chunk summaries'})")
+
+        # 4d. Timeline markers — key moments + classical story beats. Drives the
+        # glyph ticks on the chart ribbon. Empty for old jobs (graceful).
+        markers = [
+            {"start_sec": m.start_sec, "type": m.type, "label": m.label, "kind": "moment"}
+            for m in extract_key_moments(source_results)
+        ] + [
+            {"start_sec": b.start_sec, "type": b.type, "label": b.label, "kind": "beat"}
+            for b in extract_narrative_beats(source_results)
+        ]
+        markers.sort(key=lambda m: cast(float, m["start_sec"]))
+        markers_path = f"gs://{settings.results_bucket}/engagement/{job_id}/markers.json"
+        self.storage.upload_bytes(
+            _json.dumps(markers).encode("utf-8"),
+            markers_path,
+            content_type="application/json",
+        )
+        logger.info(f"[ENGAGEMENT] Markers: {len(markers)}")
 
         # 5. Call Gemini for peak/valley explanations
         gemini_result = self.engagement_analyzer.explain(
@@ -589,6 +674,16 @@ class UnifiedWorker:
             logger.error(f"[ENGAGEMENT] Recommendation call failed (non-fatal): {e}")
             recommendations_payload = {"headline": "", "do_more_of": [], "do_less_of": [], "per_minute_callouts": []}
 
+        # Bind each LLM callout back to its deterministic minute bucket so the
+        # window + BARC rating shown to producers are real data (not LLM-emitted
+        # numbers that can drift). Callouts that don't map to a low minute are
+        # dropped. avg_score is the actual BARC rating for that minute.
+        bound_callouts = bind_callouts_to_minutes(
+            recommendations_payload.get("per_minute_callouts") or [], stats.low_minutes
+        )
+        recommendations_payload["per_minute_callouts"] = bound_callouts
+        logger.info(f"[ENGAGEMENT] Bound {len(bound_callouts)} per-minute callouts to low minutes")
+
         recommendations_path = f"gs://{settings.results_bucket}/engagement/{job_id}/recommendations.json"
         self.storage.upload_bytes(
             _json.dumps(recommendations_payload).encode("utf-8"),
@@ -601,16 +696,21 @@ class UnifiedWorker:
         recommend_tokens = recommendations_payload.get("token_usage") or {}
         aggregated_tokens = {}
         for k in ("prompt_tokens", "candidates_tokens", "total_tokens"):
-            aggregated_tokens[k] = explain_tokens.get(k, 0) + recommend_tokens.get(k, 0)
+            aggregated_tokens[k] = explain_tokens.get(k, 0) + recommend_tokens.get(k, 0) + episode_tokens.get(k, 0)
         for k in ("input_cost_usd", "output_cost_usd", "estimated_cost_usd"):
-            aggregated_tokens[k] = round(explain_tokens.get(k, 0) + recommend_tokens.get(k, 0), 6)
+            aggregated_tokens[k] = round(
+                explain_tokens.get(k, 0) + recommend_tokens.get(k, 0) + episode_tokens.get(k, 0), 6
+            )
 
         results = {
             "peaks": _merge(peaks, gemini_result.get("peaks"), "peaks"),
             "valleys": _merge(valleys, gemini_result.get("valleys"), "valleys"),
+            "episode_summary": episode_summary,
             "timeseries_gcs_path": timeseries_path,
             "cues_gcs_path": cues_path,
             "entities_gcs_path": entities_path,
+            "scenes_gcs_path": scenes_path,
+            "markers_gcs_path": markers_path,
             "recommendations_gcs_path": recommendations_path,
             "barc_time_column": series.time_column,
             "barc_score_column": series.score_column,

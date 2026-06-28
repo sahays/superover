@@ -261,6 +261,7 @@ export const engagementExtremumSchema = z.object({
 export const engagementResultsSchema = z.object({
   peaks: z.array(engagementExtremumSchema).default([]),
   valleys: z.array(engagementExtremumSchema).default([]),
+  episode_summary: z.string().nullable().optional(),
   timeseries_gcs_path: z.string().nullable().optional(),
   barc_time_column: z.string().nullable().optional(),
   barc_score_column: z.string().nullable().optional(),

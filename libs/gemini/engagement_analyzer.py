@@ -16,6 +16,7 @@ from config import settings
 from libs.engagement.peak_detection import Extremum
 from libs.engagement.prompts import (
     ENGAGEMENT_RESPONSE_SCHEMA,
+    EPISODE_SUMMARY_PROMPT_TEXT,
     RECOMMENDATIONS_PROMPT_TEXT,
     RECOMMENDATIONS_RESPONSE_SCHEMA,
 )
@@ -122,6 +123,44 @@ class EngagementAnalyzer:
             "finish_reason": finish_reason,
             "token_usage": token_usage,
         }
+
+    def summarize_episode(self, chunk_summaries: List[str]) -> Dict[str, Any]:
+        """Synthesize one episode-level summary from per-chunk scene summaries.
+
+        Returns {"summary": str, "token_usage": {...}}. Returns an empty summary
+        (no Gemini call) when there are no chunk summaries.
+        """
+        summaries = [s.strip() for s in chunk_summaries if s and s.strip()]
+        if not summaries:
+            return {"summary": "", "token_usage": {}}
+
+        numbered = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(summaries))
+        full_prompt = f"{EPISODE_SUMMARY_PROMPT_TEXT}\n\n# Scene summaries\n{numbered}"
+
+        logger.info(f"[ENGAGEMENT] Episode summary call: {len(summaries)} chunk summaries")
+
+        config = types.GenerateContentConfig(
+            temperature=settings.gemini_temperature,
+            max_output_tokens=settings.gemini_default_output_tokens,
+        )
+        response = retry_with_backoff(
+            self.client.models.generate_content,
+            model=self.model_name,
+            contents=[full_prompt],
+            config=config,
+            max_retries=self.max_retries,
+            base_delay=self.base_delay,
+        )
+
+        if not response.candidates or not response.candidates[0].content.parts:
+            finish_reason = response.candidates[0].finish_reason if response.candidates else "UNKNOWN"
+            raise RuntimeError(f"Episode summary blocked by Gemini (reason: {finish_reason})")
+
+        token_usage: Dict[str, Any] = {}
+        if response.usage_metadata:
+            token_usage = calculate_cost(response.usage_metadata, settings.gemini_default_model)
+
+        return {"summary": (response.text or "").strip(), "token_usage": token_usage}
 
     def recommend(self, stats: RecommendationStats, cues_by_minute: Dict[int, List[Dict[str, Any]]]) -> Dict[str, Any]:
         """Synthesize prescriptive recommendations grounded in the supplied stats.

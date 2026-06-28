@@ -100,6 +100,32 @@ class FirestoreDB(
                 response_schema=SCENE_ANALYSIS_SCHEMA,
             )
 
+        # Seed the engagement-timeline variant — superset schema (emotions,
+        # segments, key_moments, event intensity, beat labels, cue sentiment)
+        # that powers the rich, playhead-driven engagement detail page. Select
+        # this prompt when (re)processing a video you'll run engagement on.
+        from libs.scene_processing.scene_analysis_schema import (
+            SCENE_ANALYSIS_ENGAGEMENT_PROMPT_NAME,
+            SCENE_ANALYSIS_ENGAGEMENT_PROMPT_TEXT,
+            SCENE_ANALYSIS_ENGAGEMENT_SCHEMA,
+        )
+
+        existing_eng = (
+            self.prompts.where("type", "==", "scene_analysis")
+            .where("name", "==", SCENE_ANALYSIS_ENGAGEMENT_PROMPT_NAME)
+            .limit(1)
+        )
+        if not list(existing_eng.stream()):
+            logger.info(f"Seeding engagement-timeline scene-analysis prompt: {SCENE_ANALYSIS_ENGAGEMENT_PROMPT_NAME}")
+            self.create_prompt(
+                name=SCENE_ANALYSIS_ENGAGEMENT_PROMPT_NAME,
+                type="scene_analysis",
+                prompt_text=SCENE_ANALYSIS_ENGAGEMENT_PROMPT_TEXT,
+                supports_context=False,
+                response_type="structured_json",
+                response_schema=SCENE_ANALYSIS_ENGAGEMENT_SCHEMA,
+            )
+
 
 # Singleton instance
 _db_instance: Optional[FirestoreDB] = None
