@@ -27,17 +27,22 @@ Match the user's intent against these fields in the analysis JSON:
 the analysis to locate specific moments.
 
 Recommendation rules:
-- Only recommend results that genuinely match the query intent.
+- Be generous and inclusive. Recommend every result with a plausible connection \
+to the query — partial, thematic, or loose matches all count. Prefer including a \
+result over dropping it; the user would rather see a few extra options than none.
+- Return up to 5 recommendations, ranked best-first.
 - Prefer clip recommendations when the match is a specific moment rather than \
 the whole video. Use each result's timestamp_start / timestamp_end (the matched \
 moment's window) for clip_start / clip_end (format HH:MM:SS).
 - For full video recommendations, omit clip_start / clip_end.
-- Confidence scoring (0.0–1.0): 0.85+ = strong match on multiple fields, \
-0.60–0.84 = partial match, below 0.60 = do not include.
+- Confidence scoring (0.0–1.0): 0.80+ = strong, 0.50–0.79 = solid, \
+0.30–0.49 = loose/thematic (still include it), below 0.30 = do not include.
 - Order recommendations by relevance (highest confidence first).
-- Write a concise, natural language response_text summarizing what you found.
-- If nothing is relevant, return an empty recommendations list with a helpful \
-response_text.
+- Only return an empty list if truly nothing in the results relates to the query.
+
+Keep output tight (latency matters):
+- Each `reason`: one short phrase, max ~12 words. No full sentences.
+- `response_text`: a single short sentence.
 """
 
 RESPONSE_SCHEMA = types.Schema(
@@ -45,7 +50,7 @@ RESPONSE_SCHEMA = types.Schema(
     properties={
         "response_text": types.Schema(
             type=types.Type.STRING,
-            description="Natural language summary of findings",
+            description="One short sentence summarizing the findings",
         ),
         "recommendations": types.Schema(
             type=types.Type.ARRAY,
@@ -68,7 +73,7 @@ RESPONSE_SCHEMA = types.Schema(
                     ),
                     "reason": types.Schema(
                         type=types.Type.STRING,
-                        description="Why this is recommended",
+                        description="One short phrase (max ~12 words) on why it fits",
                     ),
                     "clip_start": types.Schema(
                         type=types.Type.STRING,

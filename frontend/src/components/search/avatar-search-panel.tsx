@@ -152,11 +152,13 @@ const SMALL_TALK_PROMPTS = [
 // chatter forever. With a normal ~5-7s search this is rarely past 1-2 turns.
 const MAX_SMALL_TALK_TURNS = 6
 
-// How long to wait for the model's own VAD acknowledgement to START speaking
-// before assuming it didn't fire and sending an explicit ack as a backstop.
-// Must be > the model's time-to-first-audio; only the FIRST chunk matters here,
-// so a real (longer) auto-ack is never cut short.
-const AUTO_ACK_PROBE_MS = 3000
+// The model's VAD auto-acknowledgement is coordinated by waiting for it to go
+// IDLE (audio drained + quiet), NOT by probing for it — a short auto-ack often
+// finishes before a probe can observe it, which used to fire a redundant second
+// ack (the stutter). `GRACE` lets an expected auto-ack begin producing audio
+// before we'd call the model idle; `QUIET` debounces end-of-audio.
+const AUTO_ACK_GRACE_MS = 1000
+const MODEL_IDLE_QUIET_MS = 700
 
 // Resolves once the model's turn has fully ENDED and the local audio has
 // drained — driven by authoritative signals, with no mid-utterance guesswork:
@@ -172,57 +174,42 @@ const AUTO_ACK_PROBE_MS = 3000
 // `hardCapMs` is a PURE safety net for a dropped `turn-complete` — never the
 // normal path — so it can't clip a real utterance early.
 //
-// `firstAudioTimeoutMs` (optional): if set and NO audio chunk arrives within it,
-// resolve early with `false` — used to detect "the model isn't speaking" (e.g.
-// VAD didn't auto-respond) WITHOUT cutting a real utterance short: once the first
-// chunk arrives the probe is cancelled and we wait fully for `turn-complete`.
-//
-// Returns whether any audio was heard (i.e. whether the model actually spoke).
+// Used for turns WE initiate (filler, summary): we attach the listeners before
+// `sendText`, so the response's audio + `turn-complete` are reliably observed.
+// For a turn we did NOT initiate (the VAD auto-ack, which can finish before we
+// attach), use `waitForModelIdle` instead.
 async function waitForModelSpeechEnd(
   session: {
     addEventListener: (t: string, h: () => void) => void
     removeEventListener: (t: string, h: () => void) => void
   },
   getAudioRemainingMs: () => number,
-  opts: { hardCapMs?: number; firstAudioTimeoutMs?: number } = {},
-): Promise<boolean> {
+  opts: { hardCapMs?: number } = {},
+): Promise<void> {
   const hardCapMs = opts.hardCapMs ?? SPEECH_HARD_CAP_MS
-  const firstAudioTimeoutMs = opts.firstAudioTimeoutMs ?? 0
   const startedAt = Date.now()
   // Phase 1: wait for first audio chunk, then `turn-complete` (or the safety cap).
-  const heardAudio = await new Promise<boolean>((resolve) => {
-    let heard = false
+  await new Promise<void>((resolve) => {
+    let heardAudio = false
     let done = false
     let hardTimer: ReturnType<typeof setTimeout> | null = null
-    let probeTimer: ReturnType<typeof setTimeout> | null = null
     const finish = () => {
       if (done) return
       done = true
       session.removeEventListener('turn-complete', onTurnComplete)
       session.removeEventListener('audio-chunk', onAudio)
       if (hardTimer) clearTimeout(hardTimer)
-      if (probeTimer) clearTimeout(probeTimer)
-      resolve(heard)
+      resolve()
     }
     const onAudio = () => {
-      if (!heard) {
-        heard = true
-        // The model is speaking — cancel the "did it speak?" probe and commit
-        // to waiting for the real end of turn.
-        if (probeTimer) clearTimeout(probeTimer)
-      }
+      heardAudio = true
     }
     const onTurnComplete = () => {
-      if (heard) finish()
+      if (heardAudio) finish()
     }
     session.addEventListener('audio-chunk', onAudio)
     session.addEventListener('turn-complete', onTurnComplete)
     hardTimer = setTimeout(finish, hardCapMs)
-    if (firstAudioTimeoutMs > 0) {
-      probeTimer = setTimeout(() => {
-        if (!heard) finish() // nothing spoken within the probe window
-      }, firstAudioTimeoutMs)
-    }
   })
   // Phase 2: drain the local audio queue. Because `turn-complete` fires only
   // after all audio is delivered, the queue already holds the whole utterance,
@@ -232,7 +219,48 @@ async function waitForModelSpeechEnd(
   if (remaining > 0) {
     await new Promise((r) => setTimeout(r, remaining + PLAYBACK_TAIL_MS))
   }
-  return heardAudio
+}
+
+// Wait until the model is IDLE — its audio queue has drained AND no new audio
+// chunk has arrived for `quietMs`. Uses the audio sink (`getAudioRemainingMs`)
+// as ground truth, so it is correct whether the model's turn is still playing,
+// just finished, or already over before this was called — unlike a
+// `turn-complete`/first-audio listener, which misses a turn that ended before
+// we attached. `graceMs` holds off the "idle" verdict at the very start so an
+// expected-but-not-yet-started utterance (the VAD auto-ack) has a moment to
+// begin producing audio; once audio is flowing we wait for it to fully drain.
+async function waitForModelIdle(
+  session: {
+    addEventListener: (t: string, h: () => void) => void
+    removeEventListener: (t: string, h: () => void) => void
+  },
+  getAudioRemainingMs: () => number,
+  opts: { graceMs?: number; quietMs?: number; hardCapMs?: number } = {},
+): Promise<void> {
+  const graceMs = opts.graceMs ?? 0
+  const quietMs = opts.quietMs ?? 600
+  const hardCapMs = opts.hardCapMs ?? SPEECH_HARD_CAP_MS
+  const startedAt = Date.now()
+  let lastAudioAt = 0
+  const onAudio = () => {
+    lastAudioAt = Date.now()
+  }
+  session.addEventListener('audio-chunk', onAudio)
+  try {
+    for (;;) {
+      const now = Date.now()
+      if (now - startedAt >= hardCapMs) return
+      const graceElapsed = now - startedAt >= graceMs
+      const drained = getAudioRemainingMs() <= 0
+      // Quiet once no audio has arrived for `quietMs`. If none ever arrived,
+      // treat "quiet" as satisfied the moment the grace window elapses.
+      const quiet = lastAudioAt === 0 ? graceElapsed : now - lastAudioAt >= quietMs
+      if (graceElapsed && drained && quiet) return
+      await new Promise((r) => setTimeout(r, 80))
+    }
+  } finally {
+    session.removeEventListener('audio-chunk', onAudio)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -445,29 +473,19 @@ export function AvatarSearchPanel({
       })
 
       // Step 2: acknowledgement. The model auto-responds to the user's spoken
-      // query on its own (Live VAD) — that IS the ack. Sending our own ack here
-      // would collide with that in-flight response and clip it (the "starts,
-      // stops, starts again" bug), so we DON'T send one — we just wait for the
-      // model's auto-ack to finish. The system overlay shapes it into a few warm
-      // persona-true sentences about the request.
+      // query on its own (Live VAD) — that IS the ack, shaped into a few warm
+      // persona-true sentences by the system overlay. We do NOT send our own ack
+      // turn: it collided with the in-flight auto-ack (clip) and, when the short
+      // auto-ack finished before our probe saw it, fired a redundant SECOND ack
+      // (the stutter). We just wait for the model to go idle — robust whether
+      // the auto-ack is still playing or already finished.
       const ackStart = performance.now()
-      log('ack: awaiting model auto-ack')
-      const heardAck = await waitForModelSpeechEnd(session, remainingMs, {
-        firstAudioTimeoutMs: AUTO_ACK_PROBE_MS,
+      log('ack: awaiting model auto-ack (idle)')
+      await waitForModelIdle(session, remainingMs, {
+        graceMs: AUTO_ACK_GRACE_MS,
+        quietMs: MODEL_IDLE_QUIET_MS,
       })
-      if (!heardAck) {
-        // Backstop: VAD didn't produce a response. Send an explicit ack once
-        // (safe now — nothing is in flight to collide with).
-        log('ack: no auto-response, sending explicit ack')
-        const ackDone = waitForModelSpeechEnd(session, remainingMs)
-        session.sendText(
-          `Acknowledge in a couple of warm sentences that you're searching for: "${query}". ` +
-            'Stay in your usual voice and personality. ' +
-            'Do not name any movies, actors, or scenes — you do not know yet what will come back.',
-        )
-        await ackDone
-      }
-      log('ack: done', { ms: Math.round(performance.now() - ackStart), auto: heardAck })
+      log('ack: idle', { ms: Math.round(performance.now() - ackStart) })
 
       // Step 3: small-talk loop — keep the user company until results are ready.
       // Each line plays in FULL (never clipped). The cards already appear the

@@ -242,7 +242,14 @@ async def get_sync_status():
                 )
             )
 
-        return items
+        # Collapse duplicate result docs for the same (video, chunk) into one
+        # row. A video re-analysed several times produces multiple scene_result
+        # docs; listing each independently created duplicates — and put a video
+        # in BOTH the "synced" and "not synced" buckets when only one of its
+        # docs was synced. Group by (video_id, chunk_index): a row is "ready" if
+        # ANY underlying doc is synced, with a representative result_id (the
+        # synced doc if present, else the newest) so sync/delete act on it.
+        return _dedupe_sync_items(items)
 
     except Exception as e:
         logger.error(f"Failed to get sync status: {e}")
@@ -250,6 +257,29 @@ async def get_sync_status():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get sync status: {str(e)}",
         )
+
+
+def _sync_status_rank(s: str | None) -> int:
+    """Rank statuses so the most 'progressed' one wins when collapsing dupes."""
+    return {"ready": 3, "pending": 2, "error": 1}.get(s or "", 0)
+
+
+def _dedupe_sync_items(items: List[SyncStatusItem]) -> List[SyncStatusItem]:
+    """One row per (video_id, chunk_index). Status = best across the group;
+    representative = the highest-status doc, breaking ties by newest created_at."""
+    groups: dict[tuple, List[SyncStatusItem]] = {}
+    for it in items:
+        groups.setdefault((it.video_id, it.chunk_index), []).append(it)
+
+    deduped: List[SyncStatusItem] = []
+    for group in groups.values():
+        if len(group) == 1:
+            deduped.append(group[0])
+            continue
+        best_status = max((g.sync_status for g in group), key=_sync_status_rank)
+        rep = max(group, key=lambda g: (_sync_status_rank(g.sync_status), g.created_at or ""))
+        deduped.append(rep.model_copy(update={"sync_status": best_status}))
+    return deduped
 
 
 @router.post("/sync", response_model=SyncResponse)
