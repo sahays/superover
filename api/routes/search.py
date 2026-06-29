@@ -3,6 +3,7 @@
 import base64
 import json
 import logging
+import time
 from typing import List
 
 from fastapi import APIRouter, HTTPException, status
@@ -20,7 +21,7 @@ from api.models.schemas.search import (
 from google.cloud import firestore as firestore_module
 from libs.database import get_db
 from libs.bigquery import get_bq_client
-from libs.gemini import get_search_curator, get_search_query_interpreter
+from libs.gemini import get_search_query_interpreter, get_search_curator
 
 logger = logging.getLogger(__name__)
 
@@ -441,8 +442,9 @@ def _parse_result_data_json(row: dict) -> dict:
 
 @router.post("/videos", response_model=CuratedSearchResponse)
 async def search_videos(request: SearchRequest):
-    """Cross-video semantic search with Gemini curation. Zero Firestore reads."""
+    """Cross-video semantic search — BQ AI.SEARCH + Gemini curation. Zero Firestore reads."""
     try:
+        t0 = time.perf_counter()
         # Interpret query: translate multilingual/multimodal input to English
         interpreted_query = None
         search_query = request.query
@@ -472,8 +474,11 @@ async def search_videos(request: SearchRequest):
             else:
                 interpreted_query = None  # Don't show if unchanged (fast path)
 
+        t_interpret = time.perf_counter()
+
         bq = get_bq_client()
         raw_results = bq.search_videos(search_query, request.limit)
+        t_bq = time.perf_counter()
 
         # Group by video_id, keep best match per video
         video_groups: dict[str, list[dict]] = {}
@@ -506,14 +511,43 @@ async def search_videos(request: SearchRequest):
             )
         raw_video_results.sort(key=lambda r: r.score)
 
-        # Gemini curation
+        # Gemini curation: rank/describe the BQ matches into recommendations.
         curator = get_search_curator()
         curated = curator.curate_search_results(search_query, raw_results)
+        t_curate = time.perf_counter()
 
-        recommendations = [SearchRecommendation(**rec) for rec in curated.get("recommendations", [])]
+        # The curator no longer echoes identifiers; fill video_filename + gcs_path
+        # from the BQ rows by video_id (authoritative, and saves output tokens).
+        vid_meta = {
+            vid: {
+                "video_filename": matches[0].get("video_filename", ""),
+                "gcs_path": matches[0].get("gcs_path", ""),
+            }
+            for vid, matches in video_groups.items()
+        }
+        recommendations = []
+        for rec in curated.get("recommendations", []):
+            meta = vid_meta.get(rec.get("video_id", ""))
+            if meta:
+                rec["video_filename"] = meta["video_filename"]
+                rec["gcs_path"] = meta["gcs_path"]
+            recommendations.append(SearchRecommendation(**rec))
+        response_text = curated.get("response_text", "")
+
+        logger.info(
+            "Search pipeline latency: interpret=%.0fms bq=%.0fms curate=%.0fms total=%.0fms "
+            "(bq_rows=%d, recs=%d, query=%r)",
+            (t_interpret - t0) * 1000,
+            (t_bq - t_interpret) * 1000,
+            (t_curate - t_bq) * 1000,
+            (t_curate - t0) * 1000,
+            len(raw_results),
+            len(recommendations),
+            search_query,
+        )
 
         return CuratedSearchResponse(
-            response_text=curated.get("response_text", ""),
+            response_text=response_text,
             recommendations=recommendations,
             raw_results=raw_video_results,
             interpreted_query=interpreted_query,
@@ -531,8 +565,16 @@ async def search_videos(request: SearchRequest):
 async def search_within_video(video_id: str, request: SearchRequest):
     """In-video semantic search — find moments within a specific video."""
     try:
+        t0 = time.perf_counter()
         bq = get_bq_client()
         raw_results = bq.search_within_video(video_id, request.query, request.limit)
+        logger.info(
+            "In-video search latency: bq=%.0fms (video=%s, bq_rows=%d, query=%r)",
+            (time.perf_counter() - t0) * 1000,
+            video_id,
+            len(raw_results),
+            request.query,
+        )
 
         return [
             InVideoSearchResult(

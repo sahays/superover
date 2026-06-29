@@ -29,8 +29,8 @@ the analysis to locate specific moments.
 Recommendation rules:
 - Only recommend results that genuinely match the query intent.
 - Prefer clip recommendations when the match is a specific moment rather than \
-the whole video. Extract clip_start and clip_end from the scene-level timestamps \
-in the analysis JSON (format HH:MM:SS).
+the whole video. Use each result's timestamp_start / timestamp_end (the matched \
+moment's window) for clip_start / clip_end (format HH:MM:SS).
 - For full video recommendations, omit clip_start / clip_end.
 - Confidence scoring (0.0–1.0): 0.85+ = strong match on multiple fields, \
 0.60–0.84 = partial match, below 0.60 = do not include.
@@ -52,9 +52,12 @@ RESPONSE_SCHEMA = types.Schema(
             items=types.Schema(
                 type=types.Type.OBJECT,
                 properties={
+                    # Only fields the MODEL must decide are generated. Identifiers
+                    # we already have (video_filename, gcs_path) are filled in
+                    # server-side from the BQ row by video_id — keeping them out
+                    # of the output shrinks tokens (gcs_path is a long URL) and
+                    # avoids the model mangling them.
                     "video_id": types.Schema(type=types.Type.STRING),
-                    "video_filename": types.Schema(type=types.Type.STRING),
-                    "gcs_path": types.Schema(type=types.Type.STRING),
                     "recommendation_type": types.Schema(
                         type=types.Type.STRING,
                         description="full_video or clip",
@@ -82,7 +85,6 @@ RESPONSE_SCHEMA = types.Schema(
                 },
                 required=[
                     "video_id",
-                    "video_filename",
                     "recommendation_type",
                     "title",
                     "reason",
@@ -93,6 +95,100 @@ RESPONSE_SCHEMA = types.Schema(
     },
     required=["response_text", "recommendations"],
 )
+
+
+# Cap the rows handed to the model. BQ returns up to 20 (often many chunks of the
+# same video); the curator only needs the closest handful per distinct video to
+# pick a few recommendations. Fewer rows = smaller prompt = lower latency.
+CURATOR_MAX_RESULTS = 6
+
+
+def _compact_analysis(rd: dict) -> dict:
+    """Project a scene-analysis result_data to only the fields the curator reasons
+    over (classification, mood, setting, actors, a couple of scene summaries).
+
+    Drops the heavy payload — dialogue, detailed descriptions, cues, events,
+    emotions, segments, notable observations — that bloats the prompt and
+    dominates curation latency.
+    """
+    out: dict[str, Any] = {}
+    for k in ("genre", "type", "content_type"):
+        v = rd.get(k)
+        if isinstance(v, str) and v.strip():
+            out[k] = v.strip()
+    summary = rd.get("chunk_summary")
+    if isinstance(summary, str) and summary.strip():
+        out["summary"] = summary.strip()
+
+    scenes = rd.get("scenes")
+    if isinstance(scenes, list) and scenes:
+        first = scenes[0] if isinstance(scenes[0], dict) else {}
+        mood = first.get("mood") if isinstance(first.get("mood"), dict) else {}
+        tone, energy = (mood or {}).get("tone", ""), (mood or {}).get("energy", "")
+        if tone or energy:
+            out["mood"] = f"{tone} {energy}".strip()
+        setting = first.get("setting") if isinstance(first.get("setting"), dict) else {}
+        location = (setting or {}).get("location")
+        if location:
+            out["setting"] = location
+
+        actors: list[str] = []
+        seen: set[str] = set()
+        scene_summaries: list[str] = []
+        for scene in scenes:
+            if not isinstance(scene, dict):
+                continue
+            ss = scene.get("summary")
+            if isinstance(ss, str) and ss.strip():
+                scene_summaries.append(ss.strip())
+            for person in scene.get("people", []) or []:
+                if isinstance(person, dict):
+                    name = person.get("label", "")
+                    if name and name not in seen and not name.startswith("Person"):
+                        seen.add(name)
+                        actors.append(name)
+        if actors:
+            out["actors"] = actors[:6]
+        if scene_summaries:
+            out["scene_summaries"] = scene_summaries[:2]
+
+    return out
+
+
+def _compact_entry(row: dict) -> dict:
+    """Build one compact context entry from a BQ result row."""
+    entry: dict[str, Any] = {
+        "video_id": row.get("video_id", ""),
+        "video_filename": row.get("video_filename", ""),
+        "gcs_path": row.get("gcs_path", ""),
+        "timestamp_start": row.get("timestamp_start"),
+        "timestamp_end": row.get("timestamp_end"),
+    }
+    rd = row.get("result_data_json")
+    if isinstance(rd, str):
+        try:
+            rd = json.loads(rd)
+        except (json.JSONDecodeError, ValueError):
+            rd = None
+    if isinstance(rd, dict):
+        entry["analysis"] = _compact_analysis(rd)
+    else:
+        entry["text_content"] = (row.get("text_content") or "")[:400]
+    return entry
+
+
+def _compact_results(bq_results: list[dict], limit: int) -> list[dict]:
+    """Dedupe to the closest chunk per video, cap to `limit`, and compact each.
+
+    `bq_results` is already sorted by distance ascending, so the first row seen
+    for a video is its best match.
+    """
+    best_by_video: dict[str, dict] = {}
+    for row in bq_results:
+        vid = row.get("video_id", "")
+        if vid not in best_by_video:
+            best_by_video[vid] = row
+    return [_compact_entry(row) for row in list(best_by_video.values())[:limit]]
 
 
 class SearchCurator:
@@ -120,30 +216,16 @@ class SearchCurator:
                 "recommendations": [],
             }
 
-        # Build context for Gemini from BQ results
-        results_context = []
-        for row in bq_results:
-            entry: dict[str, Any] = {
-                "video_id": row.get("video_id", ""),
-                "video_filename": row.get("video_filename", ""),
-                "gcs_path": row.get("gcs_path", ""),
-                "distance": row.get("distance", 0),
-                "timestamp_start": row.get("timestamp_start"),
-                "timestamp_end": row.get("timestamp_end"),
-            }
-            # Include full analysis JSON if available
-            result_data_json = row.get("result_data_json")
-            if result_data_json:
-                entry["analysis"] = result_data_json
-            else:
-                entry["text_content"] = row.get("text_content", "")
-            results_context.append(entry)
+        # Build a compact, token-light context: dedupe to best chunk per video,
+        # cap rows, and keep only the fields the curator reasons over.
+        results_context = _compact_results(bq_results, CURATOR_MAX_RESULTS)
 
         user_prompt = (
             f"Search query: {query}\n\n"
             f"Search results ({len(results_context)} matches):\n"
-            f"{json.dumps(results_context, indent=2)}"
+            f"{json.dumps(results_context, separators=(',', ':'))}"
         )
+        logger.info("Curator context: %d videos, %d chars", len(results_context), len(user_prompt))
 
         try:
             response = retry_with_backoff(
@@ -157,7 +239,10 @@ class SearchCurator:
                     response_mime_type="application/json",
                     response_schema=RESPONSE_SCHEMA,
                     thinking_config=types.ThinkingConfig(
-                        thinking_budget=0,
+                        # gemini-3.5-flash is Gemini 3: reasoning is controlled by
+                        # thinking_level (not thinking_budget). MINIMAL is the lowest
+                        # setting — keeps curation fast while restoring LLM ranking.
+                        thinking_level=types.ThinkingLevel.MINIMAL,
                     ),
                 ),
             )

@@ -165,6 +165,27 @@ def _sniff_client_text(avatar_id: str, snippet: str, sniffed: set[str]) -> None:
             logger.info(f"[avatar:{avatar_id}] client→upstream first {tag}: {snippet}")
 
 
+def _extract_client_text(payload: str) -> Optional[str]:
+    """Pull the human-readable text out of a client `clientContent` turn frame,
+    so each ack / small-talk / summary turn the frontend sends can be logged
+    (with its timestamp) as it goes upstream. Returns None for non-turn frames
+    (audio config, realtimeInput, etc.)."""
+    try:
+        data = json.loads(payload)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None
+    cc = data.get("clientContent") if isinstance(data, dict) else None
+    if not isinstance(cc, dict):
+        return None
+    parts_text: list[str] = []
+    for turn in cc.get("turns", []) or []:
+        if isinstance(turn, dict):
+            for part in turn.get("parts", []) or []:
+                if isinstance(part, dict) and isinstance(part.get("text"), str):
+                    parts_text.append(part["text"])
+    return " ".join(parts_text).strip() or None
+
+
 def _try_extract_model_utterance(snippet: str) -> Optional[str]:
     """Pluck `serverContent.outputTranscription.text` from a JSON-shaped
     upstream frame. Returns None for non-JSON / non-transcript frames."""
@@ -213,8 +234,9 @@ def _log_upstream_bytes(
         logger.info(
             f"[avatar:{avatar_id}] upstream→client[bin#{bytes_count}] ({len(payload)} bytes): {_bin_preview(payload)}"
         )
-    if setup_complete_seen and first_utt_state.get("seen"):
-        return setup_complete_seen
+    # Audio frames are large — skip them. Small frames may carry control
+    # signals (setupComplete, turnComplete, error) we want to log every time,
+    # so we no longer short-circuit once the first utterance is seen.
     if len(payload) >= 4096:
         return setup_complete_seen
     try:
@@ -225,6 +247,9 @@ def _log_upstream_bytes(
         logger.info(f"[avatar:{avatar_id}] upstream: setupComplete received (in binary frame)")
         setup_complete_seen = True
     _log_first_model_utterance(avatar_id, decoded, first_utt_state)
+    if "turnComplete" in decoded:
+        first_utt_state["turns"] = first_utt_state.get("turns", 0) + 1
+        logger.info(f"[avatar:{avatar_id}] model turn-complete #{first_utt_state['turns']}")
     if '"error"' in decoded or '"goAway"' in decoded:
         logger.warning(f"[avatar:{avatar_id}] upstream sent error/goAway (binary): {decoded[:600]}")
     return setup_complete_seen
@@ -233,12 +258,20 @@ def _log_upstream_bytes(
 async def _relay_client_to_upstream(avatar_id: str, client_ws: WebSocket, upstream_ws) -> None:
     """Forward frames from the browser to Vertex AI verbatim."""
     forwarded = 0
+    turns = 0
     sniffed: set[str] = set()
-    tail = lambda: f"after {forwarded} frame(s) kinds={sorted(sniffed)}"  # noqa: E731
+    tail = lambda: f"after {forwarded} frame(s), {turns} turn(s)"  # noqa: E731
     try:
         async for kind, payload in _iter_client_frames(client_ws):
             if kind == "text":
                 _sniff_client_text(avatar_id, payload[:120], sniffed)
+                # Always-on, low-volume: log each turn the frontend sends (ack /
+                # small-talk / summary) with its timestamp, so the interaction
+                # sequence is visible server-side without the debug flag.
+                turn_text = _extract_client_text(payload)
+                if turn_text is not None:
+                    turns += 1
+                    logger.info(f"[avatar:{avatar_id}] client→upstream turn#{turns}: {turn_text[:100]!r}")
             await upstream_ws.send(payload)
             forwarded += 1
         logger.info(f"[avatar:{avatar_id}] client→upstream: client disconnected {tail()}")

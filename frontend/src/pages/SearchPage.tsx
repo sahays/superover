@@ -222,16 +222,17 @@ export default function SearchPage() {
     }
   }, [query, handleSearch])
 
-  // Split recommendations by confidence
-  const { bestMatches, alsoLike } = useMemo(() => {
+  // Recommendations arrive already ranked by relevance (closest BQ matches
+  // first). Present the top few as "Best Matches" and the remainder as "You May
+  // Also Like" — a rank-based split, since the deterministic relevance score is
+  // not on the same calibrated scale the old LLM-curator confidence was.
+  const { bestMatches, alsoLike } = useMemo<{
+    bestMatches: SearchRecommendation[]
+    alsoLike: SearchRecommendation[]
+  }>(() => {
     if (!curatedResponse) return { bestMatches: [], alsoLike: [] }
-    const best: SearchRecommendation[] = []
-    const also: SearchRecommendation[] = []
-    for (const rec of curatedResponse.recommendations) {
-      if (rec.confidence >= 0.85) best.push(rec)
-      else if (rec.confidence >= 0.60) also.push(rec)
-    }
-    return { bestMatches: best, alsoLike: also }
+    const recs = curatedResponse.recommendations
+    return { bestMatches: recs.slice(0, 3), alsoLike: recs.slice(3) }
   }, [curatedResponse])
 
   const totalResults = bestMatches.length + alsoLike.length

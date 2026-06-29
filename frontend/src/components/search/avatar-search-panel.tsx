@@ -117,64 +117,122 @@ const AUTO_STOP_MS = 1200
 // handling user audio in the first ~1.5s.
 const WARM_UP_MS = 2000
 
-// Hard cap on how long we wait for any single model turn (ack or filler)
-// to finish before assuming we missed the turn-complete signal and moving
-// on. Stops a stuck model from deadlocking the pipeline.
-const TURN_MAX_WAIT_MS = 12000
+// Pure safety net for a DROPPED `turn-complete`. End-of-turn is normally driven
+// by the authoritative `turn-complete` + audio-drain (see waitForModelSpeechEnd),
+// never by this cap — so it's set generously and can't clip a real utterance.
+// Results render independently of speech, so it never delays what the user sees.
+const SPEECH_HARD_CAP_MS = 15000
 
 // Tiny buffer added after the WebAudio queue is supposed to have drained.
 // Covers slop between AudioContext clock and AudioBufferSourceNode's actual
 // stop time, plus a small "natural pause" before the next utterance.
 const PLAYBACK_TAIL_MS = 200
 
-// Resolves once the model has finished speaking AND the local WebAudio
-// queue has fully drained. Order of waits:
-//   1. first model audio chunk arrives (guards against stale turn-complete
-//      events that fire before the model actually starts speaking, e.g.
-//      from closing the user's input turn)
-//   2. server-side `turn-complete` event arrives
-//   3. local audio buffer drains (queryable via `getAudioRemainingMs`)
-// Capped at `maxWaitMs` end-to-end so a stuck model can't deadlock.
+// Small-talk lines the avatar cycles through while the search is in flight, so
+// it keeps the user company instead of going silent. These deliberately ask for
+// two or three sentences (this is the one phase where filler is wanted) and the
+// search-mode system overlay grants permission to be chatty here. Never name
+// titles — nothing is known yet.
+const SMALL_TALK_PROMPTS = [
+  '[SMALL_TALK] Make warm small talk for two or three sentences while the search ' +
+    'runs — react to what they asked for and say you’re looking through the library. ' +
+    'Do not name any movies, actors, or scenes.',
+  '[SMALL_TALK] Keep the user company with two or three friendly sentences — ask ' +
+    'what kind of mood they’re in tonight and what they usually enjoy. ' +
+    'Do not name any movies, actors, or scenes.',
+  '[SMALL_TALK] Fill the wait with two or three upbeat sentences — reassure them ' +
+    'you’re still digging for the best picks and almost there. ' +
+    'Do not name any movies, actors, or scenes.',
+  '[SMALL_TALK] Chat for two or three warm sentences — make a light, friendly ' +
+    'remark and mention you’re scanning the library for good matches. ' +
+    'Do not name any movies, actors, or scenes.',
+]
+
+// Safety backstop on the small-talk loop so a hung search can't make the avatar
+// chatter forever. With a normal ~5-7s search this is rarely past 1-2 turns.
+const MAX_SMALL_TALK_TURNS = 6
+
+// How long to wait for the model's own VAD acknowledgement to START speaking
+// before assuming it didn't fire and sending an explicit ack as a backstop.
+// Must be > the model's time-to-first-audio; only the FIRST chunk matters here,
+// so a real (longer) auto-ack is never cut short.
+const AUTO_ACK_PROBE_MS = 3000
+
+// Resolves once the model's turn has fully ENDED and the local audio has
+// drained — driven by authoritative signals, with no mid-utterance guesswork:
+//   1. first audio chunk arrives — guards against a stale `turn-complete` that
+//      fires before the model actually starts speaking (e.g. from closing the
+//      user's input turn)
+//   2. `turn-complete` — the model declares the turn done. Per the transport it
+//      fires only AFTER all audio for the turn has been delivered to the local
+//      queue, so it never arrives mid-utterance
+//   3. drain the local WebAudio buffer (`getAudioRemainingMs`) so playback
+//      finishes before the caller sends the next turn (this is what prevents
+//      barge-in / clipping)
+// `hardCapMs` is a PURE safety net for a dropped `turn-complete` — never the
+// normal path — so it can't clip a real utterance early.
+//
+// `firstAudioTimeoutMs` (optional): if set and NO audio chunk arrives within it,
+// resolve early with `false` — used to detect "the model isn't speaking" (e.g.
+// VAD didn't auto-respond) WITHOUT cutting a real utterance short: once the first
+// chunk arrives the probe is cancelled and we wait fully for `turn-complete`.
+//
+// Returns whether any audio was heard (i.e. whether the model actually spoke).
 async function waitForModelSpeechEnd(
   session: {
     addEventListener: (t: string, h: () => void) => void
     removeEventListener: (t: string, h: () => void) => void
   },
   getAudioRemainingMs: () => number,
-  maxWaitMs: number,
-): Promise<void> {
+  opts: { hardCapMs?: number; firstAudioTimeoutMs?: number } = {},
+): Promise<boolean> {
+  const hardCapMs = opts.hardCapMs ?? SPEECH_HARD_CAP_MS
+  const firstAudioTimeoutMs = opts.firstAudioTimeoutMs ?? 0
   const startedAt = Date.now()
-  // Phase 1+2: wait for first audio chunk + turn-complete.
-  await new Promise<void>((resolve) => {
-    let heardAudio = false
+  // Phase 1: wait for first audio chunk, then `turn-complete` (or the safety cap).
+  const heardAudio = await new Promise<boolean>((resolve) => {
+    let heard = false
     let done = false
+    let hardTimer: ReturnType<typeof setTimeout> | null = null
+    let probeTimer: ReturnType<typeof setTimeout> | null = null
     const finish = () => {
       if (done) return
       done = true
       session.removeEventListener('turn-complete', onTurnComplete)
       session.removeEventListener('audio-chunk', onAudio)
-      clearTimeout(timer)
-      resolve()
+      if (hardTimer) clearTimeout(hardTimer)
+      if (probeTimer) clearTimeout(probeTimer)
+      resolve(heard)
     }
     const onAudio = () => {
-      heardAudio = true
+      if (!heard) {
+        heard = true
+        // The model is speaking — cancel the "did it speak?" probe and commit
+        // to waiting for the real end of turn.
+        if (probeTimer) clearTimeout(probeTimer)
+      }
     }
     const onTurnComplete = () => {
-      if (heardAudio) finish()
+      if (heard) finish()
     }
     session.addEventListener('audio-chunk', onAudio)
     session.addEventListener('turn-complete', onTurnComplete)
-    const timer = setTimeout(finish, maxWaitMs)
+    hardTimer = setTimeout(finish, hardCapMs)
+    if (firstAudioTimeoutMs > 0) {
+      probeTimer = setTimeout(() => {
+        if (!heard) finish() // nothing spoken within the probe window
+      }, firstAudioTimeoutMs)
+    }
   })
-  // Phase 3: wait for the WebAudio queue to drain. We can compute exactly
-  // how many ms remain because each chunk's duration was added to
-  // `nextAudioStart` when it was scheduled.
-  const elapsed = Date.now() - startedAt
-  const budget = Math.max(0, maxWaitMs - elapsed)
+  // Phase 2: drain the local audio queue. Because `turn-complete` fires only
+  // after all audio is delivered, the queue already holds the whole utterance,
+  // so a single computed wait drains it exactly. Bounded by the cap budget.
+  const budget = Math.max(0, hardCapMs - (Date.now() - startedAt))
   const remaining = Math.min(getAudioRemainingMs(), budget)
   if (remaining > 0) {
     await new Promise((r) => setTimeout(r, remaining + PLAYBACK_TAIL_MS))
   }
+  return heardAudio
 }
 
 // ---------------------------------------------------------------------------
@@ -331,69 +389,120 @@ export function AvatarSearchPanel({
 
   // Event-driven pipeline. Search does NOT fire until the ack response has
   // finished — this matches the user-facing intent that the avatar responds
-  // first, *then* the search begins. Phase transitions trigger on actual
-  // events (`turn-complete`, search-promise resolving), not timers.
+  // first, *then* the search begins. Every utterance is allowed to finish
+  // fully before the next one is sent, so the avatar is never cut off
+  // mid-sentence (no clipped audio), and small talk loops until results are
+  // ready so there is no dead silence while the user waits.
   //
   // Sequence:
-  //   1. sendText(ack)               — avatar paraphrases the request
-  //   2. await ack-turn-complete
-  //   3. fire searchApi(query)       + sendText(filler) in parallel
-  //   4. race: filler-turn-complete vs search resolve
-  //      - search wins:   summary fires now, interrupts filler mid-sentence
-  //      - filler wins:   await searchPromise, then summary
-  //   5. cards render, FSM → summarising, sendText(summary)
+  //   1. sendText(ack)                 — avatar paraphrases the request
+  //   2. await ack done; fire searchApi(query)
+  //   3. small-talk LOOP: speak a line, let it finish, re-check the search;
+  //      if still pending, speak another. Never interrupts, never goes silent.
+  //   4. cards render, FSM → summarising
+  //   5. sendText(summary); await it finishing
   const runPipeline = async (query: string) => {
     const session = live.sessionRef.current
     if (!session) return
     onDuration(null)
-    // eslint-disable-next-line no-console
-    console.log('[AvatarSearchPanel] pipeline start:', query)
+
+    // Per-step latency tracing for the avatar pipeline. The search sub-steps
+    // (interpret/bq/curate) are logged server-side in Cloud Run; everything
+    // here (ack / filler / narration speech) is client-orchestrated, so we
+    // trace it in the browser console with elapsed-since-start timestamps.
+    const t0 = performance.now()
+    const elapsed = () => Math.round(performance.now() - t0)
+    const log = (msg: string, extra?: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log(`[AvatarPipeline +${elapsed()}ms] ${msg}`, extra ?? '')
+    }
+    log('start', { query })
 
     const remainingMs = () => live.sinkRef.current?.audioRemainingMs() ?? 0
 
     try {
-      // Step 1: ack. Attach listener BEFORE sendText so we don't miss the
-      // signal. waitForModelSpeechEnd resolves only after both the server
-      // turn-complete arrives AND the local audio queue has fully drained.
-      const ackDone = waitForModelSpeechEnd(session, remainingMs, TURN_MAX_WAIT_MS)
-      session.sendText(
-        `Briefly acknowledge that you're searching for: "${query}". ` +
-          'One short spoken sentence; add a touch of warmth if the request feels emotional. ' +
-          'Do not name any movies, actors, or scenes — you do not know yet what will come back.',
-      )
-      await ackDone
-
-      // Step 2: NOW fire search, and at the same instant send the filler.
-      // Both run in parallel from this point — the avatar speaks the filler
-      // while the JSON is in flight.
+      // Step 1: fire the search IMMEDIATELY. The moment it resolves we render
+      // the cards and report the REAL end-to-end wait (pipeline start → results)
+      // — independently of what the avatar is saying, so results are never
+      // gated behind a speech turn, and the on-screen time reflects reality.
       const startTime = performance.now()
+      log('search: fired')
+      let searchDone = false
       const searchPromise: Promise<CuratedSearchResponse | null> = (
         searchApi.searchVideos(query, 20) as Promise<CuratedSearchResponse>
       ).catch(() => null)
+      void searchPromise.then((r) => {
+        searchDone = true
+        if (r) {
+          onResults(r)
+          onDuration(Math.round(elapsed() / 100) / 10)
+        }
+        log('search: resolved', {
+          e2eMs: elapsed(),
+          searchMs: Math.round(performance.now() - startTime),
+          recs: r?.recommendations?.length ?? 0,
+        })
+      })
 
-      const fillerDone = waitForModelSpeechEnd(session, remainingMs, TURN_MAX_WAIT_MS)
-      session.sendText(
-        "Tell the user you're trying to find a few titles or clips for them. " +
-          'One short spoken sentence; do not name any movies, actors, or scenes.',
-      )
-
-      // Step 3: race — whichever finishes first lets us proceed.
-      // - search wins  → we send summary now and interrupt the filler.
-      // - filler wins  → we fall through and await searchPromise below.
-      await Promise.race([searchPromise, fillerDone])
-
-      // Step 4: ensure search is done; render cards.
-      const response = await searchPromise
-      if (response) {
-        onResults(response)
-        onDuration(Math.round((performance.now() - startTime) / 100) / 10)
+      // Step 2: acknowledgement. The model auto-responds to the user's spoken
+      // query on its own (Live VAD) — that IS the ack. Sending our own ack here
+      // would collide with that in-flight response and clip it (the "starts,
+      // stops, starts again" bug), so we DON'T send one — we just wait for the
+      // model's auto-ack to finish. The system overlay shapes it into a few warm
+      // persona-true sentences about the request.
+      const ackStart = performance.now()
+      log('ack: awaiting model auto-ack')
+      const heardAck = await waitForModelSpeechEnd(session, remainingMs, {
+        firstAudioTimeoutMs: AUTO_ACK_PROBE_MS,
+      })
+      if (!heardAck) {
+        // Backstop: VAD didn't produce a response. Send an explicit ack once
+        // (safe now — nothing is in flight to collide with).
+        log('ack: no auto-response, sending explicit ack')
+        const ackDone = waitForModelSpeechEnd(session, remainingMs)
+        session.sendText(
+          `Acknowledge in a couple of warm sentences that you're searching for: "${query}". ` +
+            'Stay in your usual voice and personality. ' +
+            'Do not name any movies, actors, or scenes — you do not know yet what will come back.',
+        )
+        await ackDone
       }
+      log('ack: done', { ms: Math.round(performance.now() - ackStart), auto: heardAck })
+
+      // Step 3: small-talk loop — keep the user company until results are ready.
+      // Each line plays in FULL (never clipped). The cards already appear the
+      // instant the search resolves (above), so letting the current line finish
+      // adds friendly chatter rather than dead waiting. Loop exits once done.
+      let turn = 0
+      while (!searchDone && turn < MAX_SMALL_TALK_TURNS) {
+        const prompt = SMALL_TALK_PROMPTS[turn % SMALL_TALK_PROMPTS.length]
+        const talkStart = performance.now()
+        log('small-talk: sending', { turn })
+        const talkDone = waitForModelSpeechEnd(session, remainingMs)
+        session.sendText(prompt)
+        await talkDone
+        log('small-talk: spoken', {
+          turn,
+          ms: Math.round(performance.now() - talkStart),
+        })
+        turn += 1
+      }
+
+      // Step 4: hand off to the summary phase (cards already rendered above).
+      const response = await searchPromise
+      log('cards: rendered', {
+        e2eMs: elapsed(),
+        ok: !!response,
+        smallTalkTurns: turn,
+      })
       dispatch({ type: 'search-resolved' })
 
       // Step 5: summary (or apology if search failed). Wait for it to
       // finish playing too so the panel returns to idle in lockstep with
       // the avatar going quiet — important for back-to-back demo queries.
-      const summaryDone = waitForModelSpeechEnd(session, remainingMs, TURN_MAX_WAIT_MS)
+      const summaryStart = performance.now()
+      log('summary: sending')
+      const summaryDone = waitForModelSpeechEnd(session, remainingMs)
       if (!response) {
         session.sendText(
           'Tell the user the search hit an error and ask them to try again, in one short sentence.',
@@ -402,13 +511,15 @@ export function AvatarSearchPanel({
         const summary = response.response_text || 'No matching results were found.'
         session.sendText(
           `[SEARCH_RESULTS]\n${summary}\n\n` +
-            'Summarise this for the user in 1-2 short spoken sentences. ' +
-            'Stay grounded in the [SEARCH_RESULTS] text. ' +
+            'Explain this to the user in 2-3 short spoken sentences, in your usual voice ' +
+            'and personality. Stay grounded entirely in the [SEARCH_RESULTS] text. ' +
             'Do not name any film, actor, or scene that is not in it.',
         )
       }
       await summaryDone
+      log('summary: spoken', { ms: Math.round(performance.now() - summaryStart) })
     } finally {
+      log('done', { totalMs: elapsed() })
       // Reset every per-query ref so the next pipeline starts clean.
       transcriptBufferRef.current = ''
       if (autoStopTimerRef.current) {
