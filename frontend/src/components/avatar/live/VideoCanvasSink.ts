@@ -25,6 +25,17 @@ import {
   type Track,
 } from 'mp4box'
 
+// Startup jitter buffer. When audio starts from a drained buffer (the first
+// chunk of a turn, or any restart after a gap), the model's next chunk often
+// hasn't decoded yet — scheduling at currentTime then underruns and the speech
+// stutters mid-word until chained scheduling builds a cushion. Leading the
+// fresh start by this much bridges the initial ramp-up. Kept small so it adds
+// negligible latency; during continuous streaming it's a no-op. Kept small —
+// the dominant start-of-speech freeze was main-thread jank from eagerly
+// mounting result-card <video> elements (fixed in SearchPage), not audio
+// underrun — so this only needs to cover minor cold-start jitter.
+const STARTUP_BUFFER_SEC = 0.15
+
 export class VideoCanvasSink {
   private mp4: ISOFile
   private videoDecoder: VideoDecoder | null = null
@@ -333,7 +344,13 @@ export class VideoCanvasSink {
     const src = ctx.createBufferSource()
     src.buffer = buffer
     src.connect(ctx.destination)
-    const start = Math.max(ctx.currentTime, this.nextAudioStart)
+    // If the buffer is still ahead of the playhead we're mid-stream — chain
+    // seamlessly. If it has drained (nextAudioStart <= now), we're cold-starting
+    // a turn: lead by STARTUP_BUFFER_SEC so the next chunk arrives before this
+    // one ends, avoiding the initial mid-word stutter.
+    const now = ctx.currentTime
+    const start =
+      this.nextAudioStart > now ? this.nextAudioStart : now + STARTUP_BUFFER_SEC
     src.start(start)
     this.nextAudioStart = start + buffer.duration
 

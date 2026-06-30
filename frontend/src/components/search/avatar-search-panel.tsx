@@ -721,7 +721,16 @@ function SpeakButton({
 
   let label: React.ReactNode
   let title: string
-  if (!ready || liveStatus !== 'connected') {
+  if (liveStatus === 'closed' || liveStatus === 'error') {
+    // Disconnected (or errored) — reconnect is via the power button, so the
+    // speak button is just an inert status here, not "warming up".
+    label = (
+      <>
+        <Power size={14} className="mr-1.5" /> Disconnected
+      </>
+    )
+    title = 'Disconnected — use the power button to reconnect'
+  } else if (!ready || liveStatus !== 'connected') {
     label = (
       <>
         <Loader2 size={14} className="mr-1.5 animate-spin" /> Warming up…

@@ -1,12 +1,13 @@
 """Search and sync API routes for BigQuery AI.SEARCH integration."""
 
+import asyncio
 import base64
 import json
 import logging
 import time
 from typing import List
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from api.models.schemas.search import (
     SyncStatusItem,
@@ -19,6 +20,7 @@ from api.models.schemas.search import (
     CuratedSearchResponse,
 )
 from google.cloud import firestore as firestore_module
+from libs.content_owner import derive_owner_from_filename
 from libs.database import get_db
 from libs.bigquery import get_bq_client
 from libs.gemini import get_search_query_interpreter, get_search_curator
@@ -326,12 +328,17 @@ async def sync_results(request: SyncRequest):
                         synced_count += 1
                         continue
 
-                # Cache video lookups (filename + gcs_path)
+                # Cache video lookups (filename + gcs_path + owner). Owner is
+                # the video's explicit tag, else derived from its filename —
+                # so content tagged at upload (or by name) stays scoped in BQ.
                 if video_id and video_id not in video_cache:
                     video = db.get_video(video_id)
+                    filename = video.get("filename", "") if video else ""
+                    owner = (video.get("owner", "") if video else "") or derive_owner_from_filename(filename)
                     video_cache[video_id] = {
-                        "filename": video.get("filename", "") if video else "",
+                        "filename": filename,
                         "gcs_path": video.get("gcs_path", "") if video else "",
+                        "owner": owner,
                     }
 
                 # Build focused embedding text
@@ -355,6 +362,7 @@ async def sync_results(request: SyncRequest):
                     timestamp_end=data.get("timestamp_end"),
                     result_data_json=result_data_json,
                     gcs_path=video_info.get("gcs_path"),
+                    owner=video_info.get("owner") or None,
                 )
 
                 # Mark as "pending" in Firestore — embedding generates async
@@ -471,9 +479,16 @@ def _parse_result_data_json(row: dict) -> dict:
 
 
 @router.post("/videos", response_model=CuratedSearchResponse)
-async def search_videos(request: SearchRequest):
-    """Cross-video semantic search — BQ AI.SEARCH + Gemini curation. Zero Firestore reads."""
+async def search_videos(request: SearchRequest, http_request: Request):
+    """Cross-video semantic search — BQ AI.SEARCH + Gemini curation. Zero Firestore reads.
+
+    Scoped to the caller's studio: the invite-code middleware resolves
+    `request.state.owner`, and a non-empty owner restricts results to that
+    studio's content plus untagged/shared rows. Master/operator (owner "")
+    searches everything.
+    """
     try:
+        owner = getattr(http_request.state, "owner", "") or ""
         t0 = time.perf_counter()
         # Interpret query: translate multilingual/multimodal input to English
         interpreted_query = None
@@ -490,15 +505,22 @@ async def search_videos(request: SearchRequest):
                     detail="Invalid base64 audio data",
                 )
 
+        # NOTE: interpret_query / bq.search_videos / curate_search_results are
+        # SYNCHRONOUS, blocking SDK calls (Gemini, BigQuery). This route shares
+        # its event loop with the avatar live-session WS relay, so running them
+        # inline would freeze the loop for seconds — starving the relay and
+        # freezing the avatar mid-utterance. Offload each to a worker thread via
+        # asyncio.to_thread so the loop stays free to forward avatar frames.
         if audio_bytes:
-            interpreted_query = interpreter.interpret_query(
+            interpreted_query = await asyncio.to_thread(
+                interpreter.interpret_query,
                 text=request.query if request.query.strip() else None,
                 audio_bytes=audio_bytes,
                 audio_mime=request.audio_mime or "audio/webm",
             )
             search_query = interpreted_query
         else:
-            interpreted_query = interpreter.interpret_query(text=request.query)
+            interpreted_query = await asyncio.to_thread(interpreter.interpret_query, text=request.query)
             if interpreted_query != request.query.strip():
                 search_query = interpreted_query
             else:
@@ -507,7 +529,7 @@ async def search_videos(request: SearchRequest):
         t_interpret = time.perf_counter()
 
         bq = get_bq_client()
-        raw_results = bq.search_videos(search_query, request.limit)
+        raw_results = await asyncio.to_thread(bq.search_videos, search_query, request.limit, owner=owner)
         t_bq = time.perf_counter()
 
         # Group by video_id, keep best match per video
@@ -543,7 +565,7 @@ async def search_videos(request: SearchRequest):
 
         # Gemini curation: rank/describe the BQ matches into recommendations.
         curator = get_search_curator()
-        curated = curator.curate_search_results(search_query, raw_results)
+        curated = await asyncio.to_thread(curator.curate_search_results, search_query, raw_results)
         t_curate = time.perf_counter()
 
         # The curator no longer echoes identifiers; fill video_filename + gcs_path
@@ -592,12 +614,20 @@ async def search_videos(request: SearchRequest):
 
 
 @router.post("/videos/{video_id}", response_model=List[InVideoSearchResult])
-async def search_within_video(video_id: str, request: SearchRequest):
-    """In-video semantic search — find moments within a specific video."""
+async def search_within_video(video_id: str, request: SearchRequest, http_request: Request):
+    """In-video semantic search — find moments within a specific video.
+
+    Owner-scoped: a non-empty `request.state.owner` blocks a scoped viewer from
+    reaching another studio's clip by guessing a video_id.
+    """
     try:
+        owner = getattr(http_request.state, "owner", "") or ""
         t0 = time.perf_counter()
         bq = get_bq_client()
-        raw_results = bq.search_within_video(video_id, request.query, request.limit)
+        # Offload the blocking BQ call off the event loop (see search_videos).
+        raw_results = await asyncio.to_thread(
+            bq.search_within_video, video_id, request.query, request.limit, owner=owner
+        )
         logger.info(
             "In-video search latency: bq=%.0fms (video=%s, bq_rows=%d, query=%r)",
             (time.perf_counter() - t0) * 1000,

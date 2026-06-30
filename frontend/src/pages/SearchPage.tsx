@@ -22,10 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import {
-  VideoSearchPlayer,
-  parseTimestamp,
-} from '@/components/search/video-search-player'
+import { parseTimestamp } from '@/components/search/video-search-player'
 import { useAudioRecorder } from '@/hooks/use-audio-recorder'
 import { useAuthStore } from '@/store/useAuthStore'
 import { AvatarSearchPanel } from '@/components/search/avatar-search-panel'
@@ -534,34 +531,33 @@ function RecommendationCard({
       className={`card-interactive relative overflow-hidden flex flex-col ${secondary ? 'opacity-80' : ''}`}
     >
       <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${secondary ? 'from-sky-500/10' : 'from-orange-500/10'} to-transparent rounded-bl-full pointer-events-none`} />
-      {/* Video Player — natural aspect ratio, capped height */}
-      <div className="relative w-full bg-black">
+      {/* Video Player — lazily mounted. We render only a lightweight placeholder
+          until the user clicks play; the <video> element and its playback-URL
+          fetch are created on demand. Eagerly mounting a <video> per card (up to
+          20 at once, each with a network fetch) janks the main thread for ~1s,
+          which in Avatar mode starves the live avatar's WebCodecs decode/draw
+          and audio scheduling — freezing it mid-utterance. */}
+      <div className="relative w-full bg-black aspect-video">
         {playingClip && playbackUrl ? (
           <video
             ref={clipVideoRef}
             src={playbackUrl}
             controls
+            autoPlay
             onLoadedMetadata={handleVideoLoaded}
             onTimeUpdate={handleTimeUpdate}
-            className="w-full max-h-64 object-contain"
+            className="w-full h-full object-contain"
           />
         ) : (
-          <>
-            <VideoSearchPlayer
-              videoId={recommendation.video_id}
-              className="object-contain max-h-64"
-            />
-            {isClip && recommendation.clip_start && (
-              <button
-                onClick={startPlayback}
-                className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/40 transition-colors group"
-              >
-                <div className="rounded-full bg-white/90 p-3 group-hover:scale-110 transition-transform">
-                  <Play className="h-6 w-6 text-black fill-black" />
-                </div>
-              </button>
-            )}
-          </>
+          <button
+            onClick={startPlayback}
+            className="absolute inset-0 flex items-center justify-center bg-black hover:bg-black/80 transition-colors group"
+            title="Play"
+          >
+            <div className="rounded-full bg-white/90 p-3 group-hover:scale-110 transition-transform">
+              <Play className="h-6 w-6 text-black fill-black" />
+            </div>
+          </button>
         )}
       </div>
 
