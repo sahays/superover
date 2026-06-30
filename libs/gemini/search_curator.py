@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from google import genai
 from google.genai import types
@@ -23,18 +23,22 @@ Match the user's intent against these fields in the analysis JSON:
 - **Scene summaries**: narrative descriptions of what happens in each scene.
 - **Objects & visuals**: notable objects, vehicles, props, animals, text on screen.
 - **Key events / actions**: fights, celebrations, conversations, stunts, reveals.
-- **Timeline timestamps**: use scene-level timestamp_start / timestamp_end from \
-the analysis to locate specific moments.
+- **Scenes & timestamps**: each result's analysis has a `scenes` list; every scene \
+carries `start`, `end` (HH:MM:SS), a `summary`, and the key `people` on screen. Use \
+these to locate the specific moment the query is about.
 
 Recommendation rules:
 - Be generous and inclusive. Recommend every result with a plausible connection \
 to the query — partial, thematic, or loose matches all count. Prefer including a \
 result over dropping it; the user would rather see a few extra options than none.
 - Return up to 5 recommendations, ranked best-first.
-- Prefer clip recommendations when the match is a specific moment rather than \
-the whole video. Use each result's timestamp_start / timestamp_end (the matched \
-moment's window) for clip_start / clip_end (format HH:MM:SS).
-- For full video recommendations, omit clip_start / clip_end.
+- Prefer a `clip` recommendation whenever the query targets a specific moment, \
+person, action, or visual (e.g. "Kiara Advani in a pink sari"). Find the scene in \
+that result's `scenes` list whose `summary`/`people` best matches, and set \
+clip_start / clip_end to that scene's `start` / `end` (format HH:MM:SS). When several \
+adjacent scenes match, span from the first match's `start` to the last match's `end`.
+- Use `full_video` only when the whole video is the best answer, or when no single \
+scene matches better than the video as a whole. For full_video, omit clip_start / clip_end.
 - Confidence scoring (0.0–1.0): 0.80+ = strong, 0.50–0.79 = solid, \
 0.30–0.49 = loose/thematic (still include it), below 0.30 = do not include.
 - Order recommendations by relevance (highest confidence first).
@@ -108,54 +112,139 @@ RESPONSE_SCHEMA = types.Schema(
 CURATOR_MAX_RESULTS = 6
 
 
+def _clip_time(t: Any) -> Optional[str]:
+    """Normalize a scene time like '00:00:07.200' to 'HH:MM:SS' (drop millis)."""
+    if not isinstance(t, str) or not t.strip():
+        return None
+    return t.strip().split(".")[0]
+
+
+def _sec_to_hhmmss(s: Any) -> Optional[str]:
+    """Convert a numeric second offset (e.g. 44.0) to 'HH:MM:SS'."""
+    try:
+        total = int(float(s))
+    except (TypeError, ValueError):
+        return None
+    if total < 0:
+        return None
+    h, rem = divmod(total, 3600)
+    m, sec = divmod(rem, 60)
+    return f"{h:02d}:{m:02d}:{sec:02d}"
+
+
+def _scenes_from_scene_schema(scenes: list, out: dict, actors: list, seen: set) -> list:
+    """Scene-schema analysis: scenes[] with start_time/end_time + summary + people."""
+    first = scenes[0] if isinstance(scenes[0], dict) else {}
+    mood = first.get("mood") if isinstance(first.get("mood"), dict) else {}
+    tone, energy = (mood or {}).get("tone", ""), (mood or {}).get("energy", "")
+    if tone or energy:
+        out["mood"] = f"{tone} {energy}".strip()
+    setting = first.get("setting") if isinstance(first.get("setting"), dict) else {}
+    location = (setting or {}).get("location")
+    if location:
+        out["setting"] = location
+
+    scene_entries: list[dict[str, Any]] = []
+    for scene in scenes:
+        if not isinstance(scene, dict):
+            continue
+        # Named people on screen in this scene (skip generic "Person N" labels).
+        scene_people: list[str] = []
+        for person in scene.get("people", []) or []:
+            if isinstance(person, dict):
+                name = person.get("label", "")
+                if name and not name.startswith("Person"):
+                    scene_people.append(name)
+                    if name not in seen:
+                        seen.add(name)
+                        actors.append(name)
+
+        ss = scene.get("summary")
+        if not (isinstance(ss, str) and ss.strip()):
+            continue
+        entry: dict[str, Any] = {"summary": ss.strip()[:200]}
+        start, end = _clip_time(scene.get("start_time")), _clip_time(scene.get("end_time"))
+        if start:
+            entry["start"] = start
+        if end:
+            entry["end"] = end
+        if scene_people:
+            entry["people"] = scene_people[:4]
+        scene_entries.append(entry)
+    return scene_entries
+
+
+def _scenes_from_event_schema(rd: dict, events: list, actors: list, seen: set) -> list:
+    """Event-schema analysis: events[] with start_sec/end_sec + description + tag.
+
+    Projected into the same clip-able shape the curator reads. Actor names come
+    from the entities[] character list rather than per-scene people.
+    """
+    scene_entries: list[dict[str, Any]] = []
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        desc = ev.get("description")
+        if not (isinstance(desc, str) and desc.strip()):
+            continue
+        entry: dict[str, Any] = {"summary": desc.strip()[:200]}
+        start, end = _sec_to_hhmmss(ev.get("start_sec")), _sec_to_hhmmss(ev.get("end_sec"))
+        if start:
+            entry["start"] = start
+        if end:
+            entry["end"] = end
+        tag = ev.get("tag")
+        if isinstance(tag, str) and tag.strip():
+            entry["tag"] = tag.strip()
+        scene_entries.append(entry)
+
+    for ent in rd.get("entities") or []:
+        if isinstance(ent, dict) and ent.get("kind") == "character":
+            name = ent.get("name")
+            if isinstance(name, str) and name.strip() and name not in seen:
+                seen.add(name)
+                actors.append(name.strip())
+    return scene_entries
+
+
 def _compact_analysis(rd: dict) -> dict:
     """Project a scene-analysis result_data to only the fields the curator reasons
-    over (classification, mood, setting, actors, a couple of scene summaries).
+    over (classification, mood, setting, actors, and per-scene start/end/summary).
 
-    Drops the heavy payload — dialogue, detailed descriptions, cues, events,
-    emotions, segments, notable observations — that bloats the prompt and
-    dominates curation latency.
+    Handles BOTH analysis schemas, projecting each into a unified `scenes` list
+    of {start, end, summary, ...} so the curator can return clip recommendations:
+      - scene schema: `scenes[]` with start_time/end_time (HH:MM:SS).
+      - event schema: `events[]` with start_sec/end_sec (numeric) + description.
+    Chunking is no longer used, so all times are absolute video time.
+
+    Drops the heavy payload — dialogue, detailed descriptions, cues, raw
+    entities, emotions, segments — that bloats the prompt and dominates latency.
     """
     out: dict[str, Any] = {}
     for k in ("genre", "type", "content_type"):
         v = rd.get(k)
         if isinstance(v, str) and v.strip():
             out[k] = v.strip()
-    summary = rd.get("chunk_summary")
+    # Overall summary: scene schema uses `chunk_summary`, event schema uses `summary`.
+    summary = rd.get("chunk_summary") or rd.get("summary")
     if isinstance(summary, str) and summary.strip():
         out["summary"] = summary.strip()
 
-    scenes = rd.get("scenes")
+    actors: list[str] = []
+    seen: set[str] = set()
+    scenes, events = rd.get("scenes"), rd.get("events")
     if isinstance(scenes, list) and scenes:
-        first = scenes[0] if isinstance(scenes[0], dict) else {}
-        mood = first.get("mood") if isinstance(first.get("mood"), dict) else {}
-        tone, energy = (mood or {}).get("tone", ""), (mood or {}).get("energy", "")
-        if tone or energy:
-            out["mood"] = f"{tone} {energy}".strip()
-        setting = first.get("setting") if isinstance(first.get("setting"), dict) else {}
-        location = (setting or {}).get("location")
-        if location:
-            out["setting"] = location
+        scene_entries = _scenes_from_scene_schema(scenes, out, actors, seen)
+    elif isinstance(events, list) and events:
+        scene_entries = _scenes_from_event_schema(rd, events, actors, seen)
+    else:
+        scene_entries = []
 
-        actors: list[str] = []
-        seen: set[str] = set()
-        scene_summaries: list[str] = []
-        for scene in scenes:
-            if not isinstance(scene, dict):
-                continue
-            ss = scene.get("summary")
-            if isinstance(ss, str) and ss.strip():
-                scene_summaries.append(ss.strip())
-            for person in scene.get("people", []) or []:
-                if isinstance(person, dict):
-                    name = person.get("label", "")
-                    if name and name not in seen and not name.startswith("Person"):
-                        seen.add(name)
-                        actors.append(name)
-        if actors:
-            out["actors"] = actors[:6]
-        if scene_summaries:
-            out["scene_summaries"] = scene_summaries[:2]
+    if actors:
+        out["actors"] = actors[:6]
+    if scene_entries:
+        # Cap scene count to bound prompt size / curation latency.
+        out["scenes"] = scene_entries[:12]
 
     return out
 
