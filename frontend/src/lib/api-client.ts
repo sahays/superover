@@ -52,6 +52,7 @@ export const videoApi = {
     content_type: string
     size_bytes: number
     metadata?: Record<string, unknown>
+    owner?: string
   }) => {
     const response = await apiClient.post('/api/scenes', data)
     return response.data
@@ -398,13 +399,14 @@ export const authApi = {
     code: string
     label?: string
     is_admin?: boolean
+    owner?: string
     expires_at?: string | null
   }) => {
     const response = await apiClient.post('/api/auth/codes', data)
     return response.data
   },
 
-  updateCode: async (codeId: string, data: { label?: string }) => {
+  updateCode: async (codeId: string, data: { label?: string; owner?: string }) => {
     const response = await apiClient.patch(`/api/auth/codes/${codeId}`, data)
     return response.data
   },

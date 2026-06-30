@@ -41,11 +41,15 @@ class BigQueryClient:
         timestamp_end: Optional[str],
         result_data_json: Optional[str] = None,
         gcs_path: Optional[str] = None,
+        owner: Optional[str] = None,
     ) -> None:
         """Insert a scene result via DML INSERT. Returns immediately.
 
         Embeddings are generated asynchronously by BigQuery's AI.EMBED.
         Use check_embedding_statuses() to poll for completion later.
+
+        `owner` is the studio slug used for per-tenant search isolation; None
+        means untagged/shared (visible to every studio).
         """
         logger.info(f"Syncing result {result_id} for video {video_id} (text_content length: {len(text_content)})")
 
@@ -53,11 +57,11 @@ class BigQueryClient:
         INSERT INTO `{self.table_ref}`
             (result_id, video_id, video_filename, scene_job_id,
              chunk_index, text_content, timestamp_start, timestamp_end,
-             result_data_json, gcs_path)
+             result_data_json, gcs_path, owner)
         VALUES
             (@result_id, @video_id, @video_filename, @scene_job_id,
              @chunk_index, @text_content, @timestamp_start, @timestamp_end,
-             @result_data_json, @gcs_path)
+             @result_data_json, @gcs_path, @owner)
         """
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
@@ -71,6 +75,7 @@ class BigQueryClient:
                 bigquery.ScalarQueryParameter("timestamp_end", "STRING", timestamp_end),
                 bigquery.ScalarQueryParameter("result_data_json", "STRING", result_data_json),
                 bigquery.ScalarQueryParameter("gcs_path", "STRING", gcs_path),
+                bigquery.ScalarQueryParameter("owner", "STRING", owner or None),
             ]
         )
         job = self.client.query(sql, job_config=job_config)
@@ -143,9 +148,25 @@ class BigQueryClient:
     # more candidates to the curator.
     DISTANCE_THRESHOLD = 1.1
 
-    def search_videos(self, query: str, limit: int = 20) -> list[dict]:
-        """Cross-video semantic search using AI.SEARCH."""
-        logger.info(f"Search videos: query='{query}', limit={limit}")
+    def search_videos(self, query: str, limit: int = 20, owner: Optional[str] = None) -> list[dict]:
+        """Cross-video semantic search using AI.SEARCH.
+
+        When `owner` is set, the search is scoped to that studio's content plus
+        untagged (shared) rows via an AI.SEARCH-over-subquery pre-filter — the
+        same pattern as search_within_video. When `owner` is falsy (e.g. the
+        master/operator code) the whole table is searched.
+        """
+        logger.info(f"Search videos: query='{query}', limit={limit}, owner={owner or '*'}")
+        params = [
+            bigquery.ScalarQueryParameter("query", "STRING", query),
+            bigquery.ScalarQueryParameter("limit", "INT64", limit),
+            bigquery.ScalarQueryParameter("max_distance", "FLOAT64", self.DISTANCE_THRESHOLD),
+        ]
+        if owner:
+            search_source = f"(SELECT * FROM `{self.table_ref}` WHERE owner = @owner OR owner IS NULL)"
+            params.append(bigquery.ScalarQueryParameter("owner", "STRING", owner))
+        else:
+            search_source = f"TABLE `{self.table_ref}`"
         sql = f"""
         SELECT * FROM (
             SELECT base.result_id, base.video_id, base.video_filename,
@@ -153,7 +174,7 @@ class BigQueryClient:
                    base.timestamp_start, base.timestamp_end,
                    base.result_data_json, base.gcs_path, distance
             FROM AI.SEARCH(
-                TABLE `{self.table_ref}`,
+                {search_source},
                 'text_content',
                 @query,
                 top_k => @limit
@@ -162,25 +183,36 @@ class BigQueryClient:
         WHERE distance < @max_distance
         ORDER BY distance ASC
         """
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("query", "STRING", query),
-                bigquery.ScalarQueryParameter("limit", "INT64", limit),
-                bigquery.ScalarQueryParameter("max_distance", "FLOAT64", self.DISTANCE_THRESHOLD),
-            ]
-        )
+        job_config = bigquery.QueryJobConfig(query_parameters=params)
         results = [dict(row) for row in self.client.query(sql, job_config=job_config).result()]
         logger.info(f"Search videos returned {len(results)} results")
         return results
 
-    def search_within_video(self, video_id: str, query: str, limit: int = 20) -> list[dict]:
-        """In-video semantic search. Pre-filters by video_id."""
-        logger.info(f"Search within video: video_id={video_id}, query='{query}', limit={limit}")
+    def search_within_video(
+        self, video_id: str, query: str, limit: int = 20, owner: Optional[str] = None
+    ) -> list[dict]:
+        """In-video semantic search. Pre-filters by video_id.
+
+        When `owner` is set, also require the video to belong to that studio
+        (or be untagged/shared), so a scoped viewer can't reach another
+        studio's clip by guessing a video_id.
+        """
+        logger.info(f"Search within video: video_id={video_id}, query='{query}', limit={limit}, owner={owner or '*'}")
+        params = [
+            bigquery.ScalarQueryParameter("video_id", "STRING", video_id),
+            bigquery.ScalarQueryParameter("query", "STRING", query),
+            bigquery.ScalarQueryParameter("limit", "INT64", limit),
+            bigquery.ScalarQueryParameter("max_distance", "FLOAT64", self.DISTANCE_THRESHOLD),
+        ]
+        owner_clause = ""
+        if owner:
+            owner_clause = " AND (owner = @owner OR owner IS NULL)"
+            params.append(bigquery.ScalarQueryParameter("owner", "STRING", owner))
         sql = f"""
         SELECT * FROM (
             SELECT base.*, distance
             FROM AI.SEARCH(
-                (SELECT * FROM `{self.table_ref}` WHERE video_id = @video_id),
+                (SELECT * FROM `{self.table_ref}` WHERE video_id = @video_id{owner_clause}),
                 'text_content',
                 @query,
                 top_k => @limit
@@ -189,14 +221,7 @@ class BigQueryClient:
         WHERE distance < @max_distance
         ORDER BY distance ASC
         """
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("video_id", "STRING", video_id),
-                bigquery.ScalarQueryParameter("query", "STRING", query),
-                bigquery.ScalarQueryParameter("limit", "INT64", limit),
-                bigquery.ScalarQueryParameter("max_distance", "FLOAT64", self.DISTANCE_THRESHOLD),
-            ]
-        )
+        job_config = bigquery.QueryJobConfig(query_parameters=params)
         results = [dict(row) for row in self.client.query(sql, job_config=job_config).result()]
         logger.info(f"Search within video {video_id} returned {len(results)} results")
         return results

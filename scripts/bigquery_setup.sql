@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS `PROJECT_ID.superover_search.scene_embeddings_v2` (
   timestamp_end STRING,
   result_data_json STRING,
   gcs_path STRING,
+  owner STRING,  -- studio slug for per-tenant search isolation (NULL = shared)
   synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP(),
   text_embedding STRUCT<result ARRAY<FLOAT64>, status STRING>
     GENERATED ALWAYS AS (

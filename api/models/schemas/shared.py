@@ -32,6 +32,7 @@ class CreateVideoRequest(BaseModel):
     content_type: str
     size_bytes: int
     metadata: Optional[Dict[str, Any]] = None
+    owner: Optional[str] = Field(None, description="Studio slug for search isolation; blank = auto-tag from filename")
 
     @field_validator("content_type")
     @classmethod
@@ -84,6 +85,7 @@ class VideoResponse(BaseModel):
     source_type: Optional[str] = "video"
     content_type: Optional[str] = None
     status: Optional[str] = None
+    owner: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     metadata: Optional[Dict[str, Any]] = None

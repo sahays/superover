@@ -27,6 +27,7 @@ def register_video_routes(router: APIRouter) -> None:
                 content_type=request.content_type,
                 size_bytes=request.size_bytes,
                 metadata=request.metadata,
+                owner=request.owner,
             )
 
             return VideoResponse(**video_data)

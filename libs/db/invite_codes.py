@@ -40,9 +40,14 @@ class InviteCodesMixin:
         code: str,
         label: str = "",
         is_admin: bool = False,
+        owner: str = "",
         expires_at: Optional[datetime] = None,
     ) -> Dict[str, Any]:
-        """Create a new invite code."""
+        """Create a new invite code.
+
+        `owner` is the studio slug scoping which content this code can search
+        ("" = no scope, sees everything).
+        """
         code_id = str(uuid.uuid4())
         code_data: Dict[str, Any] = {
             "id": code_id,
@@ -50,13 +55,14 @@ class InviteCodesMixin:
             "label": label,
             "is_active": True,
             "is_admin": is_admin,
+            "owner": owner,
             "created_at": firestore.SERVER_TIMESTAMP,
         }
         if expires_at is not None:
             code_data["expires_at"] = expires_at
 
         self.invite_codes_col.document(code_id).set(code_data)
-        logger.info(f"Created invite code: {code_id} (label={label}, admin={is_admin})")
+        logger.info(f"Created invite code: {code_id} (label={label}, admin={is_admin}, owner={owner})")
         return self.get_invite_code(code_id)  # type: ignore[return-value]
 
     def update_invite_code(self, code_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:

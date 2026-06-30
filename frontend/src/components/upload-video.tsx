@@ -41,6 +41,9 @@ export function UploadVideo({ onComplete, onCancel }: UploadVideoProps) {
   const [files, setFiles] = useState<TrackedFile[]>([])
   const [uploading, setUploading] = useState(false)
   const [allDone, setAllDone] = useState(false)
+  // Manual studio tag for search isolation. Blank = auto-detect from filename
+  // (e.g. "sony-…"/"zee-…"); a value here overrides the filename rule.
+  const [owner, setOwner] = useState('')
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files
@@ -61,7 +64,8 @@ export function UploadVideo({ onComplete, onCancel }: UploadVideoProps) {
     async (
       tracked: TrackedFile,
       index: number,
-      updateFile: (index: number, patch: Partial<TrackedFile>) => void
+      updateFile: (index: number, patch: Partial<TrackedFile>) => void,
+      studio: string
     ) => {
       const { file } = tracked
       try {
@@ -85,6 +89,7 @@ export function UploadVideo({ onComplete, onCancel }: UploadVideoProps) {
           content_type: file.type,
           size_bytes: file.size,
           ...(duration ? { metadata: { duration } } : {}),
+          ...(studio.trim() ? { owner: studio.trim() } : {}),
         })
 
         updateFile(index, { status: 'done', progress: 100 })
@@ -113,7 +118,7 @@ export function UploadVideo({ onComplete, onCancel }: UploadVideoProps) {
 
     const runBatch = async (indices: number[]) => {
       await Promise.all(
-        indices.map((i) => uploadSingleFile(files[i], i, updateFile))
+        indices.map((i) => uploadSingleFile(files[i], i, updateFile, owner))
       )
     }
 
@@ -125,7 +130,7 @@ export function UploadVideo({ onComplete, onCancel }: UploadVideoProps) {
     setUploading(false)
     setAllDone(true)
     setTimeout(() => onComplete(), 1500)
-  }, [files, uploadSingleFile, onComplete])
+  }, [files, uploadSingleFile, onComplete, owner])
 
   const hasFiles = files.length > 0
   const pendingCount = files.filter((f) => f.status === 'pending').length
@@ -187,6 +192,22 @@ export function UploadVideo({ onComplete, onCancel }: UploadVideoProps) {
                     </Button>
                   </div>
                 ))}
+              </div>
+              <div className="space-y-1 pt-2">
+                <label htmlFor="studio-owner" className="text-sm font-medium">
+                  Studio <span className="text-muted-foreground font-normal">(optional)</span>
+                </label>
+                <input
+                  id="studio-owner"
+                  type="text"
+                  value={owner}
+                  onChange={(e) => setOwner(e.target.value)}
+                  placeholder="e.g. sony or zee — leave blank to auto-detect from filename"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Scopes these files to one studio in search. Blank = derived from the filename; if no match, the content is shared with everyone.
+                </p>
               </div>
               <div className="flex gap-2 pt-2">
                 <Button onClick={handleUpload} className="flex-1" disabled={pendingCount === 0}>

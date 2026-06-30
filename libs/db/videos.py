@@ -19,9 +19,18 @@ class VideosMixin:
         content_type: str,
         size_bytes: int,
         metadata: Optional[Dict[str, Any]] = None,
+        owner: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Create a new video document."""
+        """Create a new video document.
+
+        `owner` is the studio slug used for per-tenant search isolation. An
+        explicit value (manual tag) wins; otherwise it's derived from the
+        filename. Empty/no match => untagged (shared, visible to all studios).
+        """
+        from libs.content_owner import derive_owner_from_filename
+
         source_type = "audio" if content_type.startswith("audio/") else "video"
+        resolved_owner = (owner or "").strip() or derive_owner_from_filename(filename)
 
         video_data = {
             "video_id": video_id,
@@ -30,6 +39,7 @@ class VideosMixin:
             "content_type": content_type,
             "source_type": source_type,
             "size_bytes": size_bytes,
+            "owner": resolved_owner,
             "created_at": firestore.SERVER_TIMESTAMP,
             "updated_at": firestore.SERVER_TIMESTAMP,
             "metadata": metadata or {},

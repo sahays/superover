@@ -33,6 +33,7 @@ interface InviteCode {
   label: string
   is_active: boolean
   is_admin: boolean
+  owner: string
   expires_at: string | null
   created_at: string | null
 }
@@ -53,6 +54,9 @@ export default function InviteCodesPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [newCode, setNewCode] = useState('')
   const [newLabel, setNewLabel] = useState('')
+  // Studio slug scoping this code's search visibility. Blank = sees everything
+  // (operator/master-style). Set e.g. "sony"/"zee" for a competitor's code.
+  const [newOwner, setNewOwner] = useState('')
   // Admin checkbox is master-only since admins can't reach the create
   // endpoint anyway. Default off — most invitees are regular users.
   const [newIsAdmin, setNewIsAdmin] = useState(false)
@@ -69,6 +73,7 @@ export default function InviteCodesPage() {
       setCreateOpen(false)
       setNewCode('')
       setNewLabel('')
+      setNewOwner('')
       setNewIsAdmin(false)
       toast.success('Invite code created')
     },
@@ -107,6 +112,7 @@ export default function InviteCodesPage() {
     createMutation.mutate({
       code: newCode.trim(),
       label: newLabel.trim(),
+      owner: newOwner.trim(),
       is_admin: newIsAdmin,
     })
   }
@@ -167,6 +173,11 @@ export default function InviteCodesPage() {
                 {code.is_admin && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                     <Star className="h-3 w-3" /> Admin
+                  </span>
+                )}
+                {code.owner && (
+                  <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                    {code.owner}
                   </span>
                 )}
               </div>
@@ -242,6 +253,18 @@ export default function InviteCodesPage() {
                 onChange={(e) => setNewLabel(e.target.value)}
                 placeholder="e.g., Team member name"
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="owner">Studio / owner (optional)</Label>
+              <Input
+                id="owner"
+                value={newOwner}
+                onChange={(e) => setNewOwner(e.target.value)}
+                placeholder="e.g., sony or zee"
+              />
+              <p className="text-xs text-muted-foreground">
+                Scopes search to one studio's content (plus shared/untagged). Blank = sees everything.
+              </p>
             </div>
             <div className="flex items-start justify-between rounded-lg border p-3">
               <div>

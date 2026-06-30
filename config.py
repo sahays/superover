@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     # BigQuery (Natural Language Search)
     bq_dataset: str = "superover_search"
 
+    # Content ownership (per-studio search isolation). Maps an owner slug to the
+    # case-insensitive filename markers that auto-tag a video to that owner.
+    # Override via CONTENT_OWNERS env (JSON). No match => untagged (NULL owner),
+    # which is shared content visible to every studio.
+    content_owners: dict[str, list[str]] = {"sony": ["sony"], "zee": ["zee", "zee5"]}
+
     # Gemini Search Curation
     gemini_search_model: str = "gemini-3.5-flash"
     gemini_search_output_tokens: int = 8192

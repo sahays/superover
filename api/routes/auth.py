@@ -35,24 +35,25 @@ def validate_code(code: str) -> dict:
     feature).
     """
     if _is_master(code):
-        return {"valid": True, "is_master": True, "is_admin": False}
+        return {"valid": True, "is_master": True, "is_admin": False, "owner": ""}
 
     db = get_db()
     invite = db.get_invite_code_by_value(code)
     if not invite:
-        return {"valid": False, "is_master": False, "is_admin": False}
+        return {"valid": False, "is_master": False, "is_admin": False, "owner": ""}
 
     if not invite.get("is_active", True):
-        return {"valid": False, "is_master": False, "is_admin": False}
+        return {"valid": False, "is_master": False, "is_admin": False, "owner": ""}
 
     expires_at = invite.get("expires_at")
     if expires_at and expires_at < datetime.now(timezone.utc):
-        return {"valid": False, "is_master": False, "is_admin": False}
+        return {"valid": False, "is_master": False, "is_admin": False, "owner": ""}
 
     return {
         "valid": True,
         "is_master": False,
         "is_admin": bool(invite.get("is_admin", False)),
+        "owner": invite.get("owner", "") or "",
     }
 
 
@@ -106,6 +107,7 @@ async def create_code(request: Request, body: CreateInviteCodeRequest):
         code=body.code,
         label=body.label,
         is_admin=body.is_admin,
+        owner=body.owner,
         expires_at=body.expires_at,
     )
     return InviteCodeResponse(**code)

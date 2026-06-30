@@ -65,12 +65,14 @@ class InviteCodeMiddleware(BaseHTTPMiddleware):
         if path in EXEMPT_PATHS:
             request.state.is_master = False
             request.state.invite_code = ""
+            request.state.owner = ""
             return await call_next(request)
 
         # Allow static assets and SPA routes (non-API)
         if not path.startswith("/api/") and path != "/health":
             request.state.is_master = False
             request.state.invite_code = ""
+            request.state.owner = ""
             return await call_next(request)
 
         # Validate invite code
@@ -87,6 +89,7 @@ class InviteCodeMiddleware(BaseHTTPMiddleware):
         request.state.is_master = result["is_master"]
         request.state.is_admin = result.get("is_admin", False)
         request.state.invite_code = code
+        request.state.owner = result.get("owner", "") or ""
 
         # Admins are treated as elevated for prefix and write checks. The
         # only master-only privilege left is creating new invite codes,
