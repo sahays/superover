@@ -1,17 +1,14 @@
 // Avatar mode for /search. Owns the live session lifecycle and an
-// event-driven search pipeline:
+// event-driven search pipeline (no ack phase, no filler — the search
+// backend answers in ~0.3s):
 //
-//   1. user speaks; pause auto-triggers pipeline
-//   2. panel shows "You asked: <transcript>"          (immediate)
-//   3. panel sends sendText(ack)                      → avatar speaks ack
-//   4. on ack `turn-complete`:
-//        - searchApi(transcript) fires
-//        - sendText(filler) → avatar speaks "trying to find a few titles…"
-//   5. race — whichever wins first:
-//        - search resolves → summary sent now, interrupts the filler
-//        - filler turn-completes → wait for search, then summary
-//   6. cards render in main column on search resolve
-//   7. panel sends sendText("[SEARCH_RESULTS] …")     → avatar narrates
+//   1. user speaks; pause (AUTO_STOP_MS) auto-triggers pipeline
+//   2. panel shows "You asked: <transcript>"            (immediate)
+//   3. searchApi(transcript) fires; cards render in the main column the
+//      moment it resolves
+//   4. panel sends sendText("[SEARCH_RESULTS] …") right away → avatar
+//      narrates; if the model's VAD micro-ack ("One moment!") is still
+//      generating, the narration turn interrupts it — by design
 //
 // Pipeline state is a small finite-state machine driven via useReducer. The
 // reducer is pure; side effects (sendText, searchApi, mic mute) run in
@@ -129,6 +126,13 @@ const SPEECH_HARD_CAP_MS = 15000
 // stop time, plus a small "natural pause" before the next utterance.
 const PLAYBACK_TAIL_MS = 200
 
+// Ignore turn-completes arriving sooner than this after the narration is
+// sent: the interrupted micro-ack's turn-complete can land just after the
+// send, and treating it as narration-end would idle the panel mid-speech.
+// Real narration turn-completes arrive only after all its audio is
+// delivered (several seconds for a 5-item summary).
+const NARRATION_MIN_TURN_MS = 1500
+
 // Build the [SEARCH_RESULTS] narration payload from the structured
 // recommendations. The backend no longer writes narration prose (the curator
 // LLM was removed for latency); the Live model composes the spoken summary
@@ -144,43 +148,6 @@ function buildSearchResultsPayload(response: CuratedSearchResponse): string {
     return `${i + 1}. "${rec.title}"${clip} — ${rec.reason} [confidence ${rec.confidence.toFixed(2)}]`
   })
   return `[SEARCH_RESULTS]\n${recs.length} match(es):\n${lines.join('\n')}`
-}
-
-// Cap on waiting for the VAD auto-ack's `turn-complete`. If the model never
-// speaks an ack (rare), the narration is sent anyway after this long.
-const ACK_GENERATION_CAP_MS = 8000
-
-// Wait until the auto-ack's GENERATION is done — NOT until its playback
-// drains. `turn-complete` fires once all of the turn's audio has been
-// delivered to the local queue, so it is safe to send the next turn then:
-// the narration generates while the ack is still playing and its audio
-// queues seamlessly behind. (Waiting for drain instead left a multi-second
-// silent gap between ack and narration — the ack can run 10s+ of audio.)
-//
-// Timestamps come from persistent session-level listeners (see the refs in
-// the component) so an ack that started before this is awaited is still
-// observed. IMPORTANT: "media" means audio-chunk OR video-chunk — in video
-// mode the audio rides inside the MP4 and `audio-chunk` never fires.
-// Guards, per the stale-event lessons above:
-//   - require a media chunk AFTER `sinceTs` (a turn-complete from closing
-//     the user's input turn arrives before any ack media — ignore it)
-//   - require the turn-complete to arrive AFTER the latest media chunk
-//     (mid-generation, chunks keep arriving, so lastTC < lastMedia until
-//     the turn is genuinely done)
-async function waitForAckGenerated(
-  sinceTs: number,
-  lastMediaChunkAt: () => number,
-  lastTurnCompleteAt: () => number,
-  capMs: number = ACK_GENERATION_CAP_MS,
-): Promise<void> {
-  const startedAt = Date.now()
-  for (;;) {
-    if (Date.now() - startedAt >= capMs) return
-    const mediaAt = lastMediaChunkAt()
-    const tcAt = lastTurnCompleteAt()
-    if (mediaAt > sinceTs && tcAt > mediaAt) return
-    await new Promise((r) => setTimeout(r, 80))
-  }
 }
 
 // Resolves once the model's turn has fully ENDED and the local audio has
@@ -207,9 +174,10 @@ async function waitForModelSpeechEnd(
     removeEventListener: (t: string, h: () => void) => void
   },
   getAudioRemainingMs: () => number,
-  opts: { hardCapMs?: number } = {},
+  opts: { hardCapMs?: number; minTurnMs?: number } = {},
 ): Promise<void> {
   const hardCapMs = opts.hardCapMs ?? SPEECH_HARD_CAP_MS
+  const minTurnMs = opts.minTurnMs ?? 0
   const startedAt = Date.now()
   // Phase 1: wait for first audio chunk, then `turn-complete` (or the safety cap).
   await new Promise<void>((resolve) => {
@@ -231,7 +199,7 @@ async function waitForModelSpeechEnd(
       heardMedia = true
     }
     const onTurnComplete = () => {
-      if (heardMedia) finish()
+      if (heardMedia && Date.now() - startedAt >= minTurnMs) finish()
     }
     session.addEventListener('audio-chunk', onMedia)
     session.addEventListener('video-chunk', onMedia)
@@ -306,13 +274,6 @@ export function AvatarSearchPanel({
   // Stable ref to runPipeline so the transcript handler closure always
   // sees the latest version without re-binding the listener.
   const runPipelineRef = useRef<(query: string) => Promise<void>>(async () => {})
-  // Persistent event timestamps for waitForAckGenerated — attached for the
-  // whole session so an auto-ack that starts before the pipeline awaits it
-  // is still observed (per-await listeners miss already-fired events).
-  // Media = audio-chunk OR video-chunk (video mode muxes audio in the MP4).
-  const lastMediaChunkAtRef = useRef(0)
-  const lastTurnCompleteAtRef = useRef(0)
-
   const live = useAvatarLiveSession({
     avatarId: avatarId ?? '',
     enabled: !!avatarId && !disconnected,
@@ -406,28 +367,6 @@ export function AvatarSearchPanel({
     return () => session.removeEventListener('transcript', handler)
   }, [live.status, live.sessionRef])
 
-  // Session-lifetime timestamps of the model's audio/turn events, feeding
-  // waitForAckGenerated (see its comment for the stale-event guards).
-  useEffect(() => {
-    if (live.status !== 'connected') return
-    const session = live.sessionRef.current
-    if (!session) return
-    const onMedia = () => {
-      lastMediaChunkAtRef.current = Date.now()
-    }
-    const onTurnComplete = () => {
-      lastTurnCompleteAtRef.current = Date.now()
-    }
-    session.addEventListener('audio-chunk', onMedia)
-    session.addEventListener('video-chunk', onMedia)
-    session.addEventListener('turn-complete', onTurnComplete)
-    return () => {
-      session.removeEventListener('audio-chunk', onMedia)
-      session.removeEventListener('video-chunk', onMedia)
-      session.removeEventListener('turn-complete', onTurnComplete)
-    }
-  }, [live.status, live.sessionRef])
-
   // Event-driven pipeline. The search backend answers in ~0.2-0.5s, so there
   // is no ack phase and no small talk: the overlay caps the model's automatic
   // VAD response to a couple of words (or silence) and the narration is sent
@@ -449,7 +388,6 @@ export function AvatarSearchPanel({
     // here (ack / filler / narration speech) is client-orchestrated, so we
     // trace it in the browser console with elapsed-since-start timestamps.
     const t0 = performance.now()
-    const pipelineStartTs = Date.now()
     const elapsed = () => Math.round(performance.now() - t0)
     const log = (msg: string, extra?: Record<string, unknown>) => {
       // eslint-disable-next-line no-console
@@ -485,34 +423,27 @@ export function AvatarSearchPanel({
         })
       })
 
-      // Step 2: the model auto-responds to the user's speech (Live VAD) —
-      // that response can't be suppressed entirely, but the overlay caps it
-      // at a couple of words ("One moment!") or silence. Wait only for its
-      // GENERATION to complete (never its playback): the narration is sent
-      // the moment generation is done and its audio queues seamlessly behind
-      // whatever ack audio is still playing. No drain wait, no dead gap.
-      const ackStart = performance.now()
-      log('ack: awaiting auto-response generation')
-      await waitForAckGenerated(
-        pipelineStartTs,
-        () => lastMediaChunkAtRef.current,
-        () => lastTurnCompleteAtRef.current,
-      )
-      log('ack: generation done', { ms: Math.round(performance.now() - ackStart) })
-
-      // Step 3: hand off to the summary phase. The search (~0.3s) usually
-      // resolves before the micro-ack finishes generating, so this await is
-      // instant in practice; cards already rendered when the fetch resolved.
+      // Step 2: there is NO ack wait. The model's VAD auto-response (capped
+      // at "One moment!"/silence by the overlay) is disposable: sending the
+      // narration turn while it is still generating simply interrupts it,
+      // and losing half of a two-word ack is imperceptible. There is no
+      // reliable end-of-ack signal to wait on anyway — in video mode the
+      // avatar streams idle-animation frames continuously, so media-recency
+      // heuristics never settle (this previously burned an 8s timeout cap
+      // on every query).
       const response = await searchPromise
       log('cards: rendered', { e2eMs: elapsed(), ok: !!response })
       dispatch({ type: 'search-resolved' })
 
-      // Step 4: summary (or apology if search failed). Wait for it to
-      // finish playing too so the panel returns to idle in lockstep with
-      // the avatar going quiet — important for back-to-back demo queries.
+      // Step 3: summary (or apology if search failed) — sent immediately.
+      // Wait for it to finish playing so the panel returns to idle in
+      // lockstep with the avatar going quiet. `minTurnMs` ignores a stray
+      // turn-complete from the interrupted ack landing right after send.
       const summaryStart = performance.now()
       log('summary: sending')
-      const summaryDone = waitForModelSpeechEnd(session, remainingMs)
+      const summaryDone = waitForModelSpeechEnd(session, remainingMs, {
+        minTurnMs: NARRATION_MIN_TURN_MS,
+      })
       if (!response) {
         session.sendText(
           'Tell the user the search hit an error and ask them to try again, in one short sentence.',
