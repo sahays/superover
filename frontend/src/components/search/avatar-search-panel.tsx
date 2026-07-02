@@ -152,6 +152,23 @@ const SMALL_TALK_PROMPTS = [
 // chatter forever. With a normal ~5-7s search this is rarely past 1-2 turns.
 const MAX_SMALL_TALK_TURNS = 6
 
+// Build the [SEARCH_RESULTS] narration payload from the structured
+// recommendations. The backend no longer writes narration prose (the curator
+// LLM was removed for latency); the Live model composes the spoken summary
+// from this list, judging relevance itself per the search-mode overlay.
+function buildSearchResultsPayload(response: CuratedSearchResponse): string {
+  const recs = response.recommendations ?? []
+  if (recs.length === 0) return '[SEARCH_RESULTS]\nNo matches found.'
+  const lines = recs.map((rec, i) => {
+    const clip =
+      rec.recommendation_type === 'clip' && rec.clip_start && rec.clip_end
+        ? ` (clip ${rec.clip_start}-${rec.clip_end})`
+        : ''
+    return `${i + 1}. "${rec.title}"${clip} — ${rec.reason} [confidence ${rec.confidence.toFixed(2)}]`
+  })
+  return `[SEARCH_RESULTS]\n${recs.length} match(es):\n${lines.join('\n')}`
+}
+
 // The model's VAD auto-acknowledgement is coordinated by waiting for it to go
 // IDLE (audio drained + quiet), NOT by probing for it — a short auto-ack often
 // finishes before a probe can observe it, which used to fire a redundant second
@@ -526,12 +543,11 @@ export function AvatarSearchPanel({
           'Tell the user the search hit an error and ask them to try again, in one short sentence.',
         )
       } else {
-        const summary = response.response_text || 'No matching results were found.'
         session.sendText(
-          `[SEARCH_RESULTS]\n${summary}\n\n` +
-            'Explain this to the user in 2-3 short spoken sentences, in your usual voice ' +
-            'and personality. Stay grounded entirely in the [SEARCH_RESULTS] text. ' +
-            'Do not name any film, actor, or scene that is not in it.',
+          `${buildSearchResultsPayload(response)}\n\n` +
+            'Explain the best matches to the user in 2-3 short spoken sentences, in your ' +
+            'usual voice and personality. Stay grounded entirely in the [SEARCH_RESULTS] ' +
+            'list. Do not name any film, actor, or scene that is not in it.',
         )
       }
       await summaryDone

@@ -6,6 +6,9 @@ pydantic-settings==2.6.1
 python-multipart==0.0.20
 
 # GCP Libraries
+# google-auth <2.55 crashes in the GCE-metadata fallback ('Request' object
+# has no attribute 'session') when no ADC file is present.
+google-auth>=2.55.0
 google-cloud-storage==2.19.0
 google-cloud-firestore==2.20.0
 google-genai>=1.65.0
@@ -16,8 +19,11 @@ google-cloud-video-transcoder>=1.0.0
 # Speech-to-Text (Chirp 3)
 google-cloud-speech>=2.25.0
 
-# BigQuery (Natural Language Search)
+# BigQuery (Natural Language Search, search_backend=bigquery)
 google-cloud-bigquery>=3.25.0
+
+# Bigtable (KNN vector search, search_backend=bigtable)
+google-cloud-bigtable>=2.40.0
 
 # Utilities
 python-dotenv==1.0.1

@@ -101,9 +101,11 @@ class SearchRecommendation(BaseModel):
 
 
 class CuratedSearchResponse(BaseModel):
-    """Gemini-curated search response with recommendations and raw results."""
+    """Curated search response with recommendations and raw results."""
 
-    response_text: str
+    # Legacy field from the curator-LLM era; ranking is deterministic now and
+    # the avatar narrates from recommendations[], so this stays empty.
+    response_text: str = ""
     recommendations: List[SearchRecommendation] = Field(default_factory=list)
     raw_results: List[VideoSearchResult] = Field(default_factory=list)
     interpreted_query: Optional[str] = Field(None, description="English query produced by the interpreter")

@@ -11,6 +11,7 @@ AI-powered video analysis platform using Google Gemini.
 
 - **[Media Worker Sequence Diagram](media-worker-sequence.md)** - Video compression and audio extraction workflow
 - **[Scene Worker Sequence Diagram](scene-worker-sequence.md)** - AI-powered scene analysis with Gemini integration
+- **[Search Latency Optimization](search-latency-optimization.md)** - Avatar-mode conversation search rework: curator LLM removal, BigQuery → Bigtable KNN migration (~4s → ~0.2-0.5s)
 
 ## Visual Guides
 

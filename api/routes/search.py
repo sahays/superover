@@ -1,4 +1,9 @@
-"""Search and sync API routes for BigQuery AI.SEARCH integration."""
+"""Search and sync API routes for the semantic video search index.
+
+Backends: BigQuery AI.SEARCH (embeddings generated server-side, async) or
+Bigtable KNN (embeddings generated at sync/query time via the Gemini
+embeddings API) — selected by settings.search_backend.
+"""
 
 import asyncio
 import base64
@@ -19,15 +24,32 @@ from api.models.schemas.search import (
     SearchRecommendation,
     CuratedSearchResponse,
 )
+from config import get_settings
 from google.cloud import firestore as firestore_module
 from libs.content_owner import derive_owner_from_filename
 from libs.database import get_db
 from libs.bigquery import get_bq_client
-from libs.gemini import get_search_query_interpreter, get_search_curator
+from libs.gemini import get_search_query_interpreter
+from libs.search_ranking import rank_results
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/search", tags=["Search"])
+
+
+def _get_search_client():
+    """Vector-search backend selected by settings.search_backend.
+
+    Both clients expose the same surface: sync_scene_result,
+    check_embedding_statuses, search_videos, search_within_video,
+    get_synced_result_ids, delete_synced_result. Bigtable is imported
+    lazily so the dependency is only needed when that backend is enabled.
+    """
+    if get_settings().search_backend == "bigtable":
+        from libs.bigtable import get_bt_client
+
+        return get_bt_client()
+    return get_bq_client()
 
 
 def _build_embedding_text(result_data: dict) -> str:
@@ -181,8 +203,8 @@ async def get_sync_status():
         embedding_statuses: dict[str, str] = {}
         if pending_ids:
             try:
-                bq = get_bq_client()
-                embedding_statuses = bq.check_embedding_statuses(pending_ids)
+                search_client = _get_search_client()
+                embedding_statuses = search_client.check_embedding_statuses(pending_ids)
                 logger.info(f"Checked {len(pending_ids)} pending embeddings: {embedding_statuses}")
 
                 # Update Firestore for any that changed from "pending"
@@ -286,16 +308,19 @@ def _dedupe_sync_items(items: List[SyncStatusItem]) -> List[SyncStatusItem]:
 
 @router.post("/sync", response_model=SyncResponse)
 async def sync_results(request: SyncRequest):
-    """Sync selected scene results to BigQuery for search indexing.
+    """Sync selected scene results to the search index.
 
-    DML INSERTs into BigQuery and marks results as "pending" in Firestore.
-    Returns immediately — embeddings generate asynchronously.
-    Check GET /sync-status to see when embeddings are ready.
+    BigQuery backend: DML INSERT, marks results "pending" in Firestore —
+    embeddings generate asynchronously (poll GET /sync-status).
+    Bigtable backend: embeds and writes synchronously, marks "ready".
     """
     logger.info(f"Sync request for {len(request.result_ids)} result(s)")
     try:
         db = get_db()
-        bq = get_bq_client()
+        search_client = _get_search_client()
+        # Bigtable embeds synchronously at sync time — rows are searchable the
+        # moment the write returns. BigQuery's AI.EMBED generates async.
+        status_after_sync = "ready" if get_settings().search_backend == "bigtable" else "pending"
 
         synced_count = 0
         errors = []
@@ -317,10 +342,10 @@ async def sync_results(request: SyncRequest):
                 current_status = data.get("bq_sync_status")
                 if current_status in ("pending", "ready"):
                     if request.resync:
-                        # Re-sync: delete old BQ row, re-insert with fresh text
+                        # Re-sync: delete old row, re-insert with fresh text
                         logger.info(f"Re-syncing result {result_id} (was {current_status})")
                         try:
-                            bq.delete_synced_result(result_id)
+                            search_client.delete_synced_result(result_id)
                         except Exception:
                             pass  # Row may not exist
                     else:
@@ -350,8 +375,7 @@ async def sync_results(request: SyncRequest):
                 result_data_json = json.dumps(result_data) if result_data else None
                 video_info = video_cache.get(video_id, {})
 
-                # DML INSERT — returns immediately after insert completes
-                bq.sync_scene_result(
+                search_client.sync_scene_result(
                     result_id=result_id,
                     video_id=video_id,
                     video_filename=video_info.get("filename"),
@@ -365,10 +389,11 @@ async def sync_results(request: SyncRequest):
                     owner=video_info.get("owner") or None,
                 )
 
-                # Mark as "pending" in Firestore — embedding generates async
-                db.scene_results.document(result_id).update({"bq_sync_status": "pending", "bq_sync_error": None})
+                db.scene_results.document(result_id).update(
+                    {"bq_sync_status": status_after_sync, "bq_sync_error": None}
+                )
                 synced_count += 1
-                logger.info(f"Result {result_id} inserted, marked pending")
+                logger.info(f"Result {result_id} inserted, marked {status_after_sync}")
 
             except Exception as e:
                 logger.error(f"Failed to sync result {result_id}: {e}", exc_info=True)
@@ -397,12 +422,10 @@ async def sync_results(request: SyncRequest):
 
 @router.delete("/sync/{result_id}")
 async def delete_synced_result(result_id: str):
-    """Remove a synced result from BigQuery and clear Firestore sync state."""
+    """Remove a synced result from the search index and clear Firestore sync state."""
     try:
         db = get_db()
-        bq = get_bq_client()
-
-        bq.delete_synced_result(result_id)
+        _get_search_client().delete_synced_result(result_id)
 
         # Clear sync state in Firestore
         try:
@@ -480,7 +503,7 @@ def _parse_result_data_json(row: dict) -> dict:
 
 @router.post("/videos", response_model=CuratedSearchResponse)
 async def search_videos(request: SearchRequest, http_request: Request):
-    """Cross-video semantic search — BQ AI.SEARCH + Gemini curation. Zero Firestore reads.
+    """Cross-video semantic search — vector search + deterministic ranking. Zero Firestore reads.
 
     Scoped to the caller's studio: the invite-code middleware resolves
     `request.state.owner`, and a non-empty owner restricts results to that
@@ -505,11 +528,13 @@ async def search_videos(request: SearchRequest, http_request: Request):
                     detail="Invalid base64 audio data",
                 )
 
-        # NOTE: interpret_query / bq.search_videos / curate_search_results are
-        # SYNCHRONOUS, blocking SDK calls (Gemini, BigQuery). This route shares
-        # its event loop with the avatar live-session WS relay, so running them
-        # inline would freeze the loop for seconds — starving the relay and
-        # freezing the avatar mid-utterance. Offload each to a worker thread via
+        settings = get_settings()
+
+        # NOTE: interpret_query and the vector search are SYNCHRONOUS, blocking
+        # SDK calls (Gemini, BigQuery/Bigtable). This route shares its event
+        # loop with the avatar live-session WS relay, so running them inline
+        # would freeze the loop for seconds — starving the relay and freezing
+        # the avatar mid-utterance. Offload each to a worker thread via
         # asyncio.to_thread so the loop stays free to forward avatar frames.
         if audio_bytes:
             interpreted_query = await asyncio.to_thread(
@@ -519,6 +544,16 @@ async def search_videos(request: SearchRequest, http_request: Request):
                 audio_mime=request.audio_mime or "audio/webm",
             )
             search_query = interpreted_query
+        elif settings.search_backend == "bigtable":
+            # gemini-embedding-001 is multilingual — text in any language
+            # embeds directly, no English-rewrite LLM call needed.
+            interpreted_query = None
+            search_query = request.query.strip()
+            if not search_query:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Query text or audio is required",
+                )
         else:
             interpreted_query = await asyncio.to_thread(interpreter.interpret_query, text=request.query)
             if interpreted_query != request.query.strip():
@@ -528,9 +563,9 @@ async def search_videos(request: SearchRequest, http_request: Request):
 
         t_interpret = time.perf_counter()
 
-        bq = get_bq_client()
-        raw_results = await asyncio.to_thread(bq.search_videos, search_query, request.limit, owner=owner)
-        t_bq = time.perf_counter()
+        search_client = _get_search_client()
+        raw_results = await asyncio.to_thread(search_client.search_videos, search_query, request.limit, owner=owner)
+        t_search = time.perf_counter()
 
         # Group by video_id, keep best match per video
         video_groups: dict[str, list[dict]] = {}
@@ -538,12 +573,15 @@ async def search_videos(request: SearchRequest, http_request: Request):
             vid = row["video_id"]
             video_groups.setdefault(vid, []).append(row)
 
-        # Build raw_results for response (metadata from BQ, no Firestore)
+        # Build raw_results for response (metadata from the search rows, no
+        # Firestore) and keep per-video metadata for the ranking step below.
         raw_video_results = []
+        metadata_by_video: dict[str, dict] = {}
         for video_id, matches in video_groups.items():
             best = matches[0]
             result_data = _parse_result_data_json(best)
             meta = _extract_metadata(result_data) if result_data else {}
+            metadata_by_video[video_id] = meta
             raw_video_results.append(
                 VideoSearchResult(
                     video_id=video_id,
@@ -563,48 +601,39 @@ async def search_videos(request: SearchRequest, http_request: Request):
             )
         raw_video_results.sort(key=lambda r: r.score)
 
-        # Gemini curation: rank/describe the BQ matches into recommendations.
-        curator = get_search_curator()
-        curated = await asyncio.to_thread(curator.curate_search_results, search_query, raw_results)
-        t_curate = time.perf_counter()
-
-        # The curator no longer echoes identifiers; fill video_filename + gcs_path
-        # from the BQ rows by video_id (authoritative, and saves output tokens).
-        vid_meta = {
-            vid: {
-                "video_filename": matches[0].get("video_filename", ""),
-                "gcs_path": matches[0].get("gcs_path", ""),
-            }
-            for vid, matches in video_groups.items()
-        }
-        recommendations = []
-        for rec in curated.get("recommendations", []):
-            meta = vid_meta.get(rec.get("video_id", ""))
-            if meta:
-                rec["video_filename"] = meta["video_filename"]
-                rec["gcs_path"] = meta["gcs_path"]
-            recommendations.append(SearchRecommendation(**rec))
-        response_text = curated.get("response_text", "")
+        # Deterministic ranking (replaces the curator LLM, ~2.4s median):
+        # distance-ordered, display-threshold gated, clip times from the best
+        # chunk. The avatar Live model narrates from this structured list.
+        ranked = rank_results(
+            video_groups,
+            metadata_by_video,
+            max_distance=settings.search_display_max_distance,
+        )
+        recommendations = [SearchRecommendation(**rec) for rec in ranked]
+        t_rank = time.perf_counter()
 
         logger.info(
-            "Search pipeline latency: interpret=%.0fms bq=%.0fms curate=%.0fms total=%.0fms "
-            "(bq_rows=%d, recs=%d, query=%r)",
+            "Search pipeline latency: interpret=%.0fms search=%.0fms rank=%.0fms total=%.0fms "
+            "(backend=%s, rows=%d, recs=%d, query=%r)",
             (t_interpret - t0) * 1000,
-            (t_bq - t_interpret) * 1000,
-            (t_curate - t_bq) * 1000,
-            (t_curate - t0) * 1000,
+            (t_search - t_interpret) * 1000,
+            (t_rank - t_search) * 1000,
+            (t_rank - t0) * 1000,
+            settings.search_backend,
             len(raw_results),
             len(recommendations),
             search_query,
         )
 
         return CuratedSearchResponse(
-            response_text=response_text,
+            response_text="",
             recommendations=recommendations,
             raw_results=raw_video_results,
             interpreted_query=interpreted_query,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to search videos: {e}")
         raise HTTPException(
@@ -623,13 +652,13 @@ async def search_within_video(video_id: str, request: SearchRequest, http_reques
     try:
         owner = getattr(http_request.state, "owner", "") or ""
         t0 = time.perf_counter()
-        bq = get_bq_client()
-        # Offload the blocking BQ call off the event loop (see search_videos).
+        search_client = _get_search_client()
+        # Offload the blocking search call off the event loop (see search_videos).
         raw_results = await asyncio.to_thread(
-            bq.search_within_video, video_id, request.query, request.limit, owner=owner
+            search_client.search_within_video, video_id, request.query, request.limit, owner=owner
         )
         logger.info(
-            "In-video search latency: bq=%.0fms (video=%s, bq_rows=%d, query=%r)",
+            "In-video search latency: search=%.0fms (video=%s, rows=%d, query=%r)",
             (time.perf_counter() - t0) * 1000,
             video_id,
             len(raw_results),

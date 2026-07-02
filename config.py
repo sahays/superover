@@ -36,8 +36,31 @@ class Settings(BaseSettings):
     # Firestore
     firestore_database: str = "(default)"
 
-    # BigQuery (Natural Language Search)
+    # Natural Language Search backend: "bigquery" (AI.SEARCH, embeddings
+    # generated server-side) or "bigtable" (KNN over embeddings we generate
+    # via the Gemini embeddings API). Flip per-env; keep BQ during burn-in.
+    search_backend: str = "bigquery"
+
+    # BigQuery (search_backend=bigquery)
     bq_dataset: str = "superover_search"
+
+    # Bigtable (search_backend=bigtable)
+    bt_instance: str = "superover-search"
+    bt_table: str = "scene_embeddings"
+
+    # Embedding model for search_backend=bigtable. gemini-embedding-001 is
+    # multilingual, so raw Hindi/mixed text queries embed directly (no
+    # interpreter LLM needed for text input).
+    embedding_model: str = "gemini-embedding-001"
+    embedding_dimensions: int = 768
+    # Vertex region for embedding calls. None → gcp_region. Keep it near the
+    # service: the "global" endpoint measured 0.4–1.8s vs ~0.2s regional.
+    embedding_region: Optional[str] = None
+
+    # Max cosine distance for a search row to become a visible recommendation
+    # card. Replaces the curator LLM's relevance filtering — tune per
+    # embedding model (text-embedding-005 distances cluster in 0.95–1.12).
+    search_display_max_distance: float = 1.05
 
     # Content ownership (per-studio search isolation). Maps an owner slug to the
     # case-insensitive filename markers that auto-tag a video to that owner.
