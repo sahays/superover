@@ -20,13 +20,18 @@ def bt():
     with (
         patch("libs.bigtable.client.BigtableDataClient") as mock_client_cls,
         patch("libs.bigtable.client.get_text_embedder") as mock_get_embedder,
+        patch("libs.bigtable.client.get_content_enricher") as mock_get_enricher,
     ):
         embedder = MagicMock()
         embedder.embed.return_value = [0.6, 0.8]
         mock_get_embedder.return_value = embedder
+        enricher = MagicMock()
+        enricher.enrich.return_value = ""
+        mock_get_enricher.return_value = enricher
         client = BigtableClient()
         client.mock_data_client = mock_client_cls.return_value
         client.mock_table = mock_client_cls.return_value.get_table.return_value
+        client.mock_enricher = enricher
         yield client
 
 
@@ -126,6 +131,43 @@ class TestSync:
         assert cells["timestamp_end"].new_value == b"00:00:31"
         scene_text = cells["text_content"].new_value.decode()
         assert "courtroom" in scene_text and "Judge Rao" in scene_text and "Drama" in scene_text
+
+    def test_sync_prepends_enrichment_blurb_to_all_rows(self, bt):
+        bt.mock_enricher.enrich.return_value = "Title: Sunflower. Cast: Sunil Grover."
+        result_data = {
+            "chunk_summary": "comedy in a housing society",
+            "scenes": [{"start_time": "00:00:05", "end_time": "00:00:31", "summary": "Sonu jokes around"}],
+        }
+        bt.sync_scene_result(
+            result_id="r1",
+            video_id="v1",
+            video_filename="sunflower.mp4",
+            scene_job_id=None,
+            chunk_index=None,
+            text_content="whole video text",
+            timestamp_start=None,
+            timestamp_end=None,
+            result_data_json=__import__("json").dumps(result_data),
+        )
+        for call in bt.mock_table.mutate_row.call_args_list:
+            cells = {m.qualifier if isinstance(m.qualifier, str) else m.qualifier.decode(): m for m in call.args[1]}
+            assert cells["text_content"].new_value.decode().startswith("Title: Sunflower. Cast: Sunil Grover.")
+
+    def test_precomputed_embedding_reembedded_when_blurb_changes_text(self, bt):
+        bt.mock_enricher.enrich.return_value = "Title: X."
+        bt.sync_scene_result(
+            result_id="r1",
+            video_id="v1",
+            video_filename="x.mp4",
+            scene_job_id=None,
+            chunk_index=None,
+            text_content="text",
+            timestamp_start=None,
+            timestamp_end=None,
+            embedding=[0.0, 1.0],
+        )
+        # Blurb changed the text, so the supplied vector is stale — re-embed.
+        bt.embedder.embed.assert_called_once_with("Title: X. text")
 
 
 @pytest.mark.unit

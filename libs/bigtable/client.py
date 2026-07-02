@@ -22,6 +22,7 @@ from google.cloud.bigtable.data import BigtableDataClient, SetCell
 
 from config import get_settings
 from libs.gemini.embeddings import get_text_embedder
+from libs.gemini.enrichment import get_content_enricher
 from libs.scene_clips import build_scene_text, extract_scene_entries
 
 # Scene rows are keyed "{result_id}#s{i}". The base (whole-video) row keeps
@@ -106,7 +107,28 @@ class BigtableClient:
         row; scene rows always embed their own text here.
         """
         logger.info(f"Syncing result {result_id} for video {video_id} (text_content length: {len(text_content)})")
-        vector = embedding or self.embedder.embed(text_content)
+
+        result_data: dict = {}
+        if result_data_json:
+            try:
+                result_data = json.loads(result_data_json)
+            except (json.JSONDecodeError, TypeError):
+                result_data = {}
+        if not isinstance(result_data, dict):
+            result_data = {}
+
+        # Title/cast blurb (one Flash call, sync-time only): analyses label
+        # people by character, so actor names never reach the index without
+        # it — appended to every row so name queries match on text.
+        blurb = get_content_enricher().enrich(
+            video_filename,
+            result_data.get("chunk_summary") or result_data.get("summary"),
+            result_data.get("genre"),
+        )
+        if blurb:
+            text_content = f"{blurb} {text_content}"
+
+        vector = embedding if embedding and not blurb else self.embedder.embed(text_content)
         self._write_row(
             row_key=result_id,
             values={
@@ -125,15 +147,11 @@ class BigtableClient:
             vector=vector,
         )
 
-        result_data: dict = {}
-        if result_data_json:
-            try:
-                result_data = json.loads(result_data_json)
-            except (json.JSONDecodeError, TypeError):
-                result_data = {}
-        entries = extract_scene_entries(result_data) if isinstance(result_data, dict) else []
+        entries = extract_scene_entries(result_data)
         for i, entry in enumerate(entries):
             scene_text = build_scene_text(entry, result_data)
+            if blurb:
+                scene_text = f"{blurb} {scene_text}"
             self._write_row(
                 row_key=f"{result_id}{SCENE_KEY_SEP}{i}",
                 values={
