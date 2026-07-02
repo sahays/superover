@@ -222,20 +222,25 @@ export default function SearchPage() {
     }
   }, [query, handleSearch])
 
-  // Recommendations arrive already ranked by relevance (closest BQ matches
-  // first). Present the top few as "Best Matches" and the remainder as "You May
-  // Also Like" — a rank-based split, since the deterministic relevance score is
-  // not on the same calibrated scale the old LLM-curator confidence was.
-  const { bestMatches, alsoLike } = useMemo<{
+  // Recommendations arrive ranked by relevance with a backend-assigned
+  // distance tier: "best" (literal title/cast-level matches), "similar"
+  // (solid semantic neighbours), "also_like" (loose thematic). One section
+  // per tier. Recs without a tier (older responses) default to "best".
+  const { bestMatches, similar, alsoLike } = useMemo<{
     bestMatches: SearchRecommendation[]
+    similar: SearchRecommendation[]
     alsoLike: SearchRecommendation[]
   }>(() => {
-    if (!curatedResponse) return { bestMatches: [], alsoLike: [] }
+    if (!curatedResponse) return { bestMatches: [], similar: [], alsoLike: [] }
     const recs = curatedResponse.recommendations
-    return { bestMatches: recs.slice(0, 3), alsoLike: recs.slice(3) }
+    return {
+      bestMatches: recs.filter((r) => (r.tier ?? 'best') === 'best'),
+      similar: recs.filter((r) => r.tier === 'similar'),
+      alsoLike: recs.filter((r) => r.tier === 'also_like'),
+    }
   }, [curatedResponse])
 
-  const totalResults = bestMatches.length + alsoLike.length
+  const totalResults = bestMatches.length + similar.length + alsoLike.length
 
   return (
     <div className="container mx-auto max-w-6xl px-4 py-8">
@@ -384,6 +389,22 @@ export default function SearchPage() {
                 {bestMatches.map((rec, idx) => (
                   <RecommendationCard
                     key={`${rec.video_id}-best-${idx}`}
+                    recommendation={rec}
+                    onClick={() => navigate(`/scene/${rec.video_id}`)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Similar */}
+          {similar.length > 0 && (
+            <div className="animate-slide-up">
+              <h2 className="text-lg font-semibold font-heading mb-4 line-sweep">Similar</h2>
+              <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 stagger-children">
+                {similar.map((rec, idx) => (
+                  <RecommendationCard
+                    key={`${rec.video_id}-similar-${idx}`}
                     recommendation={rec}
                     onClick={() => navigate(`/scene/${rec.video_id}`)}
                   />

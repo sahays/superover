@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     # embedding model (text-embedding-005 distances cluster in 0.95–1.12).
     search_display_max_distance: float = 1.05
 
+    # Tier boundaries within the display window (gemini-embedding-001 scale):
+    # distance < best → "Best matches" (literal title/cast matches land
+    # 0.28–0.33); < similar → "Similar"; anything else under the display max
+    # → "You may also like".
+    search_best_max_distance: float = 0.35
+    search_similar_max_distance: float = 0.41
+
     # Content ownership (per-studio search isolation). Maps an owner slug to the
     # case-insensitive filename markers that auto-tag a video to that owner.
     # Override via CONTENT_OWNERS env (JSON). No match => untagged (NULL owner),

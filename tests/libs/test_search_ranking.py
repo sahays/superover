@@ -29,10 +29,24 @@ def _row(video_id: str, distance: float, **overrides) -> dict:
 @pytest.mark.unit
 class TestRankResults:
     def test_orders_by_distance_and_caps_at_limit(self):
-        groups = {f"v{i}": [_row(f"v{i}", 1.0 - i * 0.01)] for i in range(8)}
+        groups = {f"v{i}": [_row(f"v{i}", 1.0 - i * 0.01)] for i in range(12)}
         recs = rank_results(groups, {}, max_distance=MAX_DISTANCE)
-        assert len(recs) == 5
-        assert [r["video_id"] for r in recs] == ["v7", "v6", "v5", "v4", "v3"]
+        assert len(recs) == 9
+        assert [r["video_id"] for r in recs][:3] == ["v11", "v10", "v9"]
+
+    def test_tier_bands(self):
+        groups = {
+            "exact": [_row("exact", 0.30)],
+            "close": [_row("close", 0.38)],
+            "loose": [_row("loose", 0.43)],
+        }
+        recs = rank_results(groups, {}, max_distance=0.44, best_max_distance=0.35, similar_max_distance=0.41)
+        tiers = {r["video_id"]: r["tier"] for r in recs}
+        assert tiers == {"exact": "best", "close": "similar", "loose": "also_like"}
+
+    def test_tier_defaults_to_best_without_thresholds(self):
+        recs = rank_results({"v1": [_row("v1", 0.96)]}, {}, max_distance=MAX_DISTANCE)
+        assert recs[0]["tier"] == "best"
 
     def test_display_threshold_gates_off_topic_rows(self):
         # Chitchat queries return rows, but all far — no cards (the filtering

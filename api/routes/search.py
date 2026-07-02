@@ -630,6 +630,8 @@ async def search_videos(request: SearchRequest, http_request: Request):
             video_groups,
             metadata_by_video,
             max_distance=settings.search_display_max_distance,
+            best_max_distance=settings.search_best_max_distance,
+            similar_max_distance=settings.search_similar_max_distance,
         )
         recommendations = [SearchRecommendation(**rec) for rec in ranked]
         t_rank = time.perf_counter()

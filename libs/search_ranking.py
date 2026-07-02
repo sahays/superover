@@ -14,7 +14,8 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-MAX_RECOMMENDATIONS = 5
+# Enough for three tiers (best / similar / also-like) to have content.
+MAX_RECOMMENDATIONS = 9
 
 # Distances tighter than the threshold by this span map to confidence 1.0;
 # at the threshold confidence bottoms out. Cosine-distance spreads are model
@@ -64,11 +65,25 @@ def _reason(meta: dict) -> str:
     return "Close semantic match"
 
 
+def _tier(distance: float, best_max: Optional[float], similar_max: Optional[float]) -> str:
+    """Tier a recommendation by absolute distance: literal title/cast matches
+    cluster far tighter than thematic neighbours, so bands separate 'this IS
+    what you asked for' from 'related' from 'loose'. Missing thresholds put
+    everything in 'best' (legacy behaviour)."""
+    if best_max is not None and distance >= best_max:
+        if similar_max is None or distance < similar_max:
+            return "similar"
+        return "also_like"
+    return "best"
+
+
 def rank_results(
     video_groups: dict[str, list[dict]],
     metadata_by_video: dict[str, dict],
     max_distance: float,
     limit: int = MAX_RECOMMENDATIONS,
+    best_max_distance: Optional[float] = None,
+    similar_max_distance: Optional[float] = None,
 ) -> list[dict]:
     """Rank grouped vector-search rows into recommendation dicts.
 
@@ -76,6 +91,8 @@ def rank_results(
     first row is the video's best match). Rows whose best distance exceeds
     `max_distance` produce no card — that gate is what keeps off-topic
     queries from surfacing junk now that no LLM filters the results.
+    Each recommendation carries a `tier` (best/similar/also_like) from the
+    optional band thresholds; the frontend renders one section per tier.
     """
     candidates: list[tuple[float, str, dict]] = []
     for video_id, matches in video_groups.items():
@@ -103,6 +120,7 @@ def rank_results(
                 "clip_start": clip_start if is_clip else None,
                 "clip_end": clip_end if is_clip else None,
                 "confidence": _confidence(distance, max_distance),
+                "tier": _tier(distance, best_max_distance, similar_max_distance),
             }
         )
 

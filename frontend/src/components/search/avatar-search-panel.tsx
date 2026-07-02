@@ -138,7 +138,11 @@ const NARRATION_MIN_TURN_MS = 1500
 // LLM was removed for latency); the Live model composes the spoken summary
 // from this list, judging relevance itself per the search-mode overlay.
 function buildSearchResultsPayload(response: CuratedSearchResponse): string {
-  const recs = response.recommendations ?? []
+  const all = response.recommendations ?? []
+  // Narrate only the meaningful tiers — the loose "also_like" tail is for
+  // browsing on screen, not for the avatar to read out.
+  const strong = all.filter((r) => (r.tier ?? 'best') !== 'also_like')
+  const recs = (strong.length > 0 ? strong : all).slice(0, 5)
   if (recs.length === 0) return '[SEARCH_RESULTS]\nNo matches found.'
   const lines = recs.map((rec, i) => {
     const clip =

@@ -26,6 +26,7 @@ export interface SearchRecommendation {
   clip_start: string | null
   clip_end: string | null
   confidence: number
+  tier?: 'best' | 'similar' | 'also_like'
 }
 
 export interface CuratedSearchResponse {

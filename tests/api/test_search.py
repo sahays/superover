@@ -43,7 +43,12 @@ def mock_interpreter():
 def bq_settings():
     """Pin backend + display threshold so tests don't depend on local .env."""
     with patch("api.routes.search.get_settings") as mock_get:
-        mock_get.return_value = MagicMock(search_backend="bigquery", search_display_max_distance=1.05)
+        mock_get.return_value = MagicMock(
+            search_backend="bigquery",
+            search_display_max_distance=1.05,
+            search_best_max_distance=0.35,
+            search_similar_max_distance=0.41,
+        )
         yield mock_get
 
 
@@ -111,7 +116,12 @@ class TestSearchVideos:
     ):
         mock_search_client.search_videos.return_value = []
         with patch("api.routes.search.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(search_backend="bigtable", search_display_max_distance=0.6)
+            mock_settings.return_value = MagicMock(
+                search_backend="bigtable",
+                search_display_max_distance=0.6,
+                search_best_max_distance=0.35,
+                search_similar_max_distance=0.41,
+            )
             resp = client.post("/api/search/videos", json={"query": "koi comedy clip"}, headers=MASTER)
         assert resp.status_code == 200
         mock_interpreter.interpret_query.assert_not_called()

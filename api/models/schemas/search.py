@@ -98,6 +98,7 @@ class SearchRecommendation(BaseModel):
     clip_start: Optional[str] = None
     clip_end: Optional[str] = None
     confidence: float = Field(ge=0, le=1)
+    tier: str = Field("best", description="Display tier: best | similar | also_like")
 
 
 class CuratedSearchResponse(BaseModel):
