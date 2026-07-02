@@ -278,12 +278,21 @@ export default function SearchPage() {
             </button>
           )}
         </div>
-        <p className="text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
+        <p className="text-muted-foreground mt-1 flex items-center gap-x-3 gap-y-1 flex-wrap">
           <span>Powered by</span>
           <img src="/gemini-logo.svg" alt="Gemini" className="h-5 inline-block dark:invert" />
-          <span>&amp;</span>
-          <img src="/bigquery-logo.svg" alt="BigQuery" className="h-5 inline-block" />
-          <span>BigQuery</span>
+          <span className="inline-flex items-center gap-1.5">
+            <img src="/firestore-logo.svg" alt="Firestore" className="h-5 inline-block" />
+            Firestore
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <img src="/cloud-run-logo.svg" alt="Cloud Run" className="h-5 inline-block" />
+            Cloud Run
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <img src="/bigtable-logo.svg" alt="Bigtable" className="h-5 inline-block" />
+            Bigtable
+          </span>
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
