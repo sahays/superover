@@ -10,7 +10,9 @@ python-multipart==0.0.20
 # has no attribute 'session') when no ADC file is present.
 google-auth>=2.55.0
 google-cloud-storage==2.19.0
-google-cloud-firestore==2.20.0
+# >=2.21 required: 2.20 caps protobuf <6 which conflicts with
+# google-cloud-bigtable >=2.40 (needs protobuf >=6.33)
+google-cloud-firestore==2.28.0
 google-genai>=1.65.0
 
 # Video Processing (Transcoder API)
