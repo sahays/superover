@@ -159,24 +159,26 @@ const ACK_GENERATION_CAP_MS = 8000
 //
 // Timestamps come from persistent session-level listeners (see the refs in
 // the component) so an ack that started before this is awaited is still
-// observed. Guards, per the stale-event lessons above:
-//   - require an audio chunk AFTER `sinceTs` (a turn-complete from closing
-//     the user's input turn arrives before any ack audio — ignore it)
-//   - require the turn-complete to arrive AFTER the latest audio chunk
-//     (mid-generation, chunks keep arriving, so lastTC < lastAudio until
+// observed. IMPORTANT: "media" means audio-chunk OR video-chunk — in video
+// mode the audio rides inside the MP4 and `audio-chunk` never fires.
+// Guards, per the stale-event lessons above:
+//   - require a media chunk AFTER `sinceTs` (a turn-complete from closing
+//     the user's input turn arrives before any ack media — ignore it)
+//   - require the turn-complete to arrive AFTER the latest media chunk
+//     (mid-generation, chunks keep arriving, so lastTC < lastMedia until
 //     the turn is genuinely done)
 async function waitForAckGenerated(
   sinceTs: number,
-  lastAudioChunkAt: () => number,
+  lastMediaChunkAt: () => number,
   lastTurnCompleteAt: () => number,
   capMs: number = ACK_GENERATION_CAP_MS,
 ): Promise<void> {
   const startedAt = Date.now()
   for (;;) {
     if (Date.now() - startedAt >= capMs) return
-    const audioAt = lastAudioChunkAt()
+    const mediaAt = lastMediaChunkAt()
     const tcAt = lastTurnCompleteAt()
-    if (audioAt > sinceTs && tcAt > audioAt) return
+    if (mediaAt > sinceTs && tcAt > mediaAt) return
     await new Promise((r) => setTimeout(r, 80))
   }
 }
@@ -211,24 +213,28 @@ async function waitForModelSpeechEnd(
   const startedAt = Date.now()
   // Phase 1: wait for first audio chunk, then `turn-complete` (or the safety cap).
   await new Promise<void>((resolve) => {
-    let heardAudio = false
+    let heardMedia = false
     let done = false
     let hardTimer: ReturnType<typeof setTimeout> | null = null
     const finish = () => {
       if (done) return
       done = true
       session.removeEventListener('turn-complete', onTurnComplete)
-      session.removeEventListener('audio-chunk', onAudio)
+      session.removeEventListener('audio-chunk', onMedia)
+      session.removeEventListener('video-chunk', onMedia)
       if (hardTimer) clearTimeout(hardTimer)
       resolve()
     }
-    const onAudio = () => {
-      heardAudio = true
+    // Audio-only mode delivers audio-chunk; video mode delivers video-chunk
+    // (audio muxed inside the MP4). Either counts as "the model is speaking".
+    const onMedia = () => {
+      heardMedia = true
     }
     const onTurnComplete = () => {
-      if (heardAudio) finish()
+      if (heardMedia) finish()
     }
-    session.addEventListener('audio-chunk', onAudio)
+    session.addEventListener('audio-chunk', onMedia)
+    session.addEventListener('video-chunk', onMedia)
     session.addEventListener('turn-complete', onTurnComplete)
     hardTimer = setTimeout(finish, hardCapMs)
   })
@@ -303,7 +309,8 @@ export function AvatarSearchPanel({
   // Persistent event timestamps for waitForAckGenerated — attached for the
   // whole session so an auto-ack that starts before the pipeline awaits it
   // is still observed (per-await listeners miss already-fired events).
-  const lastAudioChunkAtRef = useRef(0)
+  // Media = audio-chunk OR video-chunk (video mode muxes audio in the MP4).
+  const lastMediaChunkAtRef = useRef(0)
   const lastTurnCompleteAtRef = useRef(0)
 
   const live = useAvatarLiveSession({
@@ -405,16 +412,18 @@ export function AvatarSearchPanel({
     if (live.status !== 'connected') return
     const session = live.sessionRef.current
     if (!session) return
-    const onAudio = () => {
-      lastAudioChunkAtRef.current = Date.now()
+    const onMedia = () => {
+      lastMediaChunkAtRef.current = Date.now()
     }
     const onTurnComplete = () => {
       lastTurnCompleteAtRef.current = Date.now()
     }
-    session.addEventListener('audio-chunk', onAudio)
+    session.addEventListener('audio-chunk', onMedia)
+    session.addEventListener('video-chunk', onMedia)
     session.addEventListener('turn-complete', onTurnComplete)
     return () => {
-      session.removeEventListener('audio-chunk', onAudio)
+      session.removeEventListener('audio-chunk', onMedia)
+      session.removeEventListener('video-chunk', onMedia)
       session.removeEventListener('turn-complete', onTurnComplete)
     }
   }, [live.status, live.sessionRef])
@@ -486,7 +495,7 @@ export function AvatarSearchPanel({
       log('ack: awaiting auto-response generation')
       await waitForAckGenerated(
         pipelineStartTs,
-        () => lastAudioChunkAtRef.current,
+        () => lastMediaChunkAtRef.current,
         () => lastTurnCompleteAtRef.current,
       )
       log('ack: generation done', { ms: Math.round(performance.now() - ackStart) })
@@ -512,7 +521,9 @@ export function AvatarSearchPanel({
         session.sendText(
           `${buildSearchResultsPayload(response)}\n\n` +
             'Explain the best matches to the user in 2-3 short spoken sentences, in your ' +
-            'usual voice and personality. Stay grounded entirely in the [SEARCH_RESULTS] ' +
+            'usual voice and personality. Open with a brief natural lead-in (e.g. ' +
+            '"Alright — here\'s what I found") so it flows smoothly from whatever you ' +
+            'were just saying. Stay grounded entirely in the [SEARCH_RESULTS] ' +
             'list. Do not name any film, actor, or scene that is not in it.',
         )
       }

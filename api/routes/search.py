@@ -517,7 +517,6 @@ async def search_videos(request: SearchRequest, http_request: Request):
         interpreted_query = None
         search_query = request.query
 
-        interpreter = get_search_query_interpreter()
         audio_bytes = None
         if request.audio:
             try:
@@ -537,6 +536,9 @@ async def search_videos(request: SearchRequest, http_request: Request):
         # the avatar mid-utterance. Offload each to a worker thread via
         # asyncio.to_thread so the loop stays free to forward avatar frames.
         if audio_bytes:
+            # Constructed lazily: the bigtable text path never uses it, and
+            # first-call client construction costs ~200ms.
+            interpreter = get_search_query_interpreter()
             interpreted_query = await asyncio.to_thread(
                 interpreter.interpret_query,
                 text=request.query if request.query.strip() else None,
@@ -555,6 +557,7 @@ async def search_videos(request: SearchRequest, http_request: Request):
                     detail="Query text or audio is required",
                 )
         else:
+            interpreter = get_search_query_interpreter()
             interpreted_query = await asyncio.to_thread(interpreter.interpret_query, text=request.query)
             if interpreted_query != request.query.strip():
                 search_query = interpreted_query
