@@ -20,7 +20,9 @@ class AvatarsMixin:
 
     def list_avatars(self) -> List[Dict[str, Any]]:
         query = self.avatars.order_by("created_at", direction=firestore.Query.DESCENDING)
-        return [doc.to_dict() for doc in query.stream()]
+        # to_dict() is typed dict | None (None only for nonexistent docs,
+        # which stream() never yields) — filter to satisfy the narrower type.
+        return [data for doc in query.stream() if (data := doc.to_dict()) is not None]
 
     def get_avatar(self, avatar_id: str) -> Optional[Dict[str, Any]]:
         doc = self.avatars.document(avatar_id).get()
