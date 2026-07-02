@@ -153,6 +153,44 @@ class TestSync:
             cells = {m.qualifier if isinstance(m.qualifier, str) else m.qualifier.decode(): m for m in call.args[1]}
             assert cells["text_content"].new_value.decode().startswith("Title: Sunflower. Cast: Sunil Grover.")
 
+    def test_native_title_cast_skips_enricher(self, bt):
+        result_data = {
+            "content_title": "Sunflower",
+            "cast": ["Sunil Grover", "Ranvir Shorey"],
+            "summary": "comedy in a housing society",
+        }
+        bt.sync_scene_result(
+            result_id="r1",
+            video_id="v1",
+            video_filename="sunflower.mp4",
+            scene_job_id=None,
+            chunk_index=None,
+            text_content="whole video text",
+            timestamp_start=None,
+            timestamp_end=None,
+            result_data_json=__import__("json").dumps(result_data),
+        )
+        bt.mock_enricher.enrich.assert_not_called()
+        _, mutations = bt.mock_table.mutate_row.call_args.args
+        cells = {m.qualifier if isinstance(m.qualifier, str) else m.qualifier.decode(): m for m in mutations}
+        text = cells["text_content"].new_value.decode()
+        assert text.startswith("Title: Sunflower. Cast: Sunil Grover, Ranvir Shorey.")
+
+    def test_enricher_fallback_when_no_native_fields(self, bt):
+        bt.mock_enricher.enrich.return_value = "Title: X."
+        bt.sync_scene_result(
+            result_id="r1",
+            video_id="v1",
+            video_filename="x.mp4",
+            scene_job_id=None,
+            chunk_index=None,
+            text_content="text",
+            timestamp_start=None,
+            timestamp_end=None,
+            result_data_json='{"summary": "something"}',
+        )
+        bt.mock_enricher.enrich.assert_called_once()
+
     def test_precomputed_embedding_reembedded_when_blurb_changes_text(self, bt):
         bt.mock_enricher.enrich.return_value = "Title: X."
         bt.sync_scene_result(

@@ -64,6 +64,20 @@ def _decode(value: Any) -> Any:
     return value
 
 
+def _native_blurb(result_data: dict) -> str:
+    """'Title: … Cast: …' from the analysis's own content_title/cast fields."""
+    parts: list[str] = []
+    title = result_data.get("content_title")
+    if isinstance(title, str) and title.strip():
+        parts.append(f"Title: {title.strip()}.")
+    cast = result_data.get("cast")
+    if isinstance(cast, list):
+        names = [c.strip() for c in cast if isinstance(c, str) and c.strip()]
+        if names:
+            parts.append("Cast: " + ", ".join(names) + ".")
+    return " ".join(parts)
+
+
 class BigtableClient:
     """Client for Bigtable scene embedding search operations."""
 
@@ -117,14 +131,18 @@ class BigtableClient:
         if not isinstance(result_data, dict):
             result_data = {}
 
-        # Title/cast blurb (one Flash call, sync-time only): analyses label
-        # people by character, so actor names never reach the index without
-        # it — appended to every row so name queries match on text.
-        blurb = get_content_enricher().enrich(
-            video_filename,
-            result_data.get("chunk_summary") or result_data.get("summary"),
-            result_data.get("genre"),
-        )
+        # Title/cast blurb, prepended to every row so actor-name queries match
+        # on text. Preferred source: the analysis itself (content_title/cast,
+        # emitted natively by prompts after the 2026-07 prompt update).
+        # Fallback for older analyses: one sync-time Flash call that infers
+        # title/cast from the filename + summary.
+        blurb = _native_blurb(result_data)
+        if not blurb:
+            blurb = get_content_enricher().enrich(
+                video_filename,
+                result_data.get("chunk_summary") or result_data.get("summary"),
+                result_data.get("genre"),
+            )
         if blurb:
             text_content = f"{blurb} {text_content}"
 

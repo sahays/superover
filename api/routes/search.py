@@ -61,6 +61,17 @@ def _build_embedding_text(result_data: dict) -> str:
     """
     parts: list[str] = []
 
+    # --- Native title/cast (analyses made after the content_title/cast
+    # prompt update carry these; see scene_analysis_schema.py) ---
+    title = result_data.get("content_title")
+    if isinstance(title, str) and title.strip():
+        parts.append(f"Title: {title.strip()}")
+    cast = result_data.get("cast")
+    if isinstance(cast, list):
+        names = [c.strip() for c in cast if isinstance(c, str) and c.strip()]
+        if names:
+            parts.append("Cast: " + ", ".join(names))
+
     # --- Top-level classification fields ---
     for key in ("genre", "type", "content_type", "category", "sub_category"):
         val = result_data.get(key)
@@ -459,6 +470,14 @@ def _extract_metadata(result_data: dict) -> dict:
     meta["genre"] = result_data.get("genre")
     meta["content_type"] = result_data.get("type") or result_data.get("content_type")
 
+    # Native cast (newer analyses); the legacy scenes[].people path below
+    # only overrides when this is absent.
+    cast = result_data.get("cast")
+    if isinstance(cast, list):
+        names = [c.strip() for c in cast if isinstance(c, str) and c.strip()]
+        if names:
+            meta["actors"] = names
+
     scenes = result_data.get("scenes")
     if isinstance(scenes, list) and scenes:
         first = scenes[0] if isinstance(scenes[0], dict) else {}
@@ -484,7 +503,7 @@ def _extract_metadata(result_data: dict) -> dict:
                     if name and name not in seen and not name.startswith("Person"):
                         seen.add(name)
                         actors.append(name)
-        if actors:
+        if actors and not meta.get("actors"):
             meta["actors"] = actors
 
     return {k: v for k, v in meta.items() if v}

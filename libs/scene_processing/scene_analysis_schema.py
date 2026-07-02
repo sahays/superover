@@ -20,6 +20,24 @@ SCENE_ANALYSIS_SCHEMA: Dict[str, Any] = {
             "type": "string",
             "description": ("One-paragraph synopsis of what happens in this chunk (3-6 sentences)."),
         },
+        "content_title": {
+            "type": "string",
+            "description": (
+                "Canonical title of the film/show/match this video is from, "
+                "identified from on-screen branding, credits, dialogue, or your "
+                "own knowledge of the content. Omit if unidentifiable."
+            ),
+        },
+        "cast": {
+            "type": "array",
+            "description": (
+                "Real actor names (or player names for sports) you are confident "
+                "appear in this content — from recognizing them on screen or from "
+                "knowing the identified title's cast. Never guess: a wrong name "
+                "poisons search. Omit entirely when unsure."
+            ),
+            "items": {"type": "string"},
+        },
         "cues": {
             "type": "array",
             "description": ("Dialog, narration, and timed audio events covering the chunk."),
@@ -211,6 +229,17 @@ schema. No prose outside the JSON.
 - If this chunk contains the start of a classical story beat (setup, inciting
   incident, rising action, climax, falling action, resolution), emit it.
 - Skip if uncertain. Better to omit than to mislabel.
+
+## content_title / cast  (identify the content itself)
+- `content_title`: the canonical title of the film / show / match this video
+  is from, identified from on-screen branding, credits, title cards, dialogue,
+  or your own knowledge. Omit the field entirely if you cannot identify it.
+- `cast`: real actor names (or player names for sports) you are confident
+  appear in this content — either recognized on screen or known leads of the
+  identified title. Entities remain CHARACTER names; `cast` is where the
+  actors' real names go (e.g. entities: "Sonu"; cast: "Sunil Grover").
+- Never guess a name: a wrong actor poisons downstream search. Omit `cast`
+  entirely when unsure.
 
 ## Quality bar
 - Be specific. "A character speaks" is useless; name them, quote a line.
