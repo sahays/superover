@@ -40,6 +40,7 @@ Two structural observations drove the design:
 - Vector search via GoogleSQL `execute_query`: `COSINE_DISTANCE(TO_VECTOR32(d['embedding']), TO_VECTOR32(@qvec)) … ORDER BY distance LIMIT k`. Embeddings are stored as big-endian float32 bytes (the `TO_VECTOR32` encoding). Row key = `result_id`; owner/video scoping are SQL `WHERE` clauses (KNN is a full scan regardless, fine at this corpus size — 54 rows).
 - Bigtable does not generate embeddings, so `libs/gemini/embeddings.py` calls the Gemini embeddings API explicitly: **`gemini-embedding-001` @ 768 dims**, `RETRIEVAL_DOCUMENT` at sync time / `RETRIEVAL_QUERY` at search time, re-normalized (truncated dims aren't unit-norm).
 - Sync semantics change: embedding is synchronous, so `/search/sync` marks Firestore `ready` immediately (no `pending` → poll cycle as with BQ's async `AI.EMBED`).
+- **Scene-level rows restore clip recommendations** (added same day): the curator used to localize clips semantically from `scenes[]`; deterministic ranking can't. Sync now writes one row per timed scene (key `result_id#s{i}`, text = genre + scene summary + people via `libs/scene_clips.py`, timestamps = scene start/end) alongside the whole-video row — KNN retrieves the specific moment and ranking emits `clip` recs naturally. Corpus went 54 → 468 rows; KNN stays ~50ms. Housekeeping (`get_synced_result_ids`, `delete_synced_result`) treats base+scene rows as one logical result.
 
 ### 3. Drop the interpreter LLM for text queries (kills the 0.2–2.5s tail)
 
