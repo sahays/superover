@@ -133,6 +133,9 @@ export default function SearchPage() {
     async (audio?: string, audioMime?: string) => {
       if (!query.trim() && !audio) return
       setSearching(true)
+      // Clear stale cards so the loading animation shows during a re-search
+      // (results now render whenever curatedResponse exists).
+      setCuratedResponse(null)
       setSearchDuration(null)
       const startTime = performance.now()
 
@@ -350,11 +353,13 @@ export default function SearchPage() {
         <p className="text-sm text-destructive mb-4">{micError}</p>
       )}
 
-      {/* Loading Animation */}
-      {searching && <SearchLoadingAnimation />}
+      {/* Loading Animation — only while there's nothing to show yet. In
+          avatar mode `searching` stays true through the ack/narration, but
+          cards must render the instant the fetch resolves. */}
+      {searching && !curatedResponse && <SearchLoadingAnimation />}
 
       {/* Results */}
-      {!searching && curatedResponse && (
+      {curatedResponse && (
         <div className="space-y-6">
           {/* Results summary */}
           {searchDuration != null && totalResults > 0 && (

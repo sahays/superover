@@ -92,6 +92,41 @@ class TestSync:
         )
         bt.embedder.embed.assert_not_called()
 
+    def test_sync_fans_out_scene_rows_with_clip_times(self, bt):
+        result_data = {
+            "genre": "Drama",
+            "scenes": [
+                {
+                    "start_time": "00:00:05.000",
+                    "end_time": "00:00:31.500",
+                    "summary": "A tense courtroom exchange",
+                    "people": [{"label": "Judge Rao"}],
+                },
+                {"summary": "untimed scene, skipped"},
+            ],
+        }
+        bt.sync_scene_result(
+            result_id="r1",
+            video_id="v1",
+            video_filename="clip.mp4",
+            scene_job_id=None,
+            chunk_index=None,
+            text_content="whole video text",
+            timestamp_start=None,
+            timestamp_end=None,
+            result_data_json=__import__("json").dumps(result_data),
+        )
+        calls = bt.mock_table.mutate_row.call_args_list
+        assert len(calls) == 2  # base row + 1 timed scene row
+        assert calls[0].args[0] == "r1"
+        scene_key, scene_mutations = calls[1].args
+        assert scene_key == "r1#s0"
+        cells = {m.qualifier if isinstance(m.qualifier, str) else m.qualifier.decode(): m for m in scene_mutations}
+        assert cells["timestamp_start"].new_value == b"00:00:05"
+        assert cells["timestamp_end"].new_value == b"00:00:31"
+        scene_text = cells["text_content"].new_value.decode()
+        assert "courtroom" in scene_text and "Judge Rao" in scene_text and "Drama" in scene_text
+
 
 @pytest.mark.unit
 class TestSearch:
@@ -164,8 +199,17 @@ class TestHousekeeping:
         statuses = bt.check_embedding_statuses(["r1", "r2", "missing"])
         assert statuses == {"r1": "ready", "r2": "ready"}
 
-    def test_delete_removes_row(self, bt):
+    def test_synced_ids_collapse_scene_rows(self, bt):
+        bt.mock_data_client.execute_query.return_value = iter(
+            [_fake_row({"result_id": b"r1"}), _fake_row({"result_id": b"r1#s0"}), _fake_row({"result_id": b"r1#s1"})]
+        )
+        assert bt.get_synced_result_ids() == {"r1"}
+
+    def test_delete_removes_base_and_scene_rows(self, bt):
+        bt.mock_data_client.execute_query.return_value = iter(
+            [_fake_row({"row_key": b"r1"}), _fake_row({"row_key": b"r1#s0"})]
+        )
         bt.delete_synced_result("r1")
-        row_key, mutations = bt.mock_table.mutate_row.call_args.args
-        assert row_key == "r1"
-        assert type(mutations[0]).__name__ == "DeleteAllFromRow"
+        deleted = [c.args[0] for c in bt.mock_table.mutate_row.call_args_list]
+        assert deleted == ["r1", "r1#s0"]
+        assert all(type(c.args[1][0]).__name__ == "DeleteAllFromRow" for c in bt.mock_table.mutate_row.call_args_list)

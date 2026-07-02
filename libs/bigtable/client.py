@@ -12,6 +12,7 @@ Row key = result_id (searches are full scans over this small table anyway, so
 no key-prefix scoping is needed; owner/video filters are SQL WHERE clauses).
 """
 
+import json
 import logging
 import struct
 from functools import lru_cache
@@ -21,6 +22,11 @@ from google.cloud.bigtable.data import BigtableDataClient, SetCell
 
 from config import get_settings
 from libs.gemini.embeddings import get_text_embedder
+from libs.scene_clips import build_scene_text, extract_scene_entries
+
+# Scene rows are keyed "{result_id}#s{i}". The base (whole-video) row keeps
+# the bare result_id key; housekeeping treats the set as one logical result.
+SCENE_KEY_SEP = "#s"
 
 logger = logging.getLogger(__name__)
 
@@ -89,31 +95,70 @@ class BigtableClient:
         owner: Optional[str] = None,
         embedding: Optional[list[float]] = None,
     ) -> None:
-        """Embed and write one scene result. The row is searchable on return.
+        """Embed and write one scene result. Searchable on return.
 
-        `embedding` lets callers (e.g. the migration script) supply a
-        precomputed vector; otherwise text_content is embedded here.
+        Writes the whole-video row (key = result_id) plus one row per timed
+        scene (key = result_id#s{i}) so KNN can retrieve the specific moment
+        a query targets and ranking can emit `clip` recommendations — the
+        clip localization the curator LLM used to do semantically.
+
+        `embedding` lets callers supply a precomputed vector for the base
+        row; scene rows always embed their own text here.
         """
         logger.info(f"Syncing result {result_id} for video {video_id} (text_content length: {len(text_content)})")
         vector = embedding or self.embedder.embed(text_content)
+        self._write_row(
+            row_key=result_id,
+            values={
+                "result_id": result_id,
+                "video_id": video_id,
+                "video_filename": video_filename,
+                "scene_job_id": scene_job_id,
+                "chunk_index": str(chunk_index) if chunk_index is not None else None,
+                "text_content": text_content,
+                "timestamp_start": timestamp_start,
+                "timestamp_end": timestamp_end,
+                "result_data_json": result_data_json,
+                "gcs_path": gcs_path,
+                "owner": owner or None,
+            },
+            vector=vector,
+        )
 
-        values: dict[str, Optional[str]] = {
-            "result_id": result_id,
-            "video_id": video_id,
-            "video_filename": video_filename,
-            "scene_job_id": scene_job_id,
-            "chunk_index": str(chunk_index) if chunk_index is not None else None,
-            "text_content": text_content,
-            "timestamp_start": timestamp_start,
-            "timestamp_end": timestamp_end,
-            "result_data_json": result_data_json,
-            "gcs_path": gcs_path,
-            "owner": owner or None,
-        }
+        result_data: dict = {}
+        if result_data_json:
+            try:
+                result_data = json.loads(result_data_json)
+            except (json.JSONDecodeError, TypeError):
+                result_data = {}
+        entries = extract_scene_entries(result_data) if isinstance(result_data, dict) else []
+        for i, entry in enumerate(entries):
+            scene_text = build_scene_text(entry, result_data)
+            self._write_row(
+                row_key=f"{result_id}{SCENE_KEY_SEP}{i}",
+                values={
+                    "result_id": f"{result_id}{SCENE_KEY_SEP}{i}",
+                    "video_id": video_id,
+                    "video_filename": video_filename,
+                    "scene_job_id": scene_job_id,
+                    "chunk_index": str(i),
+                    "text_content": scene_text,
+                    "timestamp_start": entry["start"],
+                    "timestamp_end": entry["end"],
+                    "result_data_json": result_data_json,
+                    "gcs_path": gcs_path,
+                    "owner": owner or None,
+                },
+                vector=self.embedder.embed(scene_text),
+            )
+        logger.info(
+            f"Bigtable write complete for result {result_id} ({len(vector)}-dim embedding, {len(entries)} scene row(s))"
+        )
+
+    def _write_row(self, row_key: str, values: dict[str, Optional[str]], vector: list[float]) -> None:
         mutations = [SetCell(COLUMN_FAMILY, col, val.encode("utf-8")) for col, val in values.items() if val is not None]
         mutations.append(SetCell(COLUMN_FAMILY, "embedding", floats_to_bytes(vector)))
-        self.table.mutate_row(result_id, mutations)
-        logger.info(f"Bigtable write complete for result {result_id} ({len(vector)}-dim embedding)")
+        self.table.mutate_row(row_key, mutations)
 
     def check_embedding_statuses(self, result_ids: list[str]) -> dict[str, str]:
         """Embeddings are written synchronously — a present row is 'ready'."""
@@ -175,18 +220,30 @@ class BigtableClient:
     # === Housekeeping ===
 
     def get_synced_result_ids(self) -> set[str]:
-        """Return set of result_ids already in Bigtable (row keys)."""
+        """Return set of logical result_ids in Bigtable (scene-row keys are
+        collapsed onto their base result_id)."""
         sql = f"SELECT CAST(_key AS STRING) AS result_id FROM `{self.table_id}`"
-        ids = {_decode(row["result_id"]) for row in self.client.execute_query(sql, self.instance_id)}
+        ids = {
+            _decode(row["result_id"]).split(SCENE_KEY_SEP, 1)[0]
+            for row in self.client.execute_query(sql, self.instance_id)
+        }
         logger.info(f"Found {len(ids)} synced result IDs in Bigtable")
         return ids
 
     def delete_synced_result(self, result_id: str) -> None:
-        """Remove a synced result row (row key = result_id)."""
+        """Remove a synced result's base row and all its scene rows."""
         from google.cloud.bigtable.data import DeleteAllFromRow
 
-        logger.info(f"Deleting synced result {result_id} from Bigtable")
-        self.table.mutate_row(result_id, [DeleteAllFromRow()])
+        sql = f"""
+        SELECT CAST(_key AS STRING) AS row_key FROM `{self.table_id}`
+        WHERE CAST(_key AS STRING) = @rid
+           OR STARTS_WITH(CAST(_key AS STRING), @scene_prefix)
+        """
+        params = {"rid": result_id, "scene_prefix": f"{result_id}{SCENE_KEY_SEP}"}
+        keys = [_decode(row["row_key"]) for row in self.client.execute_query(sql, self.instance_id, parameters=params)]
+        logger.info(f"Deleting synced result {result_id} from Bigtable ({len(keys)} row(s))")
+        for key in keys:
+            self.table.mutate_row(key, [DeleteAllFromRow()])
 
     def close(self) -> None:
         """Close the data client. Required for short-lived processes (scripts):
