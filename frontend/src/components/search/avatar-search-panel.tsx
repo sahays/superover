@@ -146,13 +146,40 @@ function buildSearchResultsPayload(response: CuratedSearchResponse): string {
   return `[SEARCH_RESULTS]\n${recs.length} match(es):\n${lines.join('\n')}`
 }
 
-// The model's VAD auto-acknowledgement is coordinated by waiting for it to go
-// IDLE (audio drained + quiet), NOT by probing for it — a short auto-ack often
-// finishes before a probe can observe it, which used to fire a redundant second
-// ack (the stutter). `GRACE` lets an expected auto-ack begin producing audio
-// before we'd call the model idle; `QUIET` debounces end-of-audio.
-const AUTO_ACK_GRACE_MS = 1000
-const MODEL_IDLE_QUIET_MS = 700
+// Cap on waiting for the VAD auto-ack's `turn-complete`. If the model never
+// speaks an ack (rare), the narration is sent anyway after this long.
+const ACK_GENERATION_CAP_MS = 8000
+
+// Wait until the auto-ack's GENERATION is done — NOT until its playback
+// drains. `turn-complete` fires once all of the turn's audio has been
+// delivered to the local queue, so it is safe to send the next turn then:
+// the narration generates while the ack is still playing and its audio
+// queues seamlessly behind. (Waiting for drain instead left a multi-second
+// silent gap between ack and narration — the ack can run 10s+ of audio.)
+//
+// Timestamps come from persistent session-level listeners (see the refs in
+// the component) so an ack that started before this is awaited is still
+// observed. Guards, per the stale-event lessons above:
+//   - require an audio chunk AFTER `sinceTs` (a turn-complete from closing
+//     the user's input turn arrives before any ack audio — ignore it)
+//   - require the turn-complete to arrive AFTER the latest audio chunk
+//     (mid-generation, chunks keep arriving, so lastTC < lastAudio until
+//     the turn is genuinely done)
+async function waitForAckGenerated(
+  sinceTs: number,
+  lastAudioChunkAt: () => number,
+  lastTurnCompleteAt: () => number,
+  capMs: number = ACK_GENERATION_CAP_MS,
+): Promise<void> {
+  const startedAt = Date.now()
+  for (;;) {
+    if (Date.now() - startedAt >= capMs) return
+    const audioAt = lastAudioChunkAt()
+    const tcAt = lastTurnCompleteAt()
+    if (audioAt > sinceTs && tcAt > audioAt) return
+    await new Promise((r) => setTimeout(r, 80))
+  }
+}
 
 // Resolves once the model's turn has fully ENDED and the local audio has
 // drained — driven by authoritative signals, with no mid-utterance guesswork:
@@ -215,48 +242,6 @@ async function waitForModelSpeechEnd(
   }
 }
 
-// Wait until the model is IDLE — its audio queue has drained AND no new audio
-// chunk has arrived for `quietMs`. Uses the audio sink (`getAudioRemainingMs`)
-// as ground truth, so it is correct whether the model's turn is still playing,
-// just finished, or already over before this was called — unlike a
-// `turn-complete`/first-audio listener, which misses a turn that ended before
-// we attached. `graceMs` holds off the "idle" verdict at the very start so an
-// expected-but-not-yet-started utterance (the VAD auto-ack) has a moment to
-// begin producing audio; once audio is flowing we wait for it to fully drain.
-async function waitForModelIdle(
-  session: {
-    addEventListener: (t: string, h: () => void) => void
-    removeEventListener: (t: string, h: () => void) => void
-  },
-  getAudioRemainingMs: () => number,
-  opts: { graceMs?: number; quietMs?: number; hardCapMs?: number } = {},
-): Promise<void> {
-  const graceMs = opts.graceMs ?? 0
-  const quietMs = opts.quietMs ?? 600
-  const hardCapMs = opts.hardCapMs ?? SPEECH_HARD_CAP_MS
-  const startedAt = Date.now()
-  let lastAudioAt = 0
-  const onAudio = () => {
-    lastAudioAt = Date.now()
-  }
-  session.addEventListener('audio-chunk', onAudio)
-  try {
-    for (;;) {
-      const now = Date.now()
-      if (now - startedAt >= hardCapMs) return
-      const graceElapsed = now - startedAt >= graceMs
-      const drained = getAudioRemainingMs() <= 0
-      // Quiet once no audio has arrived for `quietMs`. If none ever arrived,
-      // treat "quiet" as satisfied the moment the grace window elapses.
-      const quiet = lastAudioAt === 0 ? graceElapsed : now - lastAudioAt >= quietMs
-      if (graceElapsed && drained && quiet) return
-      await new Promise((r) => setTimeout(r, 80))
-    }
-  } finally {
-    session.removeEventListener('audio-chunk', onAudio)
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -315,6 +300,11 @@ export function AvatarSearchPanel({
   // Stable ref to runPipeline so the transcript handler closure always
   // sees the latest version without re-binding the listener.
   const runPipelineRef = useRef<(query: string) => Promise<void>>(async () => {})
+  // Persistent event timestamps for waitForAckGenerated — attached for the
+  // whole session so an auto-ack that starts before the pipeline awaits it
+  // is still observed (per-await listeners miss already-fired events).
+  const lastAudioChunkAtRef = useRef(0)
+  const lastTurnCompleteAtRef = useRef(0)
 
   const live = useAvatarLiveSession({
     avatarId: avatarId ?? '',
@@ -409,14 +399,35 @@ export function AvatarSearchPanel({
     return () => session.removeEventListener('transcript', handler)
   }, [live.status, live.sessionRef])
 
-  // Event-driven pipeline. The search backend answers in ~0.2-0.5s — faster
-  // than the avatar's spoken ack — so there is no wait to fill and no small
-  // talk. Every utterance is allowed to finish fully before the next one is
-  // sent, so the avatar is never cut off mid-sentence (no clipped audio).
+  // Session-lifetime timestamps of the model's audio/turn events, feeding
+  // waitForAckGenerated (see its comment for the stale-event guards).
+  useEffect(() => {
+    if (live.status !== 'connected') return
+    const session = live.sessionRef.current
+    if (!session) return
+    const onAudio = () => {
+      lastAudioChunkAtRef.current = Date.now()
+    }
+    const onTurnComplete = () => {
+      lastTurnCompleteAtRef.current = Date.now()
+    }
+    session.addEventListener('audio-chunk', onAudio)
+    session.addEventListener('turn-complete', onTurnComplete)
+    return () => {
+      session.removeEventListener('audio-chunk', onAudio)
+      session.removeEventListener('turn-complete', onTurnComplete)
+    }
+  }, [live.status, live.sessionRef])
+
+  // Event-driven pipeline. The search backend answers in ~0.2-0.5s, so there
+  // is no ack phase and no small talk: the overlay caps the model's automatic
+  // VAD response to a couple of words (or silence) and the narration is sent
+  // as soon as that response has GENERATED (its audio may still be playing —
+  // narration audio queues behind it, so speech is continuous, never clipped).
   //
   // Sequence:
   //   1. fire searchApi(query) immediately; cards render the moment it resolves
-  //   2. await the model's VAD auto-ack finishing
+  //   2. await the auto-response's generation completing (not its playback)
   //   3. await the search (already resolved in practice), FSM → summarising
   //   4. sendText([SEARCH_RESULTS] …); await the narration finishing
   const runPipeline = async (query: string) => {
@@ -429,6 +440,7 @@ export function AvatarSearchPanel({
     // here (ack / filler / narration speech) is client-orchestrated, so we
     // trace it in the browser console with elapsed-since-start timestamps.
     const t0 = performance.now()
+    const pipelineStartTs = Date.now()
     const elapsed = () => Math.round(performance.now() - t0)
     const log = (msg: string, extra?: Record<string, unknown>) => {
       // eslint-disable-next-line no-console
@@ -464,24 +476,24 @@ export function AvatarSearchPanel({
         })
       })
 
-      // Step 2: acknowledgement. The model auto-responds to the user's spoken
-      // query on its own (Live VAD) — that IS the ack, shaped into a few warm
-      // persona-true sentences by the system overlay. We do NOT send our own ack
-      // turn: it collided with the in-flight auto-ack (clip) and, when the short
-      // auto-ack finished before our probe saw it, fired a redundant SECOND ack
-      // (the stutter). We just wait for the model to go idle — robust whether
-      // the auto-ack is still playing or already finished.
+      // Step 2: the model auto-responds to the user's speech (Live VAD) —
+      // that response can't be suppressed entirely, but the overlay caps it
+      // at a couple of words ("One moment!") or silence. Wait only for its
+      // GENERATION to complete (never its playback): the narration is sent
+      // the moment generation is done and its audio queues seamlessly behind
+      // whatever ack audio is still playing. No drain wait, no dead gap.
       const ackStart = performance.now()
-      log('ack: awaiting model auto-ack (idle)')
-      await waitForModelIdle(session, remainingMs, {
-        graceMs: AUTO_ACK_GRACE_MS,
-        quietMs: MODEL_IDLE_QUIET_MS,
-      })
-      log('ack: idle', { ms: Math.round(performance.now() - ackStart) })
+      log('ack: awaiting auto-response generation')
+      await waitForAckGenerated(
+        pipelineStartTs,
+        () => lastAudioChunkAtRef.current,
+        () => lastTurnCompleteAtRef.current,
+      )
+      log('ack: generation done', { ms: Math.round(performance.now() - ackStart) })
 
-      // Step 3: hand off to the summary phase. The search (~0.3s) resolves
-      // well before the spoken ack finishes, so this await is instant in
-      // practice; cards already rendered the moment the fetch resolved.
+      // Step 3: hand off to the summary phase. The search (~0.3s) usually
+      // resolves before the micro-ack finishes generating, so this await is
+      // instant in practice; cards already rendered when the fetch resolved.
       const response = await searchPromise
       log('cards: rendered', { e2eMs: elapsed(), ok: !!response })
       dispatch({ type: 'search-resolved' })
