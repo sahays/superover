@@ -53,10 +53,11 @@ The `global` Vertex endpoint gave erratic embedding latency (0.4–1.8s). The re
 
 Cosine distances are model-specific. With `gemini-embedding-001` on this corpus (`scripts/migrate_bq_to_bigtable.py --stats`):
 
-- Genuine queries ("political thrillers", "Zee 5 shows", "free kick in a soccer match"): best matches **0.32–0.40**
-- Chitchat ("Hi Jay, how are you?"): nothing below **0.404**
+- Genuine keyword-style queries ("political thrillers", "Zee 5 shows"): best matches **0.32–0.40**
+- Mood-phrased queries ("I am heartbroken, can you suggest…", "cooking drama show"): best matches **0.40–0.43**
+- Chitchat ("Hi Jay, how are you?"): nothing below **0.404** — the bands overlap, so no absolute threshold separates chitchat from mood queries.
 
-→ `SEARCH_DISPLAY_MAX_DISTANCE=0.40` separates them cleanly (1–5 cards for real queries, 0 for chitchat). The old BQ/text-embedding-005 space clusters at 0.95–1.12; if rolling back, use ~1.05. Recalibrate with `--stats` whenever the embedding model or corpus changes materially.
+→ `SEARCH_DISPLAY_MAX_DISTANCE=0.44` (production value) favors recall: mood-phrased queries get cards; chitchat may show a few loose cards, which is acceptable because the avatar Live model judges the `[SEARCH_RESULTS]` list itself and narrates "nothing fits" when appropriate. A stricter 0.40 gives zero-card chitchat at the cost of zero-card mood queries. The old BQ/text-embedding-005 space clusters at 0.95–1.12; if rolling back, use ~1.05. Recalibrate with `--stats` whenever the embedding model or corpus changes materially.
 
 ## Results (verified locally, Bigtable backend)
 
@@ -87,15 +88,13 @@ The migration re-embeds `text_content` for every BQ row — **vectors are not po
 
 ## Rollout / rollback
 
-Currently: local `.env` runs `SEARCH_BACKEND=bigtable`, `SEARCH_DISPLAY_MAX_DISTANCE=0.40`. Cloud Run is untouched — it still runs the pre-change deployment (curator + BigQuery pipeline).
+**Deployed to production 2026-07-02** (`superover-frontend-00166` code + `00167` config revision): `SEARCH_BACKEND=bigtable`, `SEARCH_DISPLAY_MAX_DISTANCE=0.44`. `deploy.sh` passes the search/embedding env vars from `.env` via `BACKEND_ENVS` (note: `--set-env-vars` replaces the service env wholesale — new settings must be added there). Verified live: 185–275ms totals on real queries, Devanagari Hindi with `interpret=0ms`, chitchat narrated away by the avatar.
 
-To ship:
-1. Commit + `./deploy.sh api` (deploying the code alone already saves ~2.4s on the BQ backend, since the curator is gone).
-2. Set `SEARCH_BACKEND=bigtable` and `SEARCH_DISPLAY_MAX_DISTANCE=0.40` on the Cloud Run `api` service.
-3. Grant the Cloud Run service account `roles/bigtable.user`.
-4. Watch `Search pipeline latency: interpret=… search=… rank=… (backend=…)` via `scripts/fetch-logs.sh`.
+Rollback options:
+- Config-only: set `SEARCH_BACKEND=bigquery` (and threshold ~1.05) on the service — same code, old backend.
+- Full: route traffic back to the pre-change revision, e.g. `gcloud run services update-traffic superover-frontend --region asia-south1 --to-revisions superover-frontend-00165-mgv=100`.
 
-Rollback: set `SEARCH_BACKEND=bigquery` (and threshold ~1.05). No data loss in either direction.
+No data loss in either direction; the BQ table remains intact and re-syncable.
 
 ## Operational notes
 
