@@ -110,8 +110,9 @@ function pipelineReducer(state: PipelineState, event: PipelineEvent): PipelineSt
 // User-pause threshold. We dispatch pipeline-start automatically when no
 // new transcript chunk has arrived for this long while in `listening`.
 // Within-sentence pauses are typically 200-400ms; between-sentence pauses
-// up to ~800ms. 1200ms is comfortably past both.
-const AUTO_STOP_MS = 1200
+// up to ~800ms. 900ms clears both while keeping the pre-search dead time
+// short — with the backend at ~0.3s this window dominates perceived latency.
+const AUTO_STOP_MS = 900
 
 // Warm-up after `setupComplete` — the model is briefly unreliable about
 // handling user audio in the first ~1.5s.
@@ -127,30 +128,6 @@ const SPEECH_HARD_CAP_MS = 15000
 // Covers slop between AudioContext clock and AudioBufferSourceNode's actual
 // stop time, plus a small "natural pause" before the next utterance.
 const PLAYBACK_TAIL_MS = 200
-
-// Small-talk lines the avatar cycles through while the search is in flight, so
-// it keeps the user company instead of going silent. These deliberately ask for
-// two or three sentences (this is the one phase where filler is wanted) and the
-// search-mode system overlay grants permission to be chatty here. Never name
-// titles — nothing is known yet.
-const SMALL_TALK_PROMPTS = [
-  '[SMALL_TALK] Make warm small talk for two or three sentences while the search ' +
-    'runs — react to what they asked for and say you’re looking through the library. ' +
-    'Do not name any movies, actors, or scenes.',
-  '[SMALL_TALK] Keep the user company with two or three friendly sentences — ask ' +
-    'what kind of mood they’re in tonight and what they usually enjoy. ' +
-    'Do not name any movies, actors, or scenes.',
-  '[SMALL_TALK] Fill the wait with two or three upbeat sentences — reassure them ' +
-    'you’re still digging for the best picks and almost there. ' +
-    'Do not name any movies, actors, or scenes.',
-  '[SMALL_TALK] Chat for two or three warm sentences — make a light, friendly ' +
-    'remark and mention you’re scanning the library for good matches. ' +
-    'Do not name any movies, actors, or scenes.',
-]
-
-// Safety backstop on the small-talk loop so a hung search can't make the avatar
-// chatter forever. With a normal ~5-7s search this is rarely past 1-2 turns.
-const MAX_SMALL_TALK_TURNS = 6
 
 // Build the [SEARCH_RESULTS] narration payload from the structured
 // recommendations. The backend no longer writes narration prose (the curator
@@ -432,20 +409,16 @@ export function AvatarSearchPanel({
     return () => session.removeEventListener('transcript', handler)
   }, [live.status, live.sessionRef])
 
-  // Event-driven pipeline. Search does NOT fire until the ack response has
-  // finished — this matches the user-facing intent that the avatar responds
-  // first, *then* the search begins. Every utterance is allowed to finish
-  // fully before the next one is sent, so the avatar is never cut off
-  // mid-sentence (no clipped audio), and small talk loops until results are
-  // ready so there is no dead silence while the user waits.
+  // Event-driven pipeline. The search backend answers in ~0.2-0.5s — faster
+  // than the avatar's spoken ack — so there is no wait to fill and no small
+  // talk. Every utterance is allowed to finish fully before the next one is
+  // sent, so the avatar is never cut off mid-sentence (no clipped audio).
   //
   // Sequence:
-  //   1. sendText(ack)                 — avatar paraphrases the request
-  //   2. await ack done; fire searchApi(query)
-  //   3. small-talk LOOP: speak a line, let it finish, re-check the search;
-  //      if still pending, speak another. Never interrupts, never goes silent.
-  //   4. cards render, FSM → summarising
-  //   5. sendText(summary); await it finishing
+  //   1. fire searchApi(query) immediately; cards render the moment it resolves
+  //   2. await the model's VAD auto-ack finishing
+  //   3. await the search (already resolved in practice), FSM → summarising
+  //   4. sendText([SEARCH_RESULTS] …); await the narration finishing
   const runPipeline = async (query: string) => {
     const session = live.sessionRef.current
     if (!session) return
@@ -472,15 +445,17 @@ export function AvatarSearchPanel({
       // gated behind a speech turn, and the on-screen time reflects reality.
       const startTime = performance.now()
       log('search: fired')
-      let searchDone = false
       const searchPromise: Promise<CuratedSearchResponse | null> = (
         searchApi.searchVideos(query, 20) as Promise<CuratedSearchResponse>
       ).catch(() => null)
       void searchPromise.then((r) => {
-        searchDone = true
         if (r) {
           onResults(r)
-          onDuration(Math.round(elapsed() / 100) / 10)
+          // Displayed duration counts from when the user actually stopped
+          // speaking: the pipeline starts AUTO_STOP_MS after the last
+          // transcript chunk, so add that window back in. Keeps the badge
+          // honest against perceived wait.
+          onDuration(Math.round((elapsed() + AUTO_STOP_MS) / 100) / 10)
         }
         log('search: resolved', {
           e2eMs: elapsed(),
@@ -504,35 +479,14 @@ export function AvatarSearchPanel({
       })
       log('ack: idle', { ms: Math.round(performance.now() - ackStart) })
 
-      // Step 3: small-talk loop — keep the user company until results are ready.
-      // Each line plays in FULL (never clipped). The cards already appear the
-      // instant the search resolves (above), so letting the current line finish
-      // adds friendly chatter rather than dead waiting. Loop exits once done.
-      let turn = 0
-      while (!searchDone && turn < MAX_SMALL_TALK_TURNS) {
-        const prompt = SMALL_TALK_PROMPTS[turn % SMALL_TALK_PROMPTS.length]
-        const talkStart = performance.now()
-        log('small-talk: sending', { turn })
-        const talkDone = waitForModelSpeechEnd(session, remainingMs)
-        session.sendText(prompt)
-        await talkDone
-        log('small-talk: spoken', {
-          turn,
-          ms: Math.round(performance.now() - talkStart),
-        })
-        turn += 1
-      }
-
-      // Step 4: hand off to the summary phase (cards already rendered above).
+      // Step 3: hand off to the summary phase. The search (~0.3s) resolves
+      // well before the spoken ack finishes, so this await is instant in
+      // practice; cards already rendered the moment the fetch resolved.
       const response = await searchPromise
-      log('cards: rendered', {
-        e2eMs: elapsed(),
-        ok: !!response,
-        smallTalkTurns: turn,
-      })
+      log('cards: rendered', { e2eMs: elapsed(), ok: !!response })
       dispatch({ type: 'search-resolved' })
 
-      // Step 5: summary (or apology if search failed). Wait for it to
+      // Step 4: summary (or apology if search failed). Wait for it to
       // finish playing too so the panel returns to idle in lockstep with
       // the avatar going quiet — important for back-to-back demo queries.
       const summaryStart = performance.now()
