@@ -1,0 +1,54 @@
+sequenceDiagram
+    participant User
+    participant API
+    participant Firestore
+    participant Worker as UnifiedWorker
+    participant Transcoder as Transcoder API
+    participant GCS
+    participant Chirp as Speech-to-Text v2 (Chirp 3)
+    participant Gemini
+
+    Note over User,Gemini: Prerequisite — extract speech-optimized audio (dialog_mode)
+    User->>API: POST /media/jobs (dialog_mode=true)
+    API->>Firestore: Create media job (pending)
+    API-->>User: media job_id
+    loop Poll for media jobs
+        Worker->>Firestore: Get pending media job
+        Worker->>Transcoder: Extract audio (mono, fc, 16 kHz)
+        Transcoder->>GCS: Write media_dialog.m4a
+        Worker->>Firestore: Complete (results.audio_path)
+    end
+
+    Note over User,Gemini: Subtitle / transcription job (prompt_type = subtitling | transcription)
+    User->>API: POST /scenes/{video_id}/process (subtitling prompt)
+    API->>Firestore: Create scene job (pending)
+    API-->>User: scene job_id
+
+    loop Poll for scene jobs
+        Worker->>Firestore: Get pending scene job
+        Worker->>Transcoder: Chunk video (~30s segments)
+        Transcoder->>GCS: Write scene_chunks/*.mp4
+
+        alt Sequential (default) / Parallel
+            Worker->>Firestore: Locate completed media job → audio_path
+
+            loop Each chunk (use_chirp = true)
+                Note over Worker: step = "transcribing"
+                Worker->>Chirp: transcribe_gcs(audio_path)  [PASS 1: ASR / timing]
+                Chirp-->>Worker: Timestamped utterances + language
+                Worker->>Worker: format_as_context() → timestamps + hints
+
+                Note over Worker: step = "analyzing"
+                Worker->>Gemini: analyze_chunk(prompt + Chirp context + chunk GCS URI)  [PASS 2: LLM / text]
+                Gemini-->>Worker: raw_text (SRT-formatted subtitles)
+                Worker->>Firestore: save_result → scene_results (raw_text + chirp_transcription)
+            end
+        end
+
+        Worker->>Firestore: Update scene job (completed)
+    end
+
+    User->>API: Fetch scene results
+    API->>Firestore: Get job + results
+    API-->>User: raw_text per chunk
+    Note over User: SRT file assembled client-side on download

@@ -1,0 +1,24 @@
+flowchart TD
+    GOLD["Golden dataset<br/>curated + versioned"] --> R1
+    LIVE["Live corpus<br/>real inputs (videos / scene_results)"] --> R2
+
+    subgraph LADDER["The eval ladder — cheap &amp; frequent → expensive &amp; rare"]
+        direction TB
+        R1["Rung 1 · Deterministic / golden<br/>invariants + WER / timing vs reference<br/>(CI gate — every change)"]
+        R2["Rung 2 · Random picker<br/>seeded, stratified sample of real inputs<br/>(drift watch — scheduled)"]
+        R3["Rung 3 · LLM-judge<br/>rubric-scored quality vs reference<br/>(sampled — pre-release)"]
+        R1 --> R2 --> R3
+    end
+
+    R1 --> FIND["Findings<br/>metrics + flagged cases"]
+    R2 --> FIND
+    R3 --> FIND
+
+    FIND -->|confirmed failure| ADDGOLD["Add golden regression case"]
+    FIND -->|expressible as code| ADDCHECK["Add deterministic check"]
+    FIND -->|quality gap| ITER["Iterate prompt / model"]
+
+    ADDGOLD --> GOLD
+    ADDCHECK --> R1
+    ITER -->|new prompt version| TRACE["Versioned run<br/>traced + comparable"]
+    TRACE --> R1
