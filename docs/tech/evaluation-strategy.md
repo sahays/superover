@@ -89,6 +89,65 @@ Fixed, curated inputs with machine-checkable expectations. Two kinds of checks:
 This rung is fast and essentially free (pure code over stored outputs; it only spends API tokens
 if you regenerate outputs). It is the **CI gate**.
 
+**In practice.** A golden case is a versioned manifest entry plus a human-verified reference file;
+the clip lives under a dedicated GCS eval prefix (paths below are the recommended layout — build
+later):
+
+```yaml
+# evals/datasets/subtitles/manifest.yaml
+version: 2026-07-07.1
+cases:
+  - id: sub-es-clean-001
+    description: Clean single-speaker Spanish news read, no music
+    input:
+      gcs_uri: gs://superover-evals/subtitles/sub-es-clean-001.mp4
+      language: es
+      duration_s: 42.5
+    prompt_type: subtitling            # gates the 2-pass Chirp + Gemini path
+    difficulty: easy
+    tags: [single-speaker, news, non-english]
+    expected:
+      detected_language: es
+      reference: golden/sub-es-clean-001.srt   # the answer key
+      max_wer: 0.08
+      max_timing_offset_s: 0.30
+```
+
+The reference it scores against (`golden/sub-es-clean-001.srt`):
+
+```srt
+1
+00:00:00,300 --> 00:00:03,120
+Buenas noches, bienvenidos al informativo de las nueve.
+
+2
+00:00:03,400 --> 00:00:06,900
+Comenzamos con la última hora desde el parlamento.
+```
+
+The check parses the candidate output — the timestamped transcript in
+`scene_results.result_data.raw_text`, the same content the client renders to SRT — asserts the
+invariants, then scores against the reference:
+
+```python
+# invariants — a failure is a bug; block the change
+cues = parse_cues(candidate_raw_text)          # adapts to the prompt's output format
+assert cues, "no cues produced"
+for a, b in zip(cues, cues[1:]):
+    assert a.end <= b.start                                  # monotonic, non-overlapping
+for c in cues:
+    assert 0 <= c.start and c.end <= case.duration_s         # within clip bounds
+    assert len(c.text) / (c.end - c.start) <= 21             # readable (chars/sec cap)
+
+# golden metrics — thresholded, NOT exact-string match (futile at temp=1.0)
+assert detect_language(candidate_text) == case.expected.detected_language
+assert jiwer.wer(reference_text, candidate_text) <= case.expected.max_wer
+assert max_cue_offset(cues, reference_cues)      <= case.expected.max_timing_offset_s
+```
+
+(The exact `raw_text` shape depends on the user-authored prompt, so `parse_cues` normalizes it;
+see the [subtitle doc](subtitle-2pass-sequence.md).)
+
 ### Rung 2 — Random picker
 
 Deterministic golden sets are small and go stale; the long tail lives in production. Rung 2
@@ -102,6 +161,38 @@ checks, and queues results for review.
 - There's no golden answer here, so correctness can't be scored deterministically — pair it with
   Rung 3 for quality, and **promote every confirmed failure into the Rung-1 golden set** (the
   ratchet).
+
+**In practice.** The picker records its seed and the exact draw so the run reproduces, applies the
+Rung-1 *invariants* (no reference, so no WER), and files anything that fails for review:
+
+```jsonc
+// the draw — reproducible from (seed, corpus snapshot)
+{
+  "eval_run_id": "rung2-2026-07-07",
+  "seed": 20260707,
+  "stratify_by": ["language", "duration_bucket"],
+  "drawn": [
+    { "video_id": "v_9f2a", "language": "hi", "duration_s": 118.2, "bucket": "60-180s" },
+    { "video_id": "v_1c07", "language": "en", "duration_s": 22.9, "bucket": "0-60s"   }
+  ]
+}
+```
+
+```jsonc
+// per-case result on an unlabeled REAL input — invariants only
+{
+  "video_id": "v_9f2a",
+  "checks": { "valid_srt": true, "monotonic_cues": true,
+              "within_bounds": false, "reading_speed_ok": true },
+  "verdict": "flag",
+  "flags": ["last_cue_end_exceeds_clip_by_1.8s"],   // Gemini invented timing past the audio
+  "review_status": "pending"                         // → confirm → promote to a Rung-1 golden case
+}
+```
+
+The drift this catches: `within_bounds` fails on a real Hindi clip the small curated set never
+covered — exactly the long tail Rung 2 exists to surface, now on its way to becoming a permanent
+Rung-1 case.
 
 ### Rung 3 — LLM-judge
 
@@ -121,6 +212,62 @@ punctuation/readability, speaker attribution, naturalness**.
   comparisons; verbosity bias → cap on length).
 - **Sample, don't judge everything** — it costs tokens. Use judge output for *trends and
   flagging*, not as a single-case oracle.
+
+**In practice.** The judge is a pinned model (`gemini-3.5-flash`, distinct from the candidate)
+called through the **same structured-output mechanism as `SceneAnalyzer`** — a rubric prompt plus
+a `response_schema`, run at low temperature. It grades *reference-based*: it gets the golden
+transcript (and optionally the audio) to score against.
+
+Rubric schema (the judge must return exactly this):
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "transcription_faithfulness": { "type": "integer", "minimum": 1, "maximum": 5 },
+    "translation_quality":        { "type": "integer", "minimum": 1, "maximum": 5 },
+    "readability":                { "type": "integer", "minimum": 1, "maximum": 5 },
+    "timing_sync":                { "type": "integer", "minimum": 1, "maximum": 5 },
+    "rationale": { "type": "string" },
+    "verdict":   { "type": "string", "enum": ["pass", "fail", "flag"] }
+  },
+  "required": ["transcription_faithfulness", "translation_quality",
+               "readability", "timing_sync", "rationale", "verdict"]
+}
+```
+
+Judge prompt (reference-based, bias-aware):
+
+```text
+You are grading subtitles for accuracy and readability, NOT length.
+Source language: es. Target: es.
+
+REFERENCE (human-verified):
+<contents of golden/sub-es-clean-001.srt>
+
+CANDIDATE (under test):
+<candidate raw_text>
+
+Score each criterion 1–5 against the reference and give a one-sentence rationale that
+cites a specific cue. Do not reward verbosity. Return JSON matching the schema.
+```
+
+Example verdict for `sub-es-clean-001`:
+
+```json
+{
+  "transcription_faithfulness": 5,
+  "translation_quality": 4,
+  "readability": 3,
+  "timing_sync": 5,
+  "rationale": "Text matches the reference, but cues 4 and 7 exceed ~21 CPS and read too fast.",
+  "verdict": "flag"
+}
+```
+
+The `readability: 3` + `flag` is the actionable signal: if it recurs across cases, encode it as a
+deterministic chars-per-second check in Rung 1 (cheaper, permanent) — that's the loop closed in
+"Iterating & using the findings" below.
 
 ## Dataset design — what to include
 
