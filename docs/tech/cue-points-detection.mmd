@@ -1,0 +1,21 @@
+flowchart TD
+    VID["Source video (GCS)"] --> TC["Transcoder API"]
+    TC -->|"full-mix stereo 48 kHz"| MIX["media_audio<br/>(music + dialogue)"]
+    TC -->|"dialogue mono 16 kHz"| DLG["media_dialog<br/>(speech-optimized)"]
+
+    subgraph L1["Layer 1 · Deterministic signals — CPU-only, accurate timestamps"]
+        direction TB
+        DLG --> ASR["Chirp 3 ASR<br/>word timestamps → speech regions &amp; gaps"]
+        MIX --> MUS["Music start / stop<br/>speech/music segmentation"]
+        MIX --> SIL["Silence / VAD<br/>low-energy cut points"]
+        ASR --> FUSE["Signal fusion<br/>typed timeline: speech | music | silence + confidence"]
+        MUS --> FUSE
+        SIL --> FUSE
+    end
+
+    FUSE -->|"anchors as context"| GEM["Layer 2 · Gemini<br/>structured labeling (response_schema)<br/>selects + snaps to anchors — never invents timing"]
+    GEM --> RES["cue_points result<br/>Firestore scene_results"]
+
+    RES --> ADS["Ad insertion<br/>(ad_break)"]
+    RES --> SKIP["Skip intro / recap<br/>(intro_*, recap_*)"]
+    RES --> NEXT["Watch next episode<br/>(credits_start)"]

@@ -13,6 +13,7 @@ AI-powered video analysis platform using Google Gemini.
 - **[Scene Worker Sequence Diagram](scene-worker-sequence.md)** - AI-powered scene analysis with Gemini integration
 - **[Subtitle 2-Pass Sequence Diagram](subtitle-2pass-sequence.md)** - Chirp 3 ASR (timing) + Gemini (text) two-pass subtitle/transcription pipeline
 - **[Evaluation Strategy](evaluation-strategy.md)** - Best practices for evaluating subtitle/LLM outputs: the eval ladder (deterministic/golden → random picker → LLM-judge), dataset design, and run/prompt-version tracing
+- **[Cue-Point Detection](cue-points-detection.md)** - Ad-break / skip-intro / recap / watch-next timestamps by fusing Chirp 3 ASR + CPU-only music & silence detection with Gemini semantic labeling
 - **[Search Latency Optimization](search-latency-optimization.md)** - Avatar-mode conversation search rework: curator LLM removal, BigQuery → Bigtable KNN migration (~4s → ~0.2-0.5s)
 
 ## Visual Guides
