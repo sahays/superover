@@ -1,0 +1,2 @@
+# Model binaries are never committed — see README.md for how to obtain them.
+*.onnx

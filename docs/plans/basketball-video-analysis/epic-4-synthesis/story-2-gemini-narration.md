@@ -1,16 +1,18 @@
 # Story 2: Fact-Constrained Gemini Narration
 
+**Status (2026-07-17): Implemented-with-deviations** — fully unit/mutation-tested against a fake analyzer; the live end-to-end run needs the optional google-genai deps + GCP env/ADC (not present in the offline environment), so the ADC integration test has not been executed.
+
 ## Summary
 
 Add the `--narrate` pass: feed the verified event timeline plus the clip to Gemini via the existing `SceneAnalyzer`, producing prose in the established output format (Timestamp / Event Title / Analysis / Category) that never contradicts or invents facts — the LLM owns meaning, signals own timestamps.
 
 ## Tasks
 
-- [ ] `libs/basketball/narrate.py`: build prompt embedding the timeline as a fact block (timestamps, outcome, team, points, jersey, confidence); reuse `libs/gemini/scene_analyzer.py:analyze_chunk` with local bytes + `response_schema`.
-- [ ] `response_schema` matching the established format: list of `{timestamp_range, event_title, analysis, category}` — one entry per timeline event, key fields echoed for validation.
-- [ ] Prompt rules: facts are ground truth; describe play context around them; omit attributes with `null`/low confidence rather than guessing; never add events absent from the timeline.
-- [ ] Post-validation: reject/repair narration whose echoed facts (timestamps ±2 s, team, points, jersey) diverge from the timeline; single retry, then fall back to templated text per event.
-- [ ] Surface cost/token usage (already returned by `SceneAnalyzer`) in CLI output; `--narrate` remains optional so the perception pipeline stays offline-capable.
+- [x] `libs/basketball/narrate.py`: build prompt embedding the timeline as a fact block (timestamps, outcome, team, points, jersey, confidence); reuse `libs/gemini/scene_analyzer.py:analyze_chunk` with local bytes + `response_schema`.
+- [x] `response_schema` matching the established format: list of `{timestamp_range, event_title, analysis, category}` — one entry per timeline event, key fields echoed for validation.
+- [x] Prompt rules: facts are ground truth; describe play context around them; omit attributes with `null`/low confidence rather than guessing; never add events absent from the timeline.
+- [x] Post-validation: reject/repair narration whose echoed facts (timestamps ±2 s, team, points, jersey) diverge from the timeline; single retry, then fall back to templated text per event.
+- [x] Surface cost/token usage (already returned by `SceneAnalyzer`) in CLI output; `--narrate` remains optional so the perception pipeline stays offline-capable. *(Usage logged to stderr and persisted in the narrate stage output.json.)*
 
 ## Acceptance Criteria
 

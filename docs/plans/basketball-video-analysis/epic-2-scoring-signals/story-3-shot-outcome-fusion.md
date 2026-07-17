@@ -1,16 +1,18 @@
 # Story 3: Trajectory Make/Miss Logic + Signal Fusion
 
+**Status (2026-07-17): Implemented-with-deviations** — trajectory classification works from base-fps samples + geometry (no native-fps re-decode; `decode_window` exists but is unused for V1); validated on synthetic fixtures only, eval accuracy criteria unmeasured (clips blocked by CDN 403).
+
 ## Summary
 
 Implement ball-through-rim trajectory analysis (`shots.py`) and the fusion layer (`timeline.py`) that combines Signals A (score bug) and B (trajectory + `ball-in-basket`) into final scoring events — makes AND misses — with fused confidence and evidence.
 
 ## Tasks
 
-- [ ] `libs/basketball/shots.py`: maintain ball trajectory buffer near the rim; trigger native-fps re-decode ±2 s when the ball enters the rim neighborhood; classify make (ball center passes from above-rim through inner-rim to below within N frames) vs miss (approach + departure without pass-through).
-- [ ] Camera-cut detection (histogram delta) → reset trajectory buffers; ignore windows spanning cuts (replay double-count guard).
-- [ ] `libs/basketball/timeline.py` fusion rules: make = (trajectory-through-rim OR ball-in-basket) confirmed by score delta within ~2 s; timestamp from rim-crossing (fall back to lag-adjusted OCR delta); shot with no delta = miss; delta with no shot = OCR-only event at reduced confidence.
-- [ ] Confidence model: per-attribute confidence from contributing evidence; evidence list names each signal (`scorebug`, `trajectory`, `ball_in_basket`).
-- [ ] Emit misses as first-class events `{type: shot, outcome: missed}` — the review showed misses narrated as makes.
+- [x] `libs/basketball/shots.py`: maintain ball trajectory buffer near the rim; trigger native-fps re-decode ±2 s when the ball enters the rim neighborhood; classify make (ball center passes from above-rim through inner-rim to below within N frames) vs miss (approach + departure without pass-through). *(Deviation: classifies from base-fps samples with occlusion-gap bridging; native-fps re-decode not needed for the synthetic fixtures — revisit against real clips.)*
+- [x] Camera-cut detection (histogram delta) → reset trajectory buffers; ignore windows spanning cuts (replay double-count guard). *(Shared detector: `libs/basketball/cuts.py`, also used by teams.)*
+- [x] `libs/basketball/timeline.py` fusion rules: make = (trajectory-through-rim OR ball-in-basket) confirmed by score delta within ~2 s; timestamp from rim-crossing (fall back to lag-adjusted OCR delta); shot with no delta = miss; delta with no shot = OCR-only event at reduced confidence.
+- [x] Confidence model: per-attribute confidence from contributing evidence; evidence list names each signal (`scorebug`, `trajectory`, `ball_in_basket`).
+- [x] Emit misses as first-class events `{type: shot, outcome: missed}` — the review showed misses narrated as makes.
 
 ## Acceptance Criteria
 

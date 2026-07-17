@@ -1,17 +1,19 @@
 # Story 1: Score-Bug OCR → Scoring Events (Signal A)
 
+**Status (2026-07-17): Implemented-with-deviations** — validated on synthetic broadcast fixtures only (eval clips blocked by CDN 403), so the eval-recall acceptance criteria are unmeasured on real footage.
+
 ## Summary
 
 Read the broadcast score overlay with RapidOCR and emit scoring events from score changes — exact timestamps, scoring team, and 1/2/3 points. Zero model training; this story alone produces the first real eval numbers.
 
 ## Tasks
 
-- [ ] `libs/basketball/scorebug.py`: locate the static score bug (pixel-stability mask across sampled frames), identify per-field ROIs (home score, away score, team abbreviations, game clock).
-- [ ] Per-field pipeline: crop → 3–4x upscale (INTER_CUBIC) → RapidOCR at 1–2 fps.
-- [ ] Temporal smoothing: sliding-window majority vote per field; reject reads violating domain rules (scores only increase, clock decreases within a period).
-- [ ] Emit `score_change` events: `{t, team, delta}`; adjust t backwards by configurable lag estimate (`basketball_scorebug_lag_sec`, default ~1.5 s) — Epic 2 story 3 replaces this with the rim-crossing timestamp when available.
-- [ ] Map bug sides to team names via OCR'd abbreviations (e.g. KU/KSU).
-- [ ] `--debug-video` overlay: draw ROIs + current reads for visual QA.
+- [x] `libs/basketball/scorebug.py`: locate the static score bug (pixel-stability mask across sampled frames), identify per-field ROIs (home score, away score, team abbreviations, game clock).
+- [x] Per-field pipeline: crop → 3–4x upscale (INTER_CUBIC) → RapidOCR at 1–2 fps.
+- [x] Temporal smoothing: sliding-window majority vote per field; reject reads violating domain rules (scores only increase, clock decreases within a period).
+- [x] Emit `score_change` events: `{t, team, delta}`; adjust t backwards by configurable lag estimate (`basketball_scorebug_lag_sec`, default ~1.5 s) — Epic 2 story 3 replaces this with the rim-crossing timestamp when available.
+- [x] Map bug sides to team names via OCR'd abbreviations (e.g. KU/KSU).
+- [x] `--debug-video` overlay: draw ROIs + current reads for visual QA. *(In `libs/basketball/debug_video.py`.)*
 
 ## Acceptance Criteria
 

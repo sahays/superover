@@ -4,6 +4,7 @@ exclude = [
     "frontend",
     "venv",
     ".venv",
+    ".venv-basketball",
     "node_modules",
 ]
 

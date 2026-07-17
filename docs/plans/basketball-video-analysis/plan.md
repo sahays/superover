@@ -86,3 +86,15 @@ sequenceDiagram
 Sequencing: Epic 1 → Epic 2 story 1 gives the first eval numbers with zero ML training. Epics 2–3 stories are independent after detection lands. Epic 4 last.
 
 Out of V1 (tracked in spec): fouls/blocks/turnovers heuristics, play-by-play join, multi-broadcast generalization.
+
+## Implementation status (2026-07-17)
+
+**All 8 pipeline stages are implemented**: decode, scorebug, detect, shots, teams, jersey, fuse, narrate (`libs/basketball/`, registry in `stages.py`), plus the shared cut detector (`cuts.py`), the `--debug-video` renderer (`debug_video.py`), the CLI (`scripts/basketball_analyze.py`), and the eval harness (`evals/basketball/`). Epic-4 shot typing is in `timeline.py`: delta arithmetic, and-one splitting guard, consecutive-FT handling, free-throw scene corroboration, and never-guess missed-shot typing (warning in fusion_debug). A default run with no detection model degrades gracefully to scorebug-only events (`--stage detect` still fails loudly).
+
+**Tests**: `tests/basketball/` — 314 passed, 9 skipped (all skips are `eval`-marker tests requiring the eval clips), 0 failed, in the standalone `.venv-basketball` environment. The main repo suite (`tests/libs`, `tests/api`) is unaffected. Everything is validated on synthetic PyAV-rendered fixtures (including a scripted broadcast score-bug clip); a full CLI run on that clip yields the expected scorebug-only events, warm-cache re-runs, and an annotated debug MP4.
+
+**Open items** (blocking full acceptance-criteria measurement):
+
+1. **Eval clips unreachable** — the CDN behind `sources.local.yaml` returns 403, so `build_dataset.py` cannot download the ~20 review clips: `manifest.yaml` checksums are still null, the manual labeling pass is pending, and every accuracy-based acceptance criterion (recall/precision, team/jersey/type accuracy, reviewer-flagged regressions) is unmeasured on real footage.
+2. **Basketball YOLO fine-tune pending GPU** — only the COCO smoke-test fallback model (person/sports-ball) exists, so there are no rim / ball_in_basket / number / referee detections on real footage yet; Signal B, jersey reading, and the layup/dunk flavor all wait on the fine-tune (procedure in `libs/basketball/models/README.md`). Court homography (missed 2PT vs 3PT typing) stays deferred until eval data shows it is needed.
+3. **`--narrate` needs optional deps + GCP env** — google-genai + google-api-core (commented in `requirements-basketball.txt`) plus the repo root config env vars and ADC; without them the CLI exits 1 with an actionable error. The live Gemini integration test has therefore not been run.

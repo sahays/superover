@@ -25,6 +25,7 @@ venv/
 env/
 ENV/
 .venv
+.venv-basketball/
 
 # IDE
 .vscode/
@@ -68,3 +69,9 @@ frontend/e2e/screenshots/
 
 # v0 (old version)
 gemini-key
+
+# Basketball video-analysis CLI
+.basketball-work/
+evals/basketball/datasets/clips/
+evals/basketball/datasets/sources.local.yaml
+libs/basketball/models/*.onnx

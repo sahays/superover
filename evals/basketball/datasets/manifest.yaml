@@ -1,0 +1,303 @@
+version: 1
+game: Kansas vs Kansas State (college basketball broadcast, 30 s segments)
+teams:
+  - kansas
+  - kansas-state
+note: >-
+  PROVISIONAL ground truth transcribed from human review notes of the original
+  Gemini analysis. The review only flags errors — it is not a complete event
+  list per clip. Every event with verified false (or missing labels, and every
+  clip in needs_manual_review) still needs one manual viewing pass before the
+  numbers can be fully trusted. 'verified' is true only where the reviewer was
+  explicit; it may be a bool (whole event) or a per-attribute map
+  (event/outcome/team/points/jersey). Clip URLs are never committed - see
+  sources.local.yaml (gitignored) or BASKETBALL_CLIPS_BASE_URL; checksums are
+  filled in by build_dataset.py.
+tolerance_sec: 2.0
+clips:
+  shot_0013:
+    file: shot_0013.mp4
+    sha256: null
+    events:
+      - t: 21.0
+        t_end: 26.0
+        type: free_throw
+        outcome: missed
+        team: kansas
+        points: null
+        jersey: '1'
+        verified: true
+        source: 'reviewer: "Hunter misses the shot"'
+  shot_0015:
+    file: shot_0015.mp4
+    sha256: null
+    events:
+      - t: 15.0
+        t_end: 25.0
+        type: shot
+        outcome: missed
+        team: kansas
+        points: null
+        jersey: null
+        verified: false
+        note: kansas is the offense; reviewer said teams were swapped in the original analysis
+  shot_0017:
+    file: shot_0017.mp4
+    sha256: null
+    events:
+      - t: 10.0
+        t_end: 17.0
+        type: shot
+        outcome: made
+        team: kansas
+        points: 3
+        jersey: null
+        verified: true
+        source: 'reviewer: "Score is actually scored by Kansas team"'
+  shot_0020:
+    file: shot_0020.mp4
+    sha256: null
+    events: []
+  shot_0024:
+    file: shot_0024.mp4
+    sha256: null
+    events:
+      - t: 0.0
+        t_end: 6.0
+        type: shot
+        outcome: made
+        team: kansas
+        points: 2
+        jersey: null
+        verified: true
+        source: 'reviewer: "not three-pointer"'
+  shot_0028:
+    file: shot_0028.mp4
+    sha256: null
+    events:
+      - t: 21.0
+        t_end: 29.0
+        type: shot
+        outcome: made
+        team: null
+        points: null
+        jersey: null
+        verified: false
+        source: 'reviewer: "21 to 29 was an actual scoring action missed"'
+  shot_0029:
+    file: shot_0029.mp4
+    sha256: null
+    events:
+      - t: 22.0
+        t_end: 30.0
+        type: shot
+        outcome: made
+        team: kansas-state
+        points: 2
+        jersey: '4'
+        verified:
+          event: true
+          outcome: true
+          team: false
+          points: false
+          jersey: true
+        source: 'reviewer: "Jersey #4 was the scorer"'
+  shot_0030:
+    file: shot_0030.mp4
+    sha256: null
+    events: []
+  shot_0035:
+    file: shot_0035.mp4
+    sha256: null
+    events:
+      - t: 0.0
+        t_end: 9.0
+        type: shot
+        outcome: made
+        team: kansas
+        points: 2
+        jersey: '24'
+        verified: false
+        note: unflagged in the original analysis
+      - t: 10.0
+        t_end: 15.0
+        type: shot
+        outcome: made
+        team: kansas-state
+        points: 2
+        jersey: '5'
+        verified: false
+        note: unflagged in the original analysis
+      - t: 22.0
+        t_end: 30.0
+        type: shot
+        outcome: made
+        team: null
+        points: null
+        jersey: null
+        verified: false
+        source: 'reviewer: "Misses scoring event at the end"'
+  shot_0069:
+    file: shot_0069.mp4
+    sha256: null
+    events: []
+  shot_0071:
+    file: shot_0071.mp4
+    sha256: null
+    events: []
+  shot_0075:
+    file: shot_0075.mp4
+    sha256: null
+    events:
+      - t: 6.0
+        t_end: 14.0
+        type: free_throw
+        outcome: made
+        team: kansas
+        points: 1
+        jersey: '3'
+        verified: false
+        note: unflagged in the original analysis
+  shot_0078:
+    file: shot_0078.mp4
+    sha256: null
+    events:
+      - t: 0.0
+        t_end: 8.0
+        type: shot
+        outcome: made
+        team: kansas-state
+        points: 2
+        jersey: null
+        verified:
+          event: true
+          outcome: true
+          team: true
+          points: false
+          jersey: false
+        source: reviewer flagged only jerseys; outcome and team confirmed
+  shot_0082:
+    file: shot_0082.mp4
+    sha256: null
+    events: []
+  shot_0083:
+    file: shot_0083.mp4
+    sha256: null
+    events: []
+  shot_0084:
+    file: shot_0084.mp4
+    sha256: null
+    events:
+      - t: 20.0
+        t_end: 30.0
+        type: shot
+        outcome: made
+        team: null
+        points: null
+        jersey: null
+        verified: false
+        source: 'reviewer: "Misses the scoring event"'
+  shot_0085:
+    file: shot_0085.mp4
+    sha256: null
+    events:
+      - t: 14.0
+        t_end: 24.0
+        type: shot
+        outcome: made
+        team: null
+        points: null
+        jersey: null
+        verified: false
+        source: 'reviewer: "Scoring event not detected"'
+  shot_0090:
+    file: shot_0090.mp4
+    sha256: null
+    events:
+      - t: 12.0
+        t_end: 22.0
+        type: shot
+        outcome: made
+        team: kansas
+        points: 2
+        jersey: null
+        verified:
+          event: true
+          outcome: true
+          team: false
+          points: false
+          jersey: false
+        source: 'reviewer: "Scoring event is correct"'
+        note: jersey in the original analysis was explicitly wrong -> null until manual review
+  shot_0092:
+    file: shot_0092.mp4
+    sha256: null
+    events:
+      - t: 20.0
+        t_end: 28.0
+        type: shot
+        outcome: made
+        team: kansas-state
+        points: 2
+        jersey: '24'
+        verified: true
+        source: 'reviewer: "Scoring part is correct"'
+  shot_0093:
+    file: shot_0093.mp4
+    sha256: null
+    events: []
+  shot_0094:
+    file: shot_0094.mp4
+    sha256: null
+    events:
+      - t: 12.0
+        t_end: 22.0
+        type: shot
+        outcome: made
+        team: kansas-state
+        points: 2
+        jersey: '2'
+        verified: true
+        source: 'reviewer: "Scored by #2 of kansas state"'
+  shot_0099:
+    file: shot_0099.mp4
+    sha256: null
+    events:
+      - t: 14.0
+        t_end: 22.0
+        type: shot
+        outcome: missed
+        team: kansas-state
+        points: null
+        points_attempted: 3
+        jersey: null
+        verified:
+          event: true
+          outcome: true
+          team: false
+          points: false
+          jersey: false
+        source: 'reviewer: missed 3-point attempt confirmed (outcome + type verified); team unverified'
+no_scoring_expected:
+  - clip: shot_0020
+    t: 15.0
+    t_end: 22.0
+    verified: true
+    source: 'reviewer: "There was no scoring"'
+needs_manual_review:
+  - clip: shot_0030
+    reason: 'reviewer: "Scoring events missed"; times unknown'
+  - clip: shot_0069
+    reason: 'reviewer: "Analysis incorrect"'
+  - clip: shot_0071
+    reason: non-scoring clip; teams swapped in the original analysis
+  - clip: shot_0075
+    t: 20.0
+    t_end: 30.0
+    reason: 'reviewer: "player detection on who is scoring is off"'
+  - clip: shot_0082
+    reason: foul near the end; fouls are out of V1 scoring scope
+  - clip: shot_0083
+    reason: 'reviewer: "Analysis is incorrect"'
+  - clip: shot_0093
+    reason: non-scoring clip; teams confused in the original analysis

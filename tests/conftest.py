@@ -4,15 +4,27 @@ import pytest
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from google.cloud import firestore
-from google.cloud import storage
 
-from libs.database import get_db
+# GCP deps are absent in the standalone basketball venv (.venv-basketball/),
+# which only runs tests/basketball/. Guard so collection still works there;
+# behavior in the main venv is unchanged.
+try:
+    from google.cloud import firestore
+    from google.cloud import storage
+
+    from libs.database import get_db
+
+    _HAS_GCP_DEPS = True
+except ImportError:  # pragma: no cover - exercised only in the basketball venv
+    _HAS_GCP_DEPS = False
 
 
 @pytest.fixture(autouse=True, scope="session")
 def _no_seed():
     """Prevent seed_default_prompts from writing to Firestore during tests."""
+    if not _HAS_GCP_DEPS:
+        yield
+        return
     with patch.object(get_db(), "seed_default_prompts"):
         yield
 

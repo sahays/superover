@@ -1,0 +1,34 @@
+# Basketball video-analysis CLI — local numeric/vision stack.
+# Deliberately separate from requirements.txt so the cloud services'
+# dependency set stays untouched.
+#
+# Install into a dedicated venv at the repo root:
+#   python3.12 -m venv .venv-basketball
+#   .venv-basketball/bin/pip install -r requirements-basketball.txt
+#   # rapidocr-onnxruntime pulls in the full opencv-python (GUI build, needs
+#   # libGL); on headless machines swap it for the headless build afterwards:
+#   .venv-basketball/bin/pip uninstall -y opencv-python opencv-python-headless
+#   .venv-basketball/bin/pip install opencv-python-headless==5.0.0.93
+
+numpy==2.5.1
+av==18.0.0
+opencv-python-headless==5.0.0.93
+onnxruntime==1.27.0
+rapidocr-onnxruntime==1.4.4
+supervision==0.29.1
+pyyaml==6.0.3
+pytest==9.1.1
+pytest-timeout==2.4.0
+
+# Same pins as requirements.txt so pydantic models behave identically.
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# --- OPTIONAL: Gemini narration (--narrate) only ---------------------------
+# The narrate stage lazy-imports libs/gemini (google-genai via Vertex AI +
+# the repo root config.py, which needs the GCP env vars and ADC). The offline
+# perception pipeline and the unit tests do NOT need these. To run a real
+# --narrate pass, install them into the venv first:
+#   .venv-basketball/bin/pip install "google-genai>=1.65.0" google-api-core
+# google-genai>=1.65.0
+# google-api-core
