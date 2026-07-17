@@ -4,14 +4,16 @@ Status: **draft for review** (2026-07-17)
 
 ## Context
 
-We are building a basketball broadcast-video analysis tool. Gemini (3.1 Pro, prompt-only) was already tried and produces inaccurate results. `shashi-basketball-source.pdf` (repo root) is a human review sheet of Gemini's outputs on ~20 thirty-second clips (Kansas vs Kansas State college game, CloudFront-hosted `shot_NNNN.mp4` segments). The goal: a tool that detects game events **accurately, with correct timestamps**, starting as a simple local CLI for fast iteration.
+We are building a basketball broadcast-video analysis tool. Gemini (3.1 Pro, prompt-only) was already tried and produces inaccurate results. A human review of Gemini's outputs on ~20 thirty-second clips (Kansas vs Kansas State college game, `shot_NNNN.mp4` segments) catalogs the recurring errors; they are distilled into the taxonomy below. The goal: a tool that detects game events **accurately, with correct timestamps**, starting as a simple local CLI for fast iteration.
 
-## Error taxonomy from the PDF (what the tool must fix)
+Implementation plan with high-level design: `docs/plans/basketball-video-analysis/plan.md`.
 
-Every human-flagged error falls into one of these classes:
+## Error taxonomy from human review (what the tool must fix)
 
-| # | Failure class | Examples from PDF |
-|---|---------------|-------------------|
+Every reviewer-flagged error falls into one of these classes:
+
+| # | Failure class | Examples from review |
+|---|---------------|----------------------|
 | 1 | **Shot outcome wrong** (says made when missed, or vice versa) | shot_0013 "Hunter misses the shot"; shot_0020 "There was no scoring" |
 | 2 | **Missed scoring events entirely** | shot_0028 "21–29 was an actual scoring action missed"; shot_0030, shot_0035, shot_0084, shot_0085 |
 | 3 | **Offense/defense team swapped** | shot_0015, shot_0071, shot_0092, shot_0093 |
@@ -28,7 +30,7 @@ Implication: the highest-value signals are (a) **did the ball go through the hoo
 1. **Scoring events first** — V1 targets made/missed shots, timestamps, scoring team, jersey number, 2PT vs 3PT. Fouls/blocks/turnovers later.
 2. **Hybrid architecture** — CPU models produce verified facts (event, timestamp, team, jersey, shot type); Gemini only writes narrative prose constrained by those facts.
 3. **Lives inside this repo** — reuse config pattern, Gemini wrapper, pytest setup.
-4. **Eval set = the PDF clips** — download the ~20 CloudFront `shot_NNNN.mp4` clips; ground-truth labels built from the human "reasoning" column plus one manual viewing pass (the PDF only flags errors — it is not a complete event list per clip).
+4. **Eval set = the reviewed clips** — the ~20 `shot_NNNN.mp4` clips; ground-truth labels built from the reviewer notes plus one manual viewing pass (the review only flags errors — it is not a complete event list per clip).
 
 ## Research findings
 
@@ -121,7 +123,7 @@ libs/basketball/            # new package — no Firestore/GCS deps
 scripts/basketball_analyze.py   # argparse CLI (repo convention)
 evals/basketball/
     datasets/manifest.yaml  # clip URLs + ground-truth events
-    build_dataset.py        # download the ~20 CloudFront clips from the PDF
+    build_dataset.py        # download the ~20 review clips
     run_eval.py             # tolerance-window scoring per evaluation-strategy.md
 requirements-basketball.txt # numpy, av, opencv-python-headless, onnxruntime,
                             # rapidocr-onnxruntime, supervision
@@ -132,15 +134,15 @@ Separate requirements file so the cloud services' dependency set stays untouched
 
 ### Implementation phases
 
-**Phase 0 — Scaffold + eval set (no ML).** CLI skeleton, PyAV decode, `build_dataset.py` downloads the PDF's CloudFront clips, `manifest.yaml` with ground-truth events (PDF reasoning column + one manual viewing pass). Metrics: event precision/recall at ±2 s tolerance + attribute accuracy (team/points/jersey).
+**Phase 0 — Scaffold + eval set (no ML).** CLI skeleton, PyAV decode, `build_dataset.py` downloads the review clips, `manifest.yaml` with ground-truth events (reviewer notes + one manual viewing pass). Metrics: event precision/recall at ±2 s tolerance + attribute accuracy (team/points/jersey).
 
-**Phase 1 — Score-bug OCR (highest value, zero training).** `scorebug.py` per the ScoreSight/Harris recipe. Deliverable: scoring events with exact timestamps, team, points. Addresses error classes 1, 2, 4, 6, 7 — the majority of the PDF's flagged errors. First eval numbers land here.
+**Phase 1 — Score-bug OCR (highest value, zero training).** `scorebug.py` per the ScoreSight/Harris recipe. Deliverable: scoring events with exact timestamps, team, points. Addresses error classes 1, 2, 4, 6, 7 — the majority of the reviewer-flagged errors. First eval numbers land here.
 
 **Phase 2 — Ball/rim/player detection + made/miss logic.** Fine-tune YOLO11n (or YOLO26n) on `basketball-player-detection-3`; export ONNX/INT8. The one-time fine-tune needs a few GPU-hours (free Colab or Roboflow hosted training); inference is CPU-only. Detects misses (invisible to OCR) and precise shot moments.
 
 **Phase 3 — Player + team attribution.** ByteTrack via `supervision`; HSV torso clustering (cluster→team name via score-bug abbreviations); jersey `number` crops → small digit classifier → tracklet voting. Fixes error classes 3, 5.
 
-**Phase 4 — Shot type + Gemini narration.** 2PT/3PT primarily from score delta; court homography only if ambiguity remains. `narrate.py` feeds the verified timeline to `SceneAnalyzer.analyze_chunk` with a `response_schema` matching the current output format (Timestamp / Event Title / Analysis / Category) so results are directly comparable to the PDF examples.
+**Phase 4 — Shot type + Gemini narration.** 2PT/3PT primarily from score delta; court homography only if ambiguity remains. `narrate.py` feeds the verified timeline to `SceneAnalyzer.analyze_chunk` with a `response_schema` matching the current output format (Timestamp / Event Title / Analysis / Category) so results are directly comparable to the reviewed Gemini outputs.
 
 **Later (out of V1):** fouls/blocks/turnovers via possession-change + free-throw-scene heuristics and the `player-shot-block` class; optional play-by-play join (clock OCR → ESPN/NCAA feed) for player names with zero vision.
 
@@ -158,12 +160,12 @@ python evals/basketball/run_eval.py                          # score vs manifest
 
 1. **Unit tests** (pytest, `unit` marker): score-parse smoothing, trajectory make/miss geometry, timeline fusion — synthetic fixtures, no models needed.
 2. **Eval harness** (`run_eval.py`): precision/recall of scoring events at ±2 s vs `manifest.yaml`, plus team/points/jersey accuracy. Run after each phase; numbers must improve monotonically.
-3. **PDF regression check**: for each clip the PDF flags, assert the specific error is fixed — e.g. shot_0013: no made-FT event at 00:21–26; shot_0017: 3PT credited to Kansas; shot_0029: scorer jersey #4; shot_0024: 2PT not 3PT; shot_0028: scoring event detected at 00:21–29.
+3. **Review regression check**: for each reviewer-flagged clip, assert the specific error is fixed — e.g. shot_0013: no made-FT event at 00:21–26; shot_0017: 3PT credited to Kansas; shot_0029: scorer jersey #4; shot_0024: 2PT not 3PT; shot_0028: scoring event detected at 00:21–29.
 4. **End-to-end**: `--narrate --debug-video` on 2–3 clips; visually confirm the annotated video and that the Gemini prose contains no fact absent from the timeline.
 
 ## Open questions & risks
 
-- **Score-bug presence in the eval clips**: verify early (Phase 0) that the CloudFront 30 s segments retain the broadcast score bug and that it's legible at the encoded resolution. If a clip lacks the bug (replay wipes, crowd cuts), Signal B (ball/rim) is the only make/miss source for that clip — fusion must degrade gracefully.
+- **Score-bug presence in the eval clips**: verify early (Phase 0) that the 30 s eval segments retain the broadcast score bug and that it's legible at the encoded resolution. If a clip lacks the bug (replay wipes, crowd cuts), Signal B (ball/rim) is the only make/miss source for that clip — fusion must degrade gracefully.
 - **Score-bug lag**: on-screen score updates ~1–2 s after the make; the fusion layer should timestamp events from the ball-through-rim moment when available and use the OCR delta as confirmation, not as the timestamp source.
 - **Replays inside segments**: a replayed made basket can double-count via trajectory detection (though not via score delta — another reason fusion wins). Shot-boundary detection to segment camera cuts is cheap insurance.
 - **One-time GPU fine-tune**: nano-YOLO training on the ~10-class basketball dataset is impractical on CPU; plan is a few hours on free Colab or Roboflow hosted training, then ONNX export. Inference remains CPU-only.
