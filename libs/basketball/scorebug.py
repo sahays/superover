@@ -90,10 +90,13 @@ DISCOVERY_MAX_FRAMES = 24  # full-bug OCR frames for field discovery
 MONOTONE_TOLERANCE = 0.25  # fraction of consecutive pairs allowed to violate
 
 # abbr (normalized) -> team key. Only exact alias matches map; anything else
-# keeps team null and lets fusion resolve it.
+# keeps team null and lets fusion resolve it. Aliases are stored already
+# normalized (uppercase, no spaces/punctuation) because ``normalize_abbr``
+# strips those from reads before lookup: a bug rendering "KANSAS ST" reaches
+# the table as "KANSASST".
 TEAM_ALIASES: Dict[str, Tuple[str, ...]] = {
     "kansas": ("KU", "KAN", "KANSAS"),
-    "kansas-state": ("KSU", "KST", "K-STATE", "KSTATE"),
+    "kansas-state": ("KSU", "KST", "K-STATE", "KSTATE", "KANSASST", "KANSASSTATE"),
 }
 
 _ABBR_TO_TEAM: Dict[str, str] = {}
@@ -106,7 +109,15 @@ for _team, _names in TEAM_ALIASES.items():
 _DIGIT_FIXES = str.maketrans({"O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "|": "1", "Z": "2", "S": "5", "B": "8"})
 
 _CLOCK_RE = re.compile(r"^(\d{1,2})[:.](\d{2})(?:\.(\d))?$")
-_ABBR_RE = re.compile(r"^[A-Za-z][A-Za-z.\-&']{0,9}$")
+# Team fields may carry an internal space ("KANSAS ST") — the space is part of
+# the rendered name, so it must be accepted here and stripped by normalize_abbr
+# later. Length allows "KANSAS STATE"; longer runs (e.g. an OCR'd
+# "MEN'SCOLLEGEBASKETBALL" banner) stay rejected.
+_ABBR_RE = re.compile(r"^[A-Za-z][A-Za-z.\-&' ]{0,13}$")
+# A ranked team is rendered with its AP number ("4 KANSAS"), which OCR often
+# merges into one token ("4KANSAS"). Optional parens, optional space.
+_RANK_PREFIX_RE = re.compile(r"^\s*\(?\d{1,2}\)?\s*(?=[A-Za-z])")
+_MIN_TEAM_NAME_LEN = 3  # what must survive rank-stripping for it to be a rank
 
 
 # ---------------------------------------------------------------------------
@@ -119,11 +130,29 @@ def normalize_abbr(text: str) -> str:
     return re.sub(r"[^A-Z0-9\-]", "", text.upper())
 
 
+def strip_rank_prefix(text: str) -> str:
+    """Drop a leading AP ranking from a team field: '4 KANSAS' -> 'KANSAS'.
+
+    Broadcast bugs prefix ranked teams with their AP number and OCR frequently
+    merges it into the team's token ('4KANSAS' at 0.99 confidence). No D-I team
+    name begins with a digit, so a leading 1-2 digit run before letters is
+    always a rank — but only when a plausible name survives, which keeps this
+    from chewing up period markers like '1st' (-> 'st') or shot clocks.
+    """
+    stripped = _RANK_PREFIX_RE.sub("", text).strip()
+    return stripped if len(stripped) >= _MIN_TEAM_NAME_LEN else text.strip()
+
+
 def map_abbr_to_team(abbr: Optional[str]) -> Optional[str]:
-    """Alias-table lookup; None when the abbreviation is not recognized."""
+    """Alias-table lookup; None when the abbreviation is not recognized.
+
+    Exact matches only (after rank-stripping and normalization): 'KANSAS' is a
+    prefix of 'KANSAS ST', so prefix matching would silently credit baskets to
+    the wrong team.
+    """
     if not abbr:
         return None
-    key = normalize_abbr(abbr)
+    key = normalize_abbr(strip_rank_prefix(abbr))
     return _ABBR_TO_TEAM.get(key) or _ABBR_TO_TEAM.get(key.replace("-", ""))
 
 
@@ -479,7 +508,11 @@ def _classify_clusters(clusters: List[Dict[str, Any]]) -> Tuple[List[Dict], List
                 cluster["values"] = score_vals
                 scores.append(cluster)
                 continue
-        alpha = [t for t in texts if _ABBR_RE.match(t.strip())]
+        # Strip the AP rank before validating: the bug renders the ranked team
+        # as "4 KANSAS", and _ABBR_RE requires a leading letter, so the real
+        # team name would otherwise be discarded as a non-abbreviation.
+        cleaned = [strip_rank_prefix(t) for t in texts]
+        alpha = [t for t in cleaned if _ABBR_RE.match(t)]
         if len(alpha) >= 0.6 * n and alpha:
             normalized = [normalize_abbr(t) for t in alpha if normalize_abbr(t)]
             if not normalized:
@@ -580,15 +613,30 @@ def _discover_fields(
 
     clock_cluster = max(clock_cands, key=lambda c: (c.get("net", 0) < 0, len(c["items"])), default=None)
 
+    left_team = map_abbr_to_team(assignments["left"])
+    right_team = map_abbr_to_team(assignments["right"])
+    if left_team is not None and left_team == right_team:
+        # Both sides cannot be the same team. Confusable names make this
+        # reachable (a truncated "KANSAS ST" read aliases to "KANSAS"), and a
+        # wrong team name credits a basket to the wrong side — so drop both and
+        # let fusion resolve the teams from kit clusters instead.
+        logger.info(
+            "scorebug: both sides mapped to '%s' (%r / %r) — dropping both team names",
+            left_team,
+            assignments["left"],
+            assignments["right"],
+        )
+        left_team = right_team = None
+
     fields: Dict[str, Optional[Dict[str, Any]]] = {
         "left": {
             "abbr": assignments["left"],
-            "team": map_abbr_to_team(assignments["left"]),
+            "team": left_team,
             "roi_crop": _cluster_roi(left_cluster, crop_shape),
         },
         "right": {
             "abbr": assignments["right"],
-            "team": map_abbr_to_team(assignments["right"]),
+            "team": right_team,
             "roi_crop": _cluster_roi(right_cluster, crop_shape),
         },
         "clock": {"roi_crop": _cluster_roi(clock_cluster, crop_shape)} if clock_cluster else None,

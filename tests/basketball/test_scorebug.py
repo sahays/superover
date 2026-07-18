@@ -153,6 +153,16 @@ class TestAliasMapping:
             ("kst", "kansas-state"),
             ("K-State", "kansas-state"),
             ("KSTATE", "kansas-state"),
+            # Real broadcast reads (RapidOCR on shot_0017's bug): the ranked
+            # team arrives with its AP number merged in, the other with an
+            # internal space. Both were previously discarded -> team null.
+            ("4KANSAS", "kansas"),
+            ("4 KANSAS", "kansas"),
+            ("(4) Kansas", "kansas"),
+            ("KANSAS ST", "kansas-state"),
+            ("KANSASST", "kansas-state"),
+            ("Kansas State", "kansas-state"),
+            ("12 KANSAS ST", "kansas-state"),
         ],
     )
     def test_known_aliases_map(self, abbr, team):
@@ -161,6 +171,29 @@ class TestAliasMapping:
     @pytest.mark.parametrize("abbr", ["UNC", "DUKE", "XYZ", "", None])
     def test_unknown_aliases_map_to_none(self, abbr):
         assert scorebug.map_abbr_to_team(abbr) is None
+
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("4 KANSAS", "KANSAS"),
+            ("4KANSAS", "KANSAS"),
+            ("(4) KANSAS", "KANSAS"),
+            ("25 DUKE", "DUKE"),
+            ("KANSAS", "KANSAS"),  # unranked: unchanged
+            ("KANSAS ST", "KANSAS ST"),
+            # Nothing plausible survives -> leave it alone, so period/shot-clock
+            # tokens are not mangled into bogus abbreviations.
+            ("1st", "1st"),
+            ("30 1st", "30 1st"),
+            ("4", "4"),
+        ],
+    )
+    def test_strip_rank_prefix(self, text, expected):
+        assert scorebug.strip_rank_prefix(text) == expected
+
+    def test_period_marker_never_becomes_an_abbreviation(self):
+        # '1st' must not rank-strip to 'st' and pose as a team abbreviation.
+        assert scorebug.map_abbr_to_team("1st") is None
 
 
 @pytest.mark.unit
