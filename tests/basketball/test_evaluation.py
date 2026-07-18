@@ -169,12 +169,21 @@ class TestScoreClip:
         assert score.attributes["jersey"].total == 1 and score.attributes["jersey"].correct == 1
         assert score.attributes["team"].total == 0, "unverified attribute must not be scored"
 
-    def test_no_scoring_window_prediction_is_fp(self):
+    def test_no_scoring_window_made_prediction_is_fp(self):
         truth = ClipTruth(name="shot_0020", no_scoring=[Window(clip="shot_0020", t=15.0, t_end=22.0, verified=True)])
-        score = score_clip(truth, [shot(18.0)], tolerance_sec=2.0)
+        score = score_clip(truth, [shot(18.0, outcome="made")], tolerance_sec=2.0)
         assert score.fp == 1
         assert len(score.assertion_violations) == 1
         assert "no-scoring window" in score.assertion_violations[0]
+
+    def test_no_scoring_window_miss_prediction_ignored(self):
+        # The window asserts only that no basket was MADE; a predicted miss
+        # claims no points, so it is unadjudicated -> ignored, not a false
+        # positive and not a violation (the shot_0083 case).
+        truth = ClipTruth(name="shot_0083", no_scoring=[Window(clip="shot_0083", t=15.0, t_end=22.0, verified=True)])
+        score = score_clip(truth, [shot(18.0, outcome="missed")], tolerance_sec=2.0)
+        assert score.fp == 0 and score.ignored == 1
+        assert not score.assertion_violations
 
     def test_no_scoring_window_clean_pass(self):
         truth = ClipTruth(name="shot_0020", no_scoring=[Window(clip="shot_0020", t=15.0, t_end=22.0, verified=True)])

@@ -10,8 +10,9 @@ Matching: greedy 1:1 within ±tolerance of an event's [t, t_end] span (t_end
 absent = a point at t). Ground-truth spans are uncertainty windows, so a
 prediction inside one matches exactly and the tolerance only applies past the
 window's edges. By default only human-verified ground-truth rows are scored
-(--include-unverified scores everything); predicted scoring events inside a
-no_scoring_expected window are always false positives. Output is a Markdown
+(--include-unverified scores everything); a predicted made basket inside a
+no_scoring_expected window is a false positive, while a predicted miss there is
+ignored (the window only asserts that nothing was made). Output is a Markdown
 table (per clip + aggregate) suitable for pasting into a PR.
 
     python evals/basketball/run_eval.py --predictions out/           # dir of *.json

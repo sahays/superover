@@ -14,8 +14,10 @@ Verification semantics: each ground-truth event carries a per-attribute
 with ``verified.event == true`` are scored; predictions that fall on an
 unverified event or inside a ``needs_manual_review`` window are IGNORED
 (neither TP nor FP — the labels there are incomplete). ``include_unverified``
-scores everything. Predicted scoring events inside a ``no_scoring_expected``
-window are always false positives (checked assertions).
+scores everything. A ``no_scoring_expected`` window asserts that no basket was
+*made* there: a predicted make inside it is a false positive (checked
+assertion); a predicted miss claims no points, so the window cannot adjudicate
+it and it is ignored.
 """
 
 from dataclasses import dataclass, field
@@ -24,7 +26,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import yaml
 
-from libs.basketball.timeline import SCORING_EVENT_TYPES, Event
+from libs.basketball.timeline import OUTCOME_MADE, SCORING_EVENT_TYPES, Event
 
 ATTRIBUTES = ("team", "points", "jersey")
 VERIFIED_KEYS = ("event", "outcome", "team", "points", "jersey")
@@ -264,18 +266,23 @@ def score_clip(
             shadow.append(gt)
     score.truth_count = len(eligible)
 
-    # no_scoring_expected assertions: any predicted scoring event inside the
-    # window is a false positive, regardless of other ignore rules.
+    # no_scoring_expected asserts "no basket was MADE in this window". Only a
+    # predicted make contradicts it (-> false positive, regardless of other
+    # ignore rules). A predicted miss claims no points, so the window cannot
+    # adjudicate it — it is ignored, not a violation (handled below).
     violating: Set[int] = set()
+    in_no_scoring: Set[int] = set()
     for window in clip_truth.no_scoring:
         score.assertion_checks += 1
         for idx, pred in enumerate(preds):
             if window.contains(pred.midpoint):
-                violating.add(idx)
-                span = "whole clip" if window.t is None else f"[{window.t:g}, {window.t_end:g}]"
-                score.assertion_violations.append(
-                    f"{clip_truth.name}: predicted {pred.type} at t={pred.t:g} inside no-scoring window {span}"
-                )
+                in_no_scoring.add(idx)
+                if pred.outcome == OUTCOME_MADE:
+                    violating.add(idx)
+                    span = "whole clip" if window.t is None else f"[{window.t:g}, {window.t_end:g}]"
+                    score.assertion_violations.append(
+                        f"{clip_truth.name}: predicted made {pred.type} at t={pred.t:g} inside no-scoring window {span}"
+                    )
 
     matches, unmatched_pred, unmatched_truth = match_events(preds, [gt.event for gt in eligible], tolerance_sec)
     score.tp = len(matches)
@@ -295,7 +302,9 @@ def score_clip(
         # prediction inside a verified one is a TP.
         on_shadow = any(time_gap(pred, ev) <= tolerance_sec for ev in shadow_events)
         in_review = any(w.contains(pred.midpoint) for w in clip_truth.needs_review)
-        if on_shadow or in_review:
+        # A miss inside a no_scoring window is unadjudicated (the window only
+        # asserts no MAKE): ignore it rather than count a false positive.
+        if on_shadow or in_review or idx in in_no_scoring:
             score.ignored += 1
         else:
             score.fp += 1
