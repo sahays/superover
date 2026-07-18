@@ -152,6 +152,12 @@ AND_ONE_GAP_SEC = 3.0
 # make surfaces once — see ``_suppress_misses_shadowed_by_ocr_makes``.
 MISS_ABSORB_WINDOW_SEC = 3.5
 
+# A scorer lower-third graphic (number + name, read by the scorer stage) is
+# attributed to a made basket within this many seconds of the graphic's span.
+# The broadcast shows it right around the scoring play; the window is generous
+# because it can appear a beat before or linger well after.
+SCORER_MATCH_WINDOW_SEC = 10.0
+
 # Free-throw scene corroboration (pure heuristic over teams tracks + detect
 # arrays; see ft_scene_corroborated for the full rules).
 FT_SCENE_WINDOW_SEC = 3.0  # tracks are examined +/- this around the event time
@@ -358,6 +364,7 @@ def fuse_signals(
     confirm_window_sec: float = 2.0,
     jersey_min_conf: float = 0.5,
     detect_arrays: Optional[Dict[str, Any]] = None,
+    scorer: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Event], Dict[str, Any]]:
     """Fuse shots + scorebug (+ teams + jersey) stage outputs into events.
 
@@ -571,6 +578,7 @@ def fuse_signals(
 
     _suppress_misses_shadowed_by_ocr_makes(entries, MISS_ABSORB_WINDOW_SEC, debug)
     _apply_team_and_jersey(entries, teams, jersey, jersey_min_conf, debug)
+    _attach_scorer_graphic(entries, scorer, debug)
 
     events = sorted((entry[0] for entry in entries), key=lambda e: (e.t, e.type))
     return events, debug
@@ -681,6 +689,47 @@ def _apply_team_and_jersey(
                 event.evidence.append("jersey")
 
 
+def _attach_scorer_graphic(
+    entries: List[Tuple[Event, Optional[Dict[str, Any]], Optional[Dict[str, Any]]]],
+    scorer: Optional[Dict[str, Any]],
+    debug: Dict[str, Any],
+) -> None:
+    """Attach the scorer lower-third's jersey number to a made basket.
+
+    The broadcast graphic names the scorer directly (number + person), so it
+    fills the jersey even on scoreboard-only makes that have no shooter track —
+    the common case the shooter-based path (rule 5) cannot reach. It is the
+    stronger signal, so it overrides any shooter-track jersey. A graphic is
+    matched to a make within ``SCORER_MATCH_WINDOW_SEC`` of its span; when two
+    different scorers are equally present near one make, the jersey is left as
+    is (prefer null over wrong). Mutates the events in ``entries`` in place.
+    """
+    features = list((scorer or {}).get("features") or [])
+    if not features:
+        return
+    for event, _cand, _delta in entries:
+        if event.outcome != OUTCOME_MADE:
+            continue
+        near = [
+            f
+            for f in features
+            if f["t_start"] - SCORER_MATCH_WINDOW_SEC <= event.t <= f["t_end"] + SCORER_MATCH_WINDOW_SEC
+        ]
+        if not near:
+            continue
+        near.sort(key=lambda f: f["n_frames"], reverse=True)
+        best = near[0]
+        if len(near) > 1 and best["number"] != near[1]["number"] and near[1]["n_frames"] >= best["n_frames"]:
+            continue  # two equally-present scorers -> ambiguous, leave jersey null
+        event.jersey = str(best["number"])
+        event.confidence["jersey"] = float(best.get("confidence", 0.0))
+        if "scorer_graphic" not in event.evidence:
+            event.evidence.append("scorer_graphic")
+        debug.setdefault("scorer_matches", []).append(
+            {"t": event.t, "number": best["number"], "name": best.get("name")}
+        )
+
+
 def run_stage(ctx) -> None:  # ctx: libs.basketball.stages.StageContext
     """``fuse`` stage: combine scorebug/shots/teams/jersey caches into the
     final event timeline (predictions format — see module docstring).
@@ -712,6 +761,7 @@ def run_stage(ctx) -> None:  # ctx: libs.basketball.stages.StageContext
     scorebug = _optional("scorebug")
     teams = _optional("teams")
     jersey = _optional("jersey")
+    scorer = _optional("scorer")
     try:
         detect_arrays: Optional[Dict[str, Any]] = ctx.cache.read_arrays("detect")
     except FileNotFoundError:
@@ -725,6 +775,7 @@ def run_stage(ctx) -> None:  # ctx: libs.basketball.stages.StageContext
         confirm_window_sec=ctx.settings.fuse_confirm_window_sec,
         jersey_min_conf=ctx.settings.fuse_jersey_min_conf,
         detect_arrays=detect_arrays,
+        scorer=scorer,
     )
     logger.info("fuse: %d event(s) for clip %s", len(events), ctx.clip_id)
     ctx.cache.write_json(ctx.stage, debug, filename="fusion_debug.json")

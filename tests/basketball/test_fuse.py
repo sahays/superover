@@ -117,6 +117,21 @@ def jersey_out(*recs):
     return {"clip_id": CLIP_ID, "tracks": list(recs)}
 
 
+def feat(number, name="KALUMA", t_start=24.0, t_end=28.0, n_frames=10, conf=0.99):
+    return {
+        "number": number,
+        "name": name,
+        "t_start": t_start,
+        "t_end": t_end,
+        "n_frames": n_frames,
+        "confidence": conf,
+    }
+
+
+def scorer_out(*features):
+    return {"clip_id": CLIP_ID, "features": list(features)}
+
+
 def one_event(events):
     assert len(events) == 1, [e.to_dict() for e in events]
     return events[0]
@@ -572,6 +587,38 @@ class TestJersey:
 
 
 @pytest.mark.unit
+@pytest.mark.unit
+class TestScorerGraphic:
+    def test_graphic_jersey_attached_to_ocr_only_make(self):
+        # The make is scoreboard-only (no shot candidate -> no shooter track),
+        # yet the scorer lower-third supplies the jersey directly.
+        events, _ = fuse_signals(shots_out(), sb_out(delta(t=25.0, points=2)), scorer=scorer_out(feat("24")))
+        e = one_event(events)
+        assert e.jersey == "24" and "scorer_graphic" in e.evidence
+
+    def test_graphic_outside_window_not_attached(self):
+        events, _ = fuse_signals(
+            shots_out(), sb_out(delta(t=5.0, points=2)), scorer=scorer_out(feat("24", t_start=24.0, t_end=28.0))
+        )
+        assert one_event(events).jersey is None
+
+    def test_ambiguous_scorers_leave_jersey_null(self):
+        # Two different scorers equally present near one make -> prefer null.
+        events, _ = fuse_signals(
+            shots_out(),
+            sb_out(delta(t=25.0, points=2)),
+            scorer=scorer_out(feat("24", n_frames=10), feat("5", name="PERRY", n_frames=10)),
+        )
+        assert one_event(events).jersey is None
+
+    def test_graphic_not_attached_to_a_miss(self):
+        events, _ = fuse_signals(
+            shots_out(cand(kind="miss", t_rim=None)), sb_out(), scorer=scorer_out(feat("24", t_start=4.0, t_end=8.0))
+        )
+        e = one_event(events)
+        assert e.outcome == "missed" and e.jersey is None
+
+
 class TestFuseRunStage:
     def _context(self, tmp_path) -> StageContext:
         return StageContext(
