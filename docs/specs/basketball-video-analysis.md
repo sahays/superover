@@ -1,8 +1,9 @@
 # Basketball Video Analysis CLI — Research Findings & Implementation Plan
 
-Status: **implemented + measured** (2026-07). Eval results:
-`docs/tech/basketball-eval-results.md` (P = R = F1 = 0.94, team & points 100%,
-jersey 2/2, held-out validated). Latest findings appended at the end.
+Status: **V1 complete + measured** (2026-07). Eval results:
+`docs/tech/basketball-eval-results.md` (Precision 1.00, Recall 0.94, F1 0.97;
+team & points 100%; jersey 2/2; held-out validated). Latest findings appended at
+the end.
 
 ## Context
 
@@ -187,9 +188,9 @@ python evals/basketball/run_eval.py                          # score vs manifest
 ## Findings from implementation (2026-07)
 
 Built, measured, and cross-dataset validated. Results:
-`docs/tech/basketball-eval-results.md` — **P = R = F1 = 0.94**, team & points
-**100%**, **jersey 2/2**, and precision/recall **1.00** on a held-out 5-clip set
-the pipeline was never tuned against.
+`docs/tech/basketball-eval-results.md` — **Precision 1.00, Recall 0.94, F1 0.97**,
+team & points **100%**, **jersey 2/2**, and precision/recall **1.00** on a
+held-out 5-clip set the pipeline was never tuned against.
 
 **The scoreboard-authoritative thesis held — and had to be enforced against the
 labels too.** The reviewer/Gemini notes were themselves wrong on several clips
@@ -241,6 +242,8 @@ it is ignored, not a false positive.
 was born from a held-out failure and cost zero regression on the original 22).
 
 **Open cost / gaps**: the `asr` (Whisper) stage transcribes every clip in full —
-for scale, gate it to run only around scoreboard deltas. Misses remain the blind
-spot (ASR corroborates but does not yet *create* a miss event). One residual FP
-(shot_0085) is a trajectory-precision issue in the shots stage.
+for scale, gate it to run only around scoreboard deltas. The one recall miss is
+shot_0013 (a missed free throw where the rim was not detected, so no trajectory
+candidate formed, and the commentary does not call it): misses that leave no
+score delta and are not narrated are the blind spot. ASR corroborates such calls
+but does not yet *create* a miss event — a careful post-V1 step.

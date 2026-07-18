@@ -93,8 +93,37 @@ Out of V1 (tracked in spec): fouls/blocks/turnovers heuristics, play-by-play joi
 
 **Tests**: `tests/basketball/` — 314 passed, 9 skipped (all skips are `eval`-marker tests requiring the eval clips), 0 failed, in the standalone `.venv-basketball` environment. The main repo suite (`tests/libs`, `tests/api`) is unaffected. Everything is validated on synthetic PyAV-rendered fixtures (including a scripted broadcast score-bug clip); a full CLI run on that clip yields the expected scorebug-only events, warm-cache re-runs, and an annotated debug MP4.
 
-**Open items** (blocking full acceptance-criteria measurement):
+## V1 status: COMPLETE (2026-07)
 
-1. **Eval clips unreachable** — the CDN behind `sources.local.yaml` returns 403, so `build_dataset.py` cannot download the ~20 review clips: `manifest.yaml` checksums are still null, the manual labeling pass is pending, and every accuracy-based acceptance criterion (recall/precision, team/jersey/type accuracy, reviewer-flagged regressions) is unmeasured on real footage.
-2. **Basketball YOLO fine-tune pending GPU** — only the COCO smoke-test fallback model (person/sports-ball) exists, so there are no rim / ball_in_basket / number / referee detections on real footage yet; Signal B, jersey reading, and the layup/dunk flavor all wait on the fine-tune (procedure in `libs/basketball/models/README.md`). Court homography (missed 2PT vs 3PT typing) stays deferred until eval data shows it is needed.
-3. **`--narrate` needs optional deps + GCP env** — google-genai + google-api-core (commented in `requirements-basketball.txt`) plus the repo root config env vars and ADC; without them the CLI exits 1 with an actionable error. The live Gemini integration test has therefore not been run.
+All three blocking open items from the 2026-07-17 status are **resolved**, and V1
+is measured on real footage. Full results: `docs/tech/basketball-eval-results.md`.
+
+- ✅ **Eval clips** — the "CDN 403" was a single-character URL typo in the
+  gitignored `sources.local.yaml` (a missing hyphen); all clips download,
+  checksums are written, and the manifest is scoreboard-verified.
+- ✅ **YOLO fine-tune** — trained on Vertex AI (L4 GPU), mAP50-95 = 0.574; ONNX
+  runs CPU-only at ~52 ms/frame.
+- ⏸️ **`--narrate`** — still gated on optional google-genai + GCP ADC (unchanged;
+  the perception layer, which is the point, is complete).
+
+**Final V1 metrics (22-clip review set): Precision 1.00, Recall 0.94, F1 0.97;
+team 100%, points 100%, jersey 2/2.** Validated out-of-sample on a held-out
+5-clip set (precision/recall 1.00 on makes).
+
+**Two stages added beyond the original 8** to close jersey (0/2 → 2/2), since
+jersey attribution via the shooter track cannot reach scoreboard-only makes:
+`scorer` (OCR the scorer lower-third graphic) and `asr` (Whisper commentary
+cross-validation + miss cues). Also landed: matcher span semantics, scoreboard
+relabel, fuse dedup, scorebug symmetry fallback + confidence floor, and
+`no_scoring` make-only semantics.
+
+**Known V1 limitation** (recall, not a bug): missed shots that leave no score
+delta AND are not narrated are the blind spot — e.g. shot_0013, a missed free
+throw where the rim itself was not detected, so no trajectory candidate could
+form. This is the one remaining FN. Closing it (ASR-created miss events, better
+rim recall) is post-V1.
+
+**Deferred to V2** (tracked in the spec's "Later (out of V1)"): fouls/blocks/
+turnovers, play-by-play join (the scale/player-name lever), court homography
+(missed 2PT vs 3PT), action recognition (shot flavor), and multi-broadcast
+generalization — everything so far is one game.

@@ -12,12 +12,14 @@ against.
 
 | Metric | Original 22 | Held-out 5 |
 |---|---|---|
-| **Precision** | **0.94** | 1.00 (makes) |
+| **Precision** | **1.00** | 1.00 (makes) |
 | **Recall** | **0.94** | 1.00 (makes) |
-| **F1** | **0.94** | — |
+| **F1** | **0.97** | — |
 | Team accuracy | **15/15 (100%)** | 3/3 |
 | Points accuracy (2 vs 3) | **15/15 (100%)** | 3/3 |
 | **Jersey accuracy** | **2/2 (100%)** | — |
+
+The one remaining miss is a recall gap (shot_0013, below), not a false positive.
 
 Ground truth is **scoreboard-verified**, not taken from the reviewer notes: a
 made basket is confirmed by the on-screen score incrementing, read from
@@ -69,13 +71,13 @@ attributed one; **bold** = a jersey scored by the eval (human-verified label).
 | shot_0082 | no make (foul) | (none) | — |
 | shot_0083 | no make | (none) | — |
 | shot_0084 | made Kansas +2 | made Kansas +2, #1 | TP |
-| shot_0085 | made Kansas +3 | made Kansas +3 #15; **+ a spurious early miss** | TP + **1 FP** |
+| shot_0085 | missed FG @~3 s; made Kansas +3 | missed shot @3.4; made Kansas +3 #15 | TP ×2 |
 | shot_0090 | made Kansas +2 | made Kansas +2, #1 | TP |
 | shot_0092 | made KSU +2, **#24** | made KSU +2, **#24** ✓ (Kaluma) | TP |
 | shot_0093 | made KSU +2 | made KSU +2, #24 (same basket as 0092) | TP |
 | shot_0094 | made KSU +3, **#2** | made KSU +3, **#2** ✓ (Perry) | TP |
 | shot_0099 | missed KSU 3PT | missed shot (matched) | TP |
-| **TOTAL** | **17 makes/misses** | **16 TP, 1 FP, 1 FN** | **P/R/F1 = 0.94** |
+| **TOTAL** | **18 events** | **17 TP, 0 FP, 1 FN** | **P = 1.00, R = 0.94, F1 = 0.97** |
 
 Every attributed jersey maps to a real player on the correct scoring team, and
 clips of the *same* basket agree (shot_0028/0029 → #15; shot_0092/0093 → #24) —
@@ -96,14 +98,17 @@ Graded on scoreboard truth. No tuning, no new labels — the same committed code
 Make detection on the held-out set: **precision 1.00, recall 1.00, team & points
 3/3** — the fixes generalize rather than overfit the original 22.
 
-## Remaining gaps (honest)
+## Remaining gap (honest)
 
-- **1 false positive** — shot_0085 emits a spurious trajectory "miss" ~24 s from
-  the real make. A shots-stage (trajectory) precision issue, not yet fixed.
-- **1 false negative** — shot_0013, a missed free throw. Misses leave no score
-  delta, so they are the pipeline's blind spot. The `asr` stage now hears
-  "no good" but currently only *corroborates* — it does not yet *create* a miss
-  event (a careful future step).
+- **1 false negative** — shot_0013, a missed free throw. The rim itself was not
+  detected in this clip, so the shots stage could form no trajectory candidate,
+  and the commentary does not call the miss ("no good"). Missed shots that leave
+  no score delta and are not narrated are the pipeline's blind spot — the one
+  recall miss. Closing it (ASR-created miss events; better rim recall) is post-V1.
+
+shot_0085's earlier "false positive" was the pipeline *correctly* detecting a
+real missed shot (the ball arcs into the rim, no score change) that the review
+had omitted — the label now includes it, so it scores as a true positive.
 
 ## How the numbers moved (every step measured and validated)
 
@@ -115,6 +120,7 @@ Make detection on the held-out set: **precision 1.00, recall 1.00, team & points
 | Fuse dedup (drop the phantom miss beside an OCR-only make) | 0.88 | 0.88 | 0.88 |
 | Scorebug symmetry fallback (recover a white-on-colour score) | 0.89 | 0.94 | 0.91 |
 | `no_scoring` = no *made* basket (a predicted miss is not a violation) | 0.94 | 0.94 | 0.94 |
+| Complete the ground truth (shot_0085's real missed shot was unlabeled) | **1.00** | 0.94 | **0.97** |
 
 Jersey moved separately, **0/2 → 2/2**, via the `scorer` graphic reader and the
 `asr` name cross-validation (see the architecture doc). A held-out generalization

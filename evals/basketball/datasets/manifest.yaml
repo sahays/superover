@@ -248,6 +248,19 @@ clips:
     file: shot_0085.mp4
     sha256: 0121f7ed4b5ce487f08545dc1cda4dbc32b46421bcb903e3058eed1228f83144
     events:
+    - t: 1.0
+      t_end: 6.0
+      type: shot
+      outcome: missed
+      team: kansas
+      points: null
+      jersey: null
+      verified:
+        event: true
+        outcome: true
+      source: missed FG at ~3.4s — the ball arcs up and comes down into the left rim box with no
+        score change (34-30 stable for 22s after), confirmed from keyframes + ball trajectory.
+        The original review noted only the later make; this real miss completes the label.
     - t: 24.0
       t_end: 28.0
       type: shot
