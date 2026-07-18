@@ -155,8 +155,8 @@ clips:
     file: shot_0035.mp4
     sha256: 38db3a59023b5a8fecf1f597f30ac6695366eb9637be9ae847962f85a6e3055f
     events:
-    - t: 16.0
-      t_end: 26.0
+    - t: 10.0
+      t_end: 14.0
       type: shot
       outcome: made
       team: kansas-state
@@ -167,11 +167,12 @@ clips:
         outcome: true
         team: true
         points: true
-      source: scoreboard 19-18 -> 19-20 (kansas-state +2) at ~20s, read from keyframes
-      note: the scorebug STAGE reported "bug not found" here even though the scoreboard is legible
-        — a detection failure in the pipeline, so expect a recall miss on this clip. Original
-        speculative labels (kansas no.24 @0-9, KSU no.5 @10-15) were not scoreboard-supported and
-        were dropped
+      source: scoreboard flips 19-18 -> 19-20 (kansas-state +2) between t=12 and t=13, confirmed
+        from keyframes (basket ~1-2s earlier)
+      note: the scorebug stage originally failed field discovery here (the left score is
+        white-on-blue, which the strip-level detector misses); fixed by the symmetry fallback
+        in _discover_fields. Original speculative labels (kansas no.24 @0-9, KSU no.5 @10-15)
+        were not scoreboard-supported and were dropped
   shot_0069:
     file: shot_0069.mp4
     sha256: 6a51fe0b951670d0a25ecb3f4137de78c829b539bceef245dfc89cda69b359f8

@@ -243,6 +243,53 @@ def scripted_clip(tmp_path_factory) -> Path:
     return write_scorebug_clip(path, default_script())
 
 
+@pytest.mark.unit
+class TestSynthesizeScorePair:
+    """Symmetry fallback: recover a second score field the strip-level text
+    detector missed (white-on-colour digits) by mirroring the found score
+    about the clock centre."""
+
+    @staticmethod
+    def _cluster(cx, cy=77.0, h=60.0, w=40.0, n=20, net=0.0):
+        return {
+            "cx": cx,
+            "cy": cy,
+            "h": h,
+            "x0": cx - w / 2,
+            "x1": cx + w / 2,
+            "y0": cy - h / 2,
+            "y1": cy + h / 2,
+            "items": [0] * n,
+            "net": net,
+        }
+
+    def test_mirrors_single_score_about_the_clock(self):
+        right = self._cluster(714.0, net=2.0)
+        clock = self._cluster(637.0)
+        pair = scorebug._synthesize_score_pair([right], [clock], (176, 1280, 3))
+        assert pair is not None
+        left, resolved_right = pair
+        assert left["cx"] == pytest.approx(560.0)  # 2*637 - 714
+        assert resolved_right is right and left.get("synthesized")
+        assert left["cx"] < resolved_right["cx"]  # ordered left-to-right
+
+    def test_no_clock_no_synthesis(self):
+        assert scorebug._synthesize_score_pair([self._cluster(714.0)], [], (176, 1280, 3)) is None
+
+    def test_two_scores_not_synthesized(self):
+        # _pick_score_pair already handles >= 2 scores; the fallback declines.
+        scores = [self._cluster(560.0), self._cluster(714.0)]
+        assert scorebug._synthesize_score_pair(scores, [self._cluster(637.0)], (176, 1280, 3)) is None
+
+    def test_score_on_the_clock_bails(self):
+        # Score centre essentially on the clock -> no reliable side to mirror.
+        assert scorebug._synthesize_score_pair([self._cluster(640.0)], [self._cluster(637.0)], (176, 1280, 3)) is None
+
+    def test_mirror_outside_bug_bails(self):
+        # A score far to one side of the clock mirrors past the crop edge.
+        assert scorebug._synthesize_score_pair([self._cluster(650.0)], [self._cluster(680.0)], (176, 700, 3)) is None
+
+
 @pytest.fixture(scope="session")
 def scripted_output(scripted_clip, tmp_path_factory) -> dict:
     workdir = tmp_path_factory.mktemp("scorebug-work")

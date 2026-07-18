@@ -541,6 +541,46 @@ def _pick_score_pair(cands: List[Dict[str, Any]]) -> Optional[Tuple[Dict[str, An
     return a, b
 
 
+def _synthesize_score_pair(
+    scores: List[Dict[str, Any]], clocks: List[Dict[str, Any]], crop_shape: Tuple[int, ...]
+) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
+    """Recover a second score field by symmetry when detection found only one.
+
+    White-on-colour score digits routinely defeat the strip-level text detector
+    (e.g. a team's score drawn on a solid team-colour panel) while the opposite
+    score, drawn dark-on-white, reads fine. Broadcast bugs place the two scores
+    symmetrically about the clock, so when exactly one score cluster and a clock
+    are present, mirror the found score's box across the clock centre. The
+    per-field reader (a tight, 4x-upscaled crop) then recovers the digits the
+    whole-strip detector missed.
+    """
+    if len(scores) != 1 or not clocks:
+        return None
+    real = scores[0]
+    clock = max(clocks, key=lambda c: (c.get("net", 0) < 0, len(c["items"])))
+    axis = clock["cx"]
+    if abs(real["cx"] - axis) < max(4.0, 0.3 * real["h"]):
+        return None  # the score sits on the clock — no reliable side to mirror
+    _ch, cw = crop_shape[:2]
+    mirror = {
+        "cx": 2 * axis - real["cx"],
+        "cy": real["cy"],
+        "x0": 2 * axis - real["x1"],
+        "x1": 2 * axis - real["x0"],
+        "y0": real["y0"],
+        "y1": real["y1"],
+        "h": real["h"],
+        "items": [],
+        "net": 0.0,
+        "values": [],
+        "synthesized": True,
+    }
+    if mirror["x0"] < 0 or mirror["x1"] > cw:
+        return None  # the mirror fell outside the bug
+    pair = sorted([real, mirror], key=lambda c: (c["cx"], c["cy"]))
+    return pair[0], pair[1]
+
+
 def _cluster_roi(cluster: Dict[str, Any], crop_shape: Tuple[int, ...]) -> Tuple[int, int, int, int]:
     """Cluster bbox (bug-crop coords) padded for digit growth, clamped."""
     height = max(4.0, cluster["h"])
@@ -588,6 +628,11 @@ def _discover_fields(
         return None
     score_cands, clock_cands, abbr_cands = _classify_clusters(clusters)
     pair = _pick_score_pair(score_cands)
+    if pair is None:
+        # Detection can miss one score (white-on-colour digits) while reading
+        # the other — mirror the found score about the clock rather than lose
+        # the whole clip.
+        pair = _synthesize_score_pair(score_cands, clock_cands, crop_shape)
     if pair is None:
         logger.info(
             "scorebug: found %d score-like clusters — need 2 (clock=%d, abbr=%d)",
