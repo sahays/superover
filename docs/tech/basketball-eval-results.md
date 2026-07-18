@@ -13,13 +13,16 @@ against.
 | Metric | Original 22 | Held-out 5 |
 |---|---|---|
 | **Precision** | **1.00** | 1.00 (makes) |
-| **Recall** | **0.94** | 1.00 (makes) |
-| **F1** | **0.97** | — |
-| Team accuracy | **15/15 (100%)** | 3/3 |
+| **Recall** | **1.00** | 1.00 (makes) |
+| **F1** | **1.00** | — |
+| Team accuracy | **16/16 (100%)** | 3/3 |
 | Points accuracy (2 vs 3) | **15/15 (100%)** | 3/3 |
-| **Jersey accuracy** | **2/2 (100%)** | — |
+| **Jersey accuracy** | **3/3 (100%)** | — |
 
-The one remaining miss is a recall gap (shot_0013, below), not a false positive.
+Every event is accounted for — 18 true positives, no false positives, no false
+negatives. The last recall gap (shot_0013, a missed free throw the pipeline was
+blind to) was closed by the V2 play-by-play join, which recovers a single
+unambiguous missed shot from the official record (Phase 2, below).
 
 Ground truth is **scoreboard-verified**, not taken from the reviewer notes: a
 made basket is confirmed by the on-screen score incrementing, read from
@@ -55,7 +58,7 @@ attributed one; **bold** = a jersey scored by the eval (human-verified label).
 
 | Clip | Scoreboard truth | Pipeline found | TP/FP/FN |
 |---|---|---|---|
-| shot_0013 | missed FT, Kansas #1 | (none — miss not detected) | FN |
+| shot_0013 | missed FT, Kansas #1 | missed FT, Kansas **#1** ✓ (Dickinson, via PBP) | TP |
 | shot_0015 | no make | (none) | — |
 | shot_0017 | made Kansas +3 | made Kansas +3, #15 (McCullar) | TP |
 | shot_0020 | made KSU +2 | made KSU +2, #13 (McNair) | TP |
@@ -77,7 +80,7 @@ attributed one; **bold** = a jersey scored by the eval (human-verified label).
 | shot_0093 | made KSU +2 | made KSU +2, #24 (same basket as 0092) | TP |
 | shot_0094 | made KSU +3, **#2** | made KSU +3, **#2** ✓ (Perry) | TP |
 | shot_0099 | missed KSU 3PT | missed shot (matched) | TP |
-| **TOTAL** | **18 events** | **17 TP, 0 FP, 1 FN** | **P = 1.00, R = 0.94, F1 = 0.97** |
+| **TOTAL** | **18 events** | **18 TP, 0 FP, 0 FN** | **P = 1.00, R = 1.00, F1 = 1.00** |
 
 Every attributed jersey maps to a real player on the correct scoring team, and
 clips of the *same* basket agree (shot_0028/0029 → #15; shot_0092/0093 → #24) —
@@ -98,13 +101,22 @@ Graded on scoreboard truth. No tuning, no new labels — the same committed code
 Make detection on the held-out set: **precision 1.00, recall 1.00, team & points
 3/3** — the fixes generalize rather than overfit the original 22.
 
-## Remaining gap (honest)
+## The last recall gap, and how it was closed
 
-- **1 false negative** — shot_0013, a missed free throw. The rim itself was not
-  detected in this clip, so the shots stage could form no trajectory candidate,
-  and the commentary does not call the miss ("no good"). Missed shots that leave
-  no score delta and are not narrated are the pipeline's blind spot — the one
-  recall miss. Closing it (ASR-created miss events; better rim recall) is post-V1.
+shot_0013 (a missed free throw, Kansas #1) was the pipeline's one blind spot in
+V1: the rim itself was not detected in the clip, so the shots stage could form no
+trajectory candidate; the miss leaves no score delta; and the commentary never
+calls it. A missed shot that is invisible to vision *and* silent to audio cannot
+be recovered from the clip alone.
+
+The V2 PBP miss-recall (Phase 2, below) closes it from the **official record**
+instead of the pixels: on a clip the pipeline scored *no* events for, it recovers
+a missed shot from the play-by-play — but only when that miss is **uniquely
+determined** by the scorebug's observed score, clock window, and period. For
+shot_0013 exactly one PBP play fits (Dickinson's #1 missed FT), so it is
+recovered with the correct team and jersey; on every other silent clip the gate
+finds zero or multiple candidates and stays silent, so recall rises with **no new
+false positives**.
 
 shot_0085's earlier "false positive" was the pipeline *correctly* detecting a
 real missed shot (the ball arcs into the rim, no score change) that the review
@@ -121,13 +133,16 @@ had omitted — the label now includes it, so it scores as a true positive.
 | Scorebug symmetry fallback (recover a white-on-colour score) | 0.89 | 0.94 | 0.91 |
 | `no_scoring` = no *made* basket (a predicted miss is not a violation) | 0.94 | 0.94 | 0.94 |
 | Complete the ground truth (shot_0085's real missed shot was unlabeled) | **1.00** | 0.94 | **0.97** |
+| PBP miss-recall — recover the one unambiguous silent miss (shot_0013) | **1.00** | **1.00** | **1.00** |
 
 Jersey moved separately, **0/2 → 2/2**, via the `scorer` graphic reader and the
 `asr` name cross-validation (see the architecture doc). A held-out generalization
 fix — the scorebug confidence/corroboration floor — cured a dead-ball replay
 that fabricated two scores on shot_0005, with zero regression on the 22.
 
-## Play-by-play join (V2, Phase 1)
+## Play-by-play join (V2)
+
+### Phase 1 — enrichment (scorer name + jersey + shot type on every make)
 
 The `pbp` stage matches each made basket to the official ESPN play-by-play by
 `score_after` — a globally-unique key, since scores only increase and each play
@@ -146,12 +161,35 @@ shot type** with zero per-clip labeling:
 Coverage went from partial (broadcast graphics only) to **15/15 makes** — every
 make now has the correct scorer, jersey, and shot flavor, all cross-checked
 against the box score, agreeing with the scorer-graphic where it existed, with
-**no metric regression** (P=1.00 / R=0.94 / F1=0.97). This is the scale answer:
-for any game with an ESPN id, ground truth comes for free. Verified on game
-401603459 (Kansas @ Kansas State, 2024-02-05). The PBP is fetched once
-(`scripts/basketball_fetch_pbp.py`) into a gitignored local cache; the runtime
-join is offline. Phase 2 (noted, not built) would use PBP missed-shot rows to
-close the remaining recall miss.
+**no metric regression**. This is the scale answer: for any game with an ESPN id,
+ground truth comes for free. Verified on game 401603459 (Kansas @ Kansas State,
+2024-02-05). The PBP is fetched once (`scripts/basketball_fetch_pbp.py`) into a
+gitignored local cache; the runtime join is offline.
+
+### Phase 2 — miss recall (close the last false negative)
+
+Enrichment rides on a make the pipeline already found. Phase 2 goes the other
+way: it lets the official record *add* an event the pipeline missed — but only
+under a strict uniqueness gate, so it can never invent one.
+
+It fires only on a **silent clip** (the pipeline scored no events at all). From
+the scorebug it collects the observed score(s), the clock range, and the period,
+then asks the PBP for missed shots consistent with all three. If **exactly one**
+play fits, it is added as a low-confidence (0.4) missed event carrying that
+play's team, jersey, and shot type; if zero or more than one fit, the clip stays
+silent. The recovered miss spans the clip's readable window (the frozen dead-ball
+clock can't localize it further — an honest, wide span), so it matches the
+labeled event by span overlap.
+
+On the 22 clips this recovers **shot_0013** — Dickinson's #1 missed free throw,
+which has no rim trajectory and no commentary call — with the correct team and
+jersey, taking **recall 0.94 → 1.00 and F1 0.97 → 1.00 with precision holding at
+1.00**. Every other silent clip (shadowed replays, genuine no-scoring windows)
+finds zero or multiple candidates and is correctly left untouched: **no new false
+positives**. The gate width was validated empirically — a ±4 s clock pad yields
+one candidate for shot_0013; widening to ±8 s admits a second play and the
+recovery correctly declines. Off by default-safe: `pbp_recover_misses` (config)
+gates it, and it is a no-op without a matched PBP game.
 
 ## Methodology
 

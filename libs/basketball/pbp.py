@@ -273,6 +273,38 @@ def match_score_after(
     return None
 
 
+def recover_silent_miss(
+    plays: List[Dict[str, Any]],
+    observed_scores: set,
+    clock_range: Tuple[float, float],
+    period: Optional[int],
+    clock_pad_sec: float,
+) -> Optional[Dict[str, Any]]:
+    """Find the single PBP missed shot consistent with a clip's observed state.
+
+    Phase 2 recall: for a clip the pipeline scored *no* events on (silent — e.g.
+    a missed free throw where the rim was never detected), the PBP is the only
+    source. A missed shot leaves the score unchanged, so a recoverable miss must
+    have a ``(away, home)`` pair the clip actually observed, within its
+    game-clock window and period. Returns the play only when **exactly one** such
+    miss exists — an ambiguous window (several candidate misses) yields ``None``,
+    preferring no event over a wrong one, so this can only recover or decline,
+    never fabricate.
+    """
+    if period is None:
+        return None
+    lo, hi = clock_range[0] - clock_pad_sec, clock_range[1] + clock_pad_sec
+    cands = [
+        p
+        for p in plays
+        if not p.get("made")
+        and p.get("period") == period
+        and (p.get("away_score"), p.get("home_score")) in observed_scores
+        and lo <= float(p.get("clock_sec") if p.get("clock_sec") is not None else -1) <= hi
+    ]
+    return cands[0] if len(cands) == 1 else None
+
+
 # --- live fetch (script + optional stage fallback only) --------------------
 
 

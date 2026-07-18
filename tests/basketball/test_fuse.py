@@ -730,6 +730,52 @@ class TestPbpEnrichment:
         e = one_event(events)
         assert e.team == "kansas-state" and "pbp" in e.evidence
 
+    @staticmethod
+    def _reads(*t, left=3, right=6, clock=1044.0):
+        return [
+            {
+                "raw_t": x,
+                "visible": True,
+                "smoothed": {"left": left, "right": right},
+                "clock": {"value": clock},
+            }
+            for x in t
+        ]
+
+    def test_pbp_recovers_silent_miss(self):
+        # No delta and no candidate -> the pipeline scores nothing (silent); the
+        # PBP recovers the single consistent miss and creates a spanning event.
+        sb = sb_out()
+        sb["reads"] = self._reads(0.0, 15.0, 29.0)
+        plays = [
+            self._play(3, 6, made=True, clock_sec=1120.0, period=1, scoring_team="home"),  # establishes 3-6
+            self._play(
+                3,
+                6,
+                made=False,
+                scoring_play=False,
+                clock_sec=1044.0,
+                period=1,
+                scoring_team="away",
+                scorer_name="Hunter Dickinson",
+                scorer_jersey="1",
+                shot_type="ft",
+            ),
+        ]
+        events, _ = fuse_signals(shots_out(), sb, pbp=self._pbp(*plays))
+        misses = [e for e in events if e.outcome == "missed"]
+        assert len(misses) == 1
+        m = misses[0]
+        assert m.jersey == "1" and m.type == "free_throw" and m.team == "kansas"
+        assert m.scorer_name == "Hunter Dickinson" and m.evidence == ["pbp"]
+
+    def test_no_recovery_when_pipeline_has_a_scoring_event(self):
+        sb = sb_out(delta())  # a delta-confirmed make -> not silent
+        sb["reads"] = self._reads(0.0, 15.0)
+        plays = [self._play(3, 6, made=False, scoring_play=False, clock_sec=1044.0, period=1, scorer_jersey="1")]
+        events, _ = fuse_signals(shots_out(), sb, pbp=self._pbp(*plays))
+        assert not any(e.outcome == "missed" for e in events)
+
 
 class TestFuseRunStage:
     def _context(self, tmp_path) -> StageContext:

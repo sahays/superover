@@ -1,8 +1,8 @@
 # Basketball Video Analysis CLI — Research Findings & Implementation Plan
 
-Status: **V1 complete + measured** (2026-07). Eval results:
-`docs/tech/basketball-eval-results.md` (Precision 1.00, Recall 0.94, F1 0.97;
-team & points 100%; jersey 2/2; held-out validated). Latest findings appended at
+Status: **V1 + V2 complete + measured** (2026-07). Eval results:
+`docs/tech/basketball-eval-results.md` (Precision 1.00, Recall 1.00, F1 1.00;
+team & points 100%; jersey 3/3; held-out validated). Latest findings appended at
 the end.
 
 ## Context
@@ -190,9 +190,10 @@ python evals/basketball/run_eval.py                          # score vs manifest
 ## Findings from implementation (2026-07)
 
 Built, measured, and cross-dataset validated. Results:
-`docs/tech/basketball-eval-results.md` — **Precision 1.00, Recall 0.94, F1 0.97**,
-team & points **100%**, **jersey 2/2**, and precision/recall **1.00** on a
-held-out 5-clip set the pipeline was never tuned against.
+`docs/tech/basketball-eval-results.md` — **Precision 1.00, Recall 1.00, F1 1.00**,
+team & points **100%**, **jersey 3/3**, and precision/recall **1.00** on a
+held-out 5-clip set the pipeline was never tuned against. (V1 landed at R 0.94 /
+F1 0.97; the V2 play-by-play join's Phase-2 miss-recall closed the last FN.)
 
 **The scoreboard-authoritative thesis held — and had to be enforced against the
 labels too.** The reviewer/Gemini notes were themselves wrong on several clips
@@ -243,9 +244,18 @@ it is ignored, not a false positive.
 **always validate on held-out clips before committing** (the confidence-floor fix
 was born from a held-out failure and cost zero regression on the original 22).
 
+**The last recall miss, and how V2 closed it**: shot_0013 (a missed free throw
+where the rim was not detected, so no trajectory candidate formed, and the
+commentary does not call it) was the one FN — a miss invisible to vision *and*
+silent to audio. The **PBP miss-recall** (`pbp` stage, Phase 2) recovers it from
+the official record: on a clip the pipeline scored *no* events for, it adds a
+missed shot only when the play-by-play, constrained by the observed score + clock
+window + period, yields **exactly one** candidate. shot_0013 → one play
+(Dickinson #1 missed FT) → recovered with correct team + jersey; every other
+silent clip stays silent (zero or multiple candidates). R 0.94 → 1.00, no new
+false positives.
+
 **Open cost / gaps**: the `asr` (Whisper) stage transcribes every clip in full —
-for scale, gate it to run only around scoreboard deltas. The one recall miss is
-shot_0013 (a missed free throw where the rim was not detected, so no trajectory
-candidate formed, and the commentary does not call it): misses that leave no
-score delta and are not narrated are the blind spot. ASR corroborates such calls
-but does not yet *create* a miss event — a careful post-V1 step.
+for scale, gate it to run only around scoreboard deltas. Beyond one game:
+fouls/blocks/turnovers, court homography (missed 2PT vs 3PT), action recognition,
+and multi-broadcast generalization remain.

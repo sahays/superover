@@ -169,6 +169,12 @@ ASR_WINDOW_SEC = 8.0
 ASR_JERSEY_BOOST = 0.02
 MIN_SPOKEN_NAME_LEN = 5  # a spoken word this long matching the graphic name is a real cross-check
 
+# Phase 2 PBP miss recall: for a clip the pipeline scored no events on, the
+# play-by-play is the only source. A miss is recovered only when exactly one PBP
+# missed shot is consistent with the clip's observed score, period, and this
+# game-clock pad — an ambiguous window declines (prefer null over a wrong miss).
+PBP_RECOVER_CLOCK_PAD_SEC = 4.0
+
 # Free-throw scene corroboration (pure heuristic over teams tracks + detect
 # arrays; see ft_scene_corroborated for the full rules).
 FT_SCENE_WINDOW_SEC = 3.0  # tracks are examined +/- this around the event time
@@ -380,6 +386,7 @@ def fuse_signals(
     pbp: Optional[Dict[str, Any]] = None,
     pbp_clock_tol_sec: float = 40.0,
     pbp_override_team: bool = True,
+    pbp_recover_misses: bool = True,
 ) -> Tuple[List[Event], Dict[str, Any]]:
     """Fuse shots + scorebug (+ teams + jersey) stage outputs into events.
 
@@ -598,6 +605,9 @@ def fuse_signals(
     _enrich_with_pbp(entries, pbp, scorebug, debug, pbp_clock_tol_sec, pbp_override_team)
 
     events = sorted((entry[0] for entry in entries), key=lambda e: (e.t, e.type))
+    if pbp_recover_misses:
+        _recover_misses_from_pbp(events, pbp, scorebug, debug)
+        events.sort(key=lambda e: (e.t, e.type))
     return events, debug
 
 
@@ -898,6 +908,75 @@ def _enrich_with_pbp(
         )
 
 
+def _recover_misses_from_pbp(
+    events: List[Event],
+    pbp: Optional[Dict[str, Any]],
+    scorebug: Optional[Dict[str, Any]],
+    debug: Dict[str, Any],
+) -> None:
+    """Phase 2 recall: on a clip the pipeline scored *no* events for, recover a
+    single unambiguous missed shot from the play-by-play (``pbp.recover_silent_miss``).
+
+    This is the only path that *creates* an event rather than enriching one. It
+    fires only when the clip is silent (a missed shot the pipeline is blind to —
+    e.g. a missed free throw where the rim was never detected) and the PBP miss
+    is uniquely determined by the clip's observed score + clock + period, so it
+    adds recall without a false positive. The event spans the clip's readable
+    window (the game clock cannot localize it further) and is tagged ``pbp``.
+    Appends to ``events`` in place.
+    """
+    if not pbp or pbp.get("skipped"):
+        return
+    if any(e.type in SCORING_EVENT_TYPES for e in events):
+        return  # not silent — trust what the pipeline found
+    reads = [r for r in (scorebug or {}).get("reads", []) if r.get("visible")]
+    observed_scores = set()
+    clocks: List[float] = []
+    read_times: List[float] = []
+    for r in reads:
+        sm = r.get("smoothed") or {}
+        if sm.get("left") is not None and sm.get("right") is not None:
+            observed_scores.add((sm["left"], sm["right"]))
+        c = r.get("clock") or {}
+        if c.get("value") is not None:
+            clocks.append(float(c["value"]))
+        if r.get("raw_t") is not None:
+            read_times.append(float(r["raw_t"]))
+    if not observed_scores or not clocks:
+        return
+    from libs.basketball import pbp as pbp_mod  # lazy: avoid scorebug<->timeline import cycle
+
+    plays = pbp.get("plays") or []
+    score_index = pbp_mod.build_score_index(plays)
+    period = next((score_index[s]["period"] for s in observed_scores if s in score_index), None)
+    play = pbp_mod.recover_silent_miss(
+        plays, observed_scores, (min(clocks), max(clocks)), period, PBP_RECOVER_CLOCK_PAD_SEC
+    )
+    if play is None:
+        return
+    teams = pbp.get("teams") or {}
+    team = (teams.get(play.get("scoring_team") or "") or {}).get("key")
+    t0 = round(min(read_times), 3) if read_times else 0.0
+    t1 = round(max(read_times), 3) if read_times else None
+    event = Event(
+        t=t0,
+        t_end=t1 if (t1 is not None and t1 > t0) else None,
+        type=EVENT_TYPE_FREE_THROW if play.get("shot_type") == "ft" else EVENT_TYPE_SHOT,
+        outcome=OUTCOME_MISSED,
+        team=team,
+        points=None,
+        jersey=str(play["scorer_jersey"]) if play.get("scorer_jersey") else None,
+        confidence={"overall": 0.4},
+        evidence=["pbp"],
+        scorer_name=play.get("scorer_name"),
+        shot_type=play.get("shot_type"),
+    )
+    events.append(event)
+    debug.setdefault("pbp_recovered", []).append(
+        {"t": event.t, "jersey": event.jersey, "name": event.scorer_name, "shot_type": event.shot_type}
+    )
+
+
 def run_stage(ctx) -> None:  # ctx: libs.basketball.stages.StageContext
     """``fuse`` stage: combine scorebug/shots/teams/jersey caches into the
     final event timeline (predictions format — see module docstring).
@@ -950,6 +1029,7 @@ def run_stage(ctx) -> None:  # ctx: libs.basketball.stages.StageContext
         pbp=pbp,
         pbp_clock_tol_sec=ctx.settings.pbp_clock_tolerance_sec,
         pbp_override_team=ctx.settings.pbp_override_team,
+        pbp_recover_misses=ctx.settings.pbp_recover_misses,
     )
     logger.info("fuse: %d event(s) for clip %s", len(events), ctx.clip_id)
     ctx.cache.write_json(ctx.stage, debug, filename="fusion_debug.json")

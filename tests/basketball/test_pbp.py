@@ -92,6 +92,29 @@ class TestMatchScoreAfter:
 
 
 @pytest.mark.unit
+class TestRecoverSilentMiss:
+    # the fixture has one missed shot: Will McNair Jr. #13, 9-8, 14:00 (840 s), 1st half.
+    def test_single_consistent_miss_recovered(self):
+        r = pbp.recover_silent_miss(PLAYS, {(9, 8)}, (840.0, 840.0), 1, 4.0)
+        assert r and r["scorer_name"] == "Will McNair Jr." and not r["made"]
+
+    def test_ambiguous_window_declines(self):
+        m1 = pbp_fixtures.play(1, "14:00", 2, 9, 8, "home", "A", "1", "layup", made=False)
+        m2 = pbp_fixtures.play(1, "14:02", 2, 9, 8, "away", "B", "2", "3pt", made=False)
+        assert pbp.recover_silent_miss([m1, m2], {(9, 8)}, (838.0, 842.0), 1, 4.0) is None
+
+    def test_score_not_observed_declines(self):
+        # the 9-8 miss is not consistent with an observed 3-6.
+        assert pbp.recover_silent_miss(PLAYS, {(3, 6)}, (840.0, 840.0), 1, 4.0) is None
+
+    def test_wrong_period_declines(self):
+        assert pbp.recover_silent_miss(PLAYS, {(9, 8)}, (840.0, 840.0), 2, 4.0) is None
+
+    def test_clock_out_of_window_declines(self):
+        assert pbp.recover_silent_miss(PLAYS, {(9, 8)}, (900.0, 900.0), 1, 4.0) is None
+
+
+@pytest.mark.unit
 class TestRunStage:
     def _ctx(self, tmp_path, game_id="", cache_dir="", allow_fetch=False, force=True):
         settings = BasketballSettings(

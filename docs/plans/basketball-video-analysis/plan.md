@@ -106,9 +106,10 @@ is measured on real footage. Full results: `docs/tech/basketball-eval-results.md
 - ⏸️ **`--narrate`** — still gated on optional google-genai + GCP ADC (unchanged;
   the perception layer, which is the point, is complete).
 
-**Final V1 metrics (22-clip review set): Precision 1.00, Recall 0.94, F1 0.97;
-team 100%, points 100%, jersey 2/2.** Validated out-of-sample on a held-out
-5-clip set (precision/recall 1.00 on makes).
+**Final metrics (22-clip review set): Precision 1.00, Recall 1.00, F1 1.00;
+team 16/16, points 15/15, jersey 3/3 — all 100%.** (V1 landed at R 0.94 / F1
+0.97; V2 Phase 2 closed the last FN, below.) Validated out-of-sample on a
+held-out 5-clip set (precision/recall 1.00 on makes).
 
 **Two stages added beyond the original 8** to close jersey (0/2 → 2/2), since
 jersey attribution via the shooter track cannot reach scoreboard-only makes:
@@ -117,16 +118,21 @@ cross-validation + miss cues). Also landed: matcher span semantics, scoreboard
 relabel, fuse dedup, scorebug symmetry fallback + confidence floor, and
 `no_scoring` make-only semantics.
 
-**Known V1 limitation** (recall, not a bug): missed shots that leave no score
-delta AND are not narrated are the blind spot — e.g. shot_0013, a missed free
-throw where the rim itself was not detected, so no trajectory candidate could
-form. This is the one remaining FN. Closing it (ASR-created miss events, better
-rim recall) is post-V1.
+**The V1 blind spot, now closed by V2:** missed shots that leave no score delta
+AND are not narrated were the recall gap — e.g. shot_0013, a missed free throw
+where the rim itself was not detected, so no trajectory candidate could form.
+V2 Phase 2 closes it from the official record (below).
 
-**V2 (in progress):** the **play-by-play join** (the scale/player-name lever) is
-built — Phase 1, `pbp` stage — see `docs/tech/basketball-eval-results.md`. It
-matches each make to the official ESPN PBP by `score_after` and attaches the
-authoritative scorer name + jersey + shot type (15/15 makes, no regression).
-Still deferred: PBP miss recall (Phase 2), fouls/blocks/turnovers, court
-homography (missed 2PT vs 3PT), action recognition (shot flavor), and
-multi-broadcast generalization — everything so far is one game.
+**V2 (complete for this game):** the **play-by-play join** (the scale /
+player-name lever), `pbp` stage — see `docs/tech/basketball-eval-results.md`.
+- **Phase 1 — enrichment**: matches each make to the official ESPN PBP by
+  `score_after` and attaches the authoritative scorer name + jersey + shot type
+  (15/15 makes, no regression).
+- **Phase 2 — miss recall**: on a silent clip, recovers a *uniquely determined*
+  missed shot from the PBP (observed score + clock window + period → exactly one
+  play). Closes shot_0013 (R 0.94 → 1.00, F1 → 1.00) with no new false positives;
+  gated by `pbp_recover_misses`.
+
+Still deferred: fouls/blocks/turnovers, court homography (missed 2PT vs 3PT),
+action recognition (shot flavor), and multi-broadcast generalization —
+everything so far is one game.

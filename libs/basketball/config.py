@@ -194,6 +194,11 @@ class BasketballSettings(BaseSettings):
     """Let a confident PBP match (exact score + known orientation) override the
     fused event's scoring team on disagreement."""
 
+    pbp_recover_misses: bool = True
+    """Phase 2 recall: on a clip the pipeline scored no events for, recover a
+    single unambiguous missed shot from the play-by-play. Fires only when the
+    PBP miss is uniquely determined (see timeline._recover_misses_from_pbp)."""
+
     # --- Evaluation ---
     eval_tolerance_sec: float = 2.0
     """Tolerance window (± seconds) when matching predicted events to truth."""
