@@ -32,3 +32,11 @@ pydantic-settings==2.6.1
 #   .venv-basketball/bin/pip install "google-genai>=1.65.0" google-api-core
 # google-genai>=1.65.0
 # google-api-core
+
+# --- OPTIONAL: commentary ASR (asr stage) ----------------------------------
+# The asr stage lazy-imports faster-whisper (CTranslate2, CPU int8 — no torch)
+# and downloads the small.en model on first use. Without it the stage writes a
+# skipped marker and fusion continues (jersey still comes from the scorer
+# graphic). To enable commentary cross-validation + miss cues:
+#   .venv-basketball/bin/pip install faster-whisper
+# faster-whisper>=1.2.0

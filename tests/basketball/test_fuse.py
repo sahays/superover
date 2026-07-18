@@ -132,6 +132,18 @@ def scorer_out(*features):
     return {"clip_id": CLIP_ID, "features": list(features)}
 
 
+def aseg(t, text):
+    return {"t_start": t, "t_end": t + 2.0, "text": text}
+
+
+def acue(t, kind):
+    return {"t": t, "kind": kind, "phrase": kind}
+
+
+def asr_out(segments=(), cues=()):
+    return {"clip_id": CLIP_ID, "segments": list(segments), "cues": list(cues)}
+
+
 def one_event(events):
     assert len(events) == 1, [e.to_dict() for e in events]
     return events[0]
@@ -617,6 +629,40 @@ class TestScorerGraphic:
         )
         e = one_event(events)
         assert e.outcome == "missed" and e.jersey is None
+
+
+@pytest.mark.unit
+class TestAsrCorroboration:
+    def test_scorer_name_cross_validated(self):
+        # The graphic gives #2 TYLORPERRY; commentary says "Perry" -> the two
+        # agree, so the make is tagged with asr evidence.
+        events, _ = fuse_signals(
+            shots_out(),
+            sb_out(delta(t=25.0, points=2)),
+            scorer=scorer_out(feat("2", name="TYLORPERRY", t_start=24.0, t_end=28.0)),
+            asr=asr_out(segments=[aseg(24.0, "Tyler Perry drives and finishes")]),
+        )
+        e = one_event(events)
+        assert e.jersey == "2" and "asr" in e.evidence
+
+    def test_unrelated_commentary_not_cross_validated(self):
+        events, _ = fuse_signals(
+            shots_out(),
+            sb_out(delta(t=25.0, points=2)),
+            scorer=scorer_out(feat("2", name="TYLORPERRY", t_start=24.0, t_end=28.0)),
+            asr=asr_out(segments=[aseg(24.0, "a look at the standings tonight")]),
+        )
+        assert "asr" not in one_event(events).evidence
+
+    def test_make_outcome_corroborated_by_cue(self):
+        events, _ = fuse_signals(shots_out(), sb_out(delta(t=25.0, points=2)), asr=asr_out(cues=[acue(25.0, "make")]))
+        assert "asr" in one_event(events).evidence
+
+    def test_skipped_asr_is_ignored(self):
+        events, _ = fuse_signals(
+            shots_out(), sb_out(delta(t=25.0, points=2)), asr={"skipped": True, "reason": "no deps"}
+        )
+        assert "asr" not in one_event(events).evidence
 
 
 class TestFuseRunStage:

@@ -27,6 +27,7 @@ and an ``evidence`` list naming the signals that contributed.
 
 import json
 import logging
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -157,6 +158,14 @@ MISS_ABSORB_WINDOW_SEC = 3.5
 # The broadcast shows it right around the scoring play; the window is generous
 # because it can appear a beat before or linger well after.
 SCORER_MATCH_WINDOW_SEC = 10.0
+
+# Commentary lags the play by 1-3 s and references it for several more, so ASR
+# cues are matched to an event within this window. ASR only corroborates
+# (adds an "asr" evidence tag, and a small jersey-confidence boost when the
+# spoken name confirms the graphic) — it never creates or changes an event.
+ASR_WINDOW_SEC = 8.0
+ASR_JERSEY_BOOST = 0.02
+MIN_SPOKEN_NAME_LEN = 5  # a spoken word this long matching the graphic name is a real cross-check
 
 # Free-throw scene corroboration (pure heuristic over teams tracks + detect
 # arrays; see ft_scene_corroborated for the full rules).
@@ -365,6 +374,7 @@ def fuse_signals(
     jersey_min_conf: float = 0.5,
     detect_arrays: Optional[Dict[str, Any]] = None,
     scorer: Optional[Dict[str, Any]] = None,
+    asr: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Event], Dict[str, Any]]:
     """Fuse shots + scorebug (+ teams + jersey) stage outputs into events.
 
@@ -579,6 +589,7 @@ def fuse_signals(
     _suppress_misses_shadowed_by_ocr_makes(entries, MISS_ABSORB_WINDOW_SEC, debug)
     _apply_team_and_jersey(entries, teams, jersey, jersey_min_conf, debug)
     _attach_scorer_graphic(entries, scorer, debug)
+    _corroborate_with_asr(entries, scorer, asr, debug)
 
     events = sorted((entry[0] for entry in entries), key=lambda e: (e.t, e.type))
     return events, debug
@@ -730,6 +741,74 @@ def _attach_scorer_graphic(
         )
 
 
+def _name_spoken(graphic_name: str, spoken_text: str) -> bool:
+    """A commentary word (>= MIN_SPOKEN_NAME_LEN letters) that is a substring of
+    the graphic's concatenated name — "Perry" confirms the graphic "TYLORPERRY",
+    robust to the first-name spelling ("Tyler" vs "Tylor")."""
+    g = re.sub(r"[^a-z]", "", graphic_name.lower())
+    return any(len(w) >= MIN_SPOKEN_NAME_LEN and w in g for w in re.findall(r"[a-z]+", spoken_text.lower()))
+
+
+def _corroborate_with_asr(
+    entries: List[Tuple[Event, Optional[Dict[str, Any]], Optional[Dict[str, Any]]]],
+    scorer: Optional[Dict[str, Any]],
+    asr: Optional[Dict[str, Any]],
+    debug: Dict[str, Any],
+) -> None:
+    """Corroborate events with the commentary (never create or change one).
+
+    Cross-validates the scorer graphic's name against the spoken name (a small
+    jersey-confidence bump when they agree), and tags an ``"asr"`` evidence when
+    the commentary calls the event's outcome / shot type near its time. Mutates
+    the events in ``entries`` in place.
+    """
+    if asr is None or asr.get("skipped"):
+        return
+    segments = list(asr.get("segments") or [])
+    cues = list(asr.get("cues") or [])
+    if not segments and not cues:
+        return
+    features = list((scorer or {}).get("features") or [])
+    for event, _cand, _delta in entries:
+        lo, hi = event.t - ASR_WINDOW_SEC, event.t + ASR_WINDOW_SEC
+        near_text = " ".join(s["text"] for s in segments if lo <= float(s.get("t_start", 0.0)) <= hi)
+        near_kinds = {c["kind"] for c in cues if lo <= float(c["t"]) <= hi}
+        tagged = False
+
+        # Scorer-name cross-validation: the graphic gave the jersey; the spoken
+        # name confirms the same player.
+        if "scorer_graphic" in event.evidence and event.jersey is not None and near_text:
+            match = next(
+                (
+                    f
+                    for f in features
+                    if f["number"] == event.jersey
+                    and f["t_start"] - SCORER_MATCH_WINDOW_SEC <= event.t <= f["t_end"] + SCORER_MATCH_WINDOW_SEC
+                ),
+                None,
+            )
+            if match and _name_spoken(str(match.get("name", "")), near_text):
+                event.confidence["jersey"] = round(
+                    min(0.99, float(event.confidence.get("jersey", 0.0)) + ASR_JERSEY_BOOST), 3
+                )
+                tagged = True
+                debug.setdefault("asr_matches", []).append(
+                    {"t": event.t, "jersey": event.jersey, "name": match.get("name")}
+                )
+
+        # Outcome / shot-type corroboration.
+        if (
+            (event.outcome == OUTCOME_MADE and "make" in near_kinds)
+            or (event.outcome == OUTCOME_MISSED and "miss" in near_kinds)
+            or (event.points == 3 and "three" in near_kinds)
+            or (event.type == EVENT_TYPE_FREE_THROW and "free_throw" in near_kinds)
+        ):
+            tagged = True
+
+        if tagged and "asr" not in event.evidence:
+            event.evidence.append("asr")
+
+
 def run_stage(ctx) -> None:  # ctx: libs.basketball.stages.StageContext
     """``fuse`` stage: combine scorebug/shots/teams/jersey caches into the
     final event timeline (predictions format — see module docstring).
@@ -762,6 +841,7 @@ def run_stage(ctx) -> None:  # ctx: libs.basketball.stages.StageContext
     teams = _optional("teams")
     jersey = _optional("jersey")
     scorer = _optional("scorer")
+    asr = _optional("asr")
     try:
         detect_arrays: Optional[Dict[str, Any]] = ctx.cache.read_arrays("detect")
     except FileNotFoundError:
@@ -776,6 +856,7 @@ def run_stage(ctx) -> None:  # ctx: libs.basketball.stages.StageContext
         jersey_min_conf=ctx.settings.fuse_jersey_min_conf,
         detect_arrays=detect_arrays,
         scorer=scorer,
+        asr=asr,
     )
     logger.info("fuse: %d event(s) for clip %s", len(events), ctx.clip_id)
     ctx.cache.write_json(ctx.stage, debug, filename="fusion_debug.json")
