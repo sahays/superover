@@ -53,6 +53,18 @@ class BasketballSettings(BaseSettings):
         "player": "player",
         "number": "number",
         "referee": "referee",
+        # The dataset labels an acting player with the action class INSTEAD of
+        # "player" (verified on v18: only 4% of action boxes overlap a plain
+        # player box, median IoU 0.02). Left unmapped these become ids >= 6 and
+        # teams/shots — which filter on the canonical player id 3 — would skip
+        # the shooter and silently attribute the shot to the nearest bystander.
+        # Map them all to "player" so tracking and shooter attribution see them.
+        # (Trade-off: loses the layup/dunk flavor epic-4 story-1 wants; that
+        # needs a separate action array, and is deferred/low-stakes for V1.)
+        "player-in-possession": "player",
+        "player-jump-shot": "player",
+        "player-layup-dunk": "player",
+        "player-shot-block": "player",
         # COCO smoke-test fallback (yolo11n)
         "person": "player",
         "sports ball": "ball",

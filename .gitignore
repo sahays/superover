@@ -75,3 +75,7 @@ gemini-key
 evals/basketball/datasets/clips/
 evals/basketball/datasets/sources.local.yaml
 libs/basketball/models/*.onnx
+libs/basketball/models/*.metrics.json
+libs/basketball/models/dataset/
+# Reviewer source PDF — never commit (see manifest note / project memory)
+shashi-basketball-source.pdf
