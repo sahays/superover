@@ -103,8 +103,8 @@ REGRESSIONS = {
         lambda ev: not _events_in(ev, 21, 26, type="free_throw", outcome="made"),
     ),
     "shot_0017": (
-        "3PT at 10-17 credited to kansas",
-        lambda ev: _events_in(ev, 10, 17, outcome="made", team="kansas", points=3),
+        "3PT credited to kansas at ~20s (scoreboard 4-6 -> 7-6; the original reviewer window 10-17 was wrong)",
+        lambda ev: _events_in(ev, 18, 22, outcome="made", team="kansas", points=3),
     ),
     "shot_0020": (
         "no scoring event in 15-22",
@@ -119,8 +119,9 @@ REGRESSIONS = {
         lambda ev: _events_in(ev, 21, 29, outcome="made"),
     ),
     "shot_0029": (
-        "scorer at 22-30 wears jersey #4",
-        lambda ev: _events_in(ev, 22, 30, outcome="made", jersey="4"),
+        "kansas +2 at ~2s (scoreboard 15-13 -> 17-13; the original label KSU jersey-4 @22-30 was wrong "
+        "— it is the same basket as shot_0028)",
+        lambda ev: _events_in(ev, 0, 4, outcome="made", team="kansas", points=2),
     ),
 }
 

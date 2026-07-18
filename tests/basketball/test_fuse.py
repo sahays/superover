@@ -184,14 +184,26 @@ class TestFusionTruthTable:
         assert e.evidence == ["trajectory"]
         assert e.confidence["overall"] == pytest.approx(0.70)
 
-    def test_miss_never_consumes_delta(self):
-        # A delta near a clean miss belongs to an undetected make: the miss
-        # stays a miss AND the delta surfaces as an OCR-only made event.
-        events, _ = fuse_signals(shots_out(cand(kind="miss", t_rim=None)), sb_out(delta()))
+    def test_miss_near_ocr_make_suppressed_as_same_shot(self):
+        # A clean miss within MISS_ABSORB_WINDOW_SEC of a delta-confirmed
+        # OCR-only make is the same shot the scoreboard confirmed (OCR lag put
+        # the delta past confirm_window_sec): the phantom miss is dropped and
+        # only the make survives, untouched (scorebug evidence, delta t/team).
+        events, debug = fuse_signals(shots_out(cand(kind="miss", t_rim=None)), sb_out(delta()))
+        e = one_event(events)
+        assert (e.outcome, e.points, e.t) == ("made", 2, 5.4)
+        assert e.evidence == ["scorebug"]
+        assert any(d.get("reason") == "miss_shadowed_by_confirmed_make" for d in debug["dropped"])
+
+    def test_miss_far_from_delta_kept_with_ocr_make(self):
+        # Beyond the absorb window the delta belongs to some other undetected
+        # make: the miss stays a miss AND the delta surfaces as an OCR-only
+        # made event (two distinct events).
+        events, _ = fuse_signals(shots_out(cand(kind="miss", t_rim=None)), sb_out(delta(t=15.0)))
         assert len(events) == 2
         miss, made = sorted(events, key=lambda e: e.t)
         assert (miss.outcome, miss.points) == ("missed", None)
-        assert (made.outcome, made.points, made.t) == ("made", 2, 5.4)
+        assert (made.outcome, made.points, made.t) == ("made", 2, 15.0)
         assert made.evidence == ["scorebug"]
 
     def test_delta_without_candidate_is_ocr_only_event(self):

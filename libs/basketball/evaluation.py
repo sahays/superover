@@ -4,8 +4,10 @@ Thin CLI wrapper: ``evals/basketball/run_eval.py``. Kept here so the matcher
 and scorers are unit-testable (tests/basketball/test_evaluation.py).
 
 Matching rule (Rung 1, docs/tech/evaluation-strategy.md): greedy 1:1 matching
-by time distance within a ±``tolerance_sec`` window; an event's reference
-time is its midpoint when ``t_end`` is set, else ``t``.
+within a ±``tolerance_sec`` window of an event's [``t``, ``t_end``] span
+(``t_end`` absent = a point at ``t``). Ground-truth spans are *uncertainty
+windows*, so a prediction inside one is an exact match and the tolerance only
+applies beyond the window's edges — see ``time_gap``.
 
 Verification semantics: each ground-truth event carries a per-attribute
 ``verified`` map (bool shorthand = all attributes). By default only events
@@ -133,31 +135,62 @@ def load_manifest(path: Union[str, Path]) -> Manifest:
 # --- Matching ---
 
 
+def _interval(event: Event) -> Tuple[float, float]:
+    """An event's time span. A point event is a zero-width interval."""
+    return event.t, event.t_end if event.t_end is not None else event.t
+
+
+def time_gap(a: Event, b: Event) -> float:
+    """Seconds between two events' time spans; 0.0 when the spans overlap.
+
+    A ground-truth ``t``/``t_end`` is an *uncertainty window* ("the event
+    happened somewhere in here"), not a duration to average away: the labels
+    come from reviewer notes that never stated exact times, so windows run
+    7-10 s wide. Collapsing such a window to its midpoint and demanding the
+    prediction land within +/-tolerance of that point rejects predictions
+    sitting inside the labelled window, scoring a correct call as both a false
+    positive and a false negative. Comparing spans instead makes any
+    prediction inside the window an exact (gap 0.0) match, and keeps the
+    tolerance meaningful for predictions just outside its edges.
+
+    For two point events this is simply ``abs(a.t - b.t)``.
+    """
+    a0, a1 = _interval(a)
+    b0, b1 = _interval(b)
+    if a0 <= b1 and b0 <= a1:
+        return 0.0
+    return b0 - a1 if b0 > a1 else a0 - b1
+
+
 def match_events(
     predicted: List[Event], truth: List[Event], tolerance_sec: float
 ) -> Tuple[List[Tuple[int, int, float]], List[int], List[int]]:
-    """Greedy 1:1 matching by |time distance| within ±tolerance.
+    """Greedy 1:1 matching by time gap within ±tolerance.
 
-    Returns (matches [(pred_idx, truth_idx, distance)], unmatched pred
-    indices, unmatched truth indices). Reference time per event: midpoint if
-    t_end is set, else t.
+    Returns (matches [(pred_idx, truth_idx, gap)], unmatched pred indices,
+    unmatched truth indices). Distance between two events is the gap between
+    their [t, t_end] spans (see ``time_gap``) — zero when they overlap, so a
+    prediction inside a ground-truth window always matches.
+
+    Every prediction inside one window ties at gap 0.0, so ties break toward
+    the closest midpoints, then by index to stay deterministic.
     """
     candidates = []
     for p_idx, pred in enumerate(predicted):
         for t_idx, true in enumerate(truth):
-            dist = abs(pred.midpoint - true.midpoint)
-            if dist <= tolerance_sec:
-                candidates.append((dist, p_idx, t_idx))
-    candidates.sort(key=lambda c: (c[0], c[1], c[2]))
+            gap = time_gap(pred, true)
+            if gap <= tolerance_sec:
+                candidates.append((gap, abs(pred.midpoint - true.midpoint), p_idx, t_idx))
+    candidates.sort()
     matches: List[Tuple[int, int, float]] = []
     used_pred: Set[int] = set()
     used_truth: Set[int] = set()
-    for dist, p_idx, t_idx in candidates:
+    for gap, _centre_dist, p_idx, t_idx in candidates:
         if p_idx in used_pred or t_idx in used_truth:
             continue
         used_pred.add(p_idx)
         used_truth.add(t_idx)
-        matches.append((p_idx, t_idx, dist))
+        matches.append((p_idx, t_idx, gap))
     unmatched_pred = [i for i in range(len(predicted)) if i not in used_pred]
     unmatched_truth = [i for i in range(len(truth)) if i not in used_truth]
     return matches, unmatched_pred, unmatched_truth
@@ -257,7 +290,10 @@ def score_clip(
             score.fp += 1
             continue
         pred = preds[idx]
-        on_shadow = any(abs(pred.midpoint - ev.midpoint) <= tolerance_sec for ev in shadow_events)
+        # Same span semantics as match_events: otherwise a prediction inside an
+        # unverified event's window would be an FP while the identical
+        # prediction inside a verified one is a TP.
+        on_shadow = any(time_gap(pred, ev) <= tolerance_sec for ev in shadow_events)
         in_review = any(w.contains(pred.midpoint) for w in clip_truth.needs_review)
         if on_shadow or in_review:
             score.ignored += 1

@@ -145,6 +145,13 @@ _MAX_SINGLE_EVENT_DELTA = 3
 # deltas must confirm against the field goal, never the free throw.
 AND_ONE_GAP_SEC = 3.0
 
+# A clean trajectory miss this close to a delta-confirmed OCR-only make is the
+# same shot the scoreboard just confirmed: the trajectory misjudged the make as
+# a miss and OCR lag pushed the score delta past ``confirm_window_sec`` (≈ the
+# 2.0 s window + the ~1.5 s scorebug lag). The phantom miss is dropped so the
+# make surfaces once — see ``_suppress_misses_shadowed_by_ocr_makes``.
+MISS_ABSORB_WINDOW_SEC = 3.5
+
 # Free-throw scene corroboration (pure heuristic over teams tracks + detect
 # arrays; see ft_scene_corroborated for the full rules).
 FT_SCENE_WINDOW_SEC = 3.0  # tracks are examined +/- this around the event time
@@ -221,6 +228,45 @@ def _match_deltas(
         cand_to_delta[ci] = di
         used_deltas.add(di)
     return cand_to_delta
+
+
+def _suppress_misses_shadowed_by_ocr_makes(
+    entries: List[Tuple["Event", Optional[Dict[str, Any]], Optional[Dict[str, Any]]]],
+    window_sec: float,
+    debug: Dict[str, Any],
+) -> None:
+    """Drop a clean trajectory miss that sits within ``window_sec`` of a
+    delta-confirmed OCR-only make (a delta that matched no shot candidate).
+
+    Such a delta found no make candidate of its own, and a lone trajectory
+    miss beside it is that same shot mis-scored by the trajectory — the
+    scoreboard proves it went in. Suppressing the miss prevents a phantom
+    missed shot next to the make; real-broadcast OCR lag routinely places the
+    delta 2-3.5 s past the trajectory, beyond ``confirm_window_sec``, so the
+    two never merged in ``_match_deltas``. The make is left untouched (its own
+    scorebug evidence, delta timestamp, delta team) — the trajectory said
+    *miss*, so it is not claimed as evidence *for* the make. Mutates
+    ``entries`` in place.
+    """
+    ocr_make_times = [
+        event.t
+        for event, cand, delta in entries
+        if delta is not None and cand is None and event.outcome == OUTCOME_MADE
+    ]
+    if not ocr_make_times:
+        return
+    kept: List[Tuple["Event", Optional[Dict[str, Any]], Optional[Dict[str, Any]]]] = []
+    for entry in entries:
+        event, _cand, delta = entry
+        if (
+            event.outcome == OUTCOME_MISSED
+            and delta is None
+            and any(abs(mt - event.t) <= window_sec for mt in ocr_make_times)
+        ):
+            debug["dropped"].append({"reason": "miss_shadowed_by_confirmed_make", "t": event.t})
+            continue
+        kept.append(entry)
+    entries[:] = kept
 
 
 def ft_scene_corroborated(
@@ -354,6 +400,10 @@ def fuse_signals(
     * Missed shots carry ``points: null`` and type "shot" — 2PT vs 3PT is
       NEVER guessed without court position (homography deferred); each such
       event adds a ``fusion_debug`` warning.
+    * A clean trajectory miss within ``MISS_ABSORB_WINDOW_SEC`` of a
+      delta-confirmed OCR-only make is dropped: the scoreboard proves that
+      shot scored (OCR lag placed the delta past ``confirm_window_sec``), so
+      the make surfaces once rather than as a phantom miss beside it.
     * Resync / delta > 3 scorebug events -> low-confidence wide-window
       ``score_change`` events, points null — never a single fabricated
       basket. Candidates inside the hidden window are unconfirmable, so
@@ -519,6 +569,7 @@ def fuse_signals(
         )
         entries.append((event, None, wide))
 
+    _suppress_misses_shadowed_by_ocr_makes(entries, MISS_ABSORB_WINDOW_SEC, debug)
     _apply_team_and_jersey(entries, teams, jersey, jersey_min_conf, debug)
 
     events = sorted((entry[0] for entry in entries), key=lambda e: (e.t, e.type))
