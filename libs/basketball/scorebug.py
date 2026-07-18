@@ -84,6 +84,12 @@ UPSCALE_DISCOVERY = 3  # full-bug upscale for field discovery
 UPSCALE_FIELD = 4  # per-field upscale before recognition
 PRESENCE_CORR_MIN = 0.55  # bug-visibility correlation threshold
 VOTE_WINDOW = 5  # sliding majority-vote window (frames)
+MIN_VOTE_SUPPORT = 2  # a smoothed score needs >= this many corroborating reads:
+#                       an isolated read (typical of replay / graphic-transition
+#                       noise) cannot establish or change the score
+MIN_SCORE_READ_CONF = 0.5  # OCR reads below this confidence do not vote (when
+#                            confidences are supplied): a low-confidence digit is
+#                            not trustworthy enough to move the score
 MAX_PLAUSIBLE_DELTA = 3  # largest single-event score increment
 SCORE_MAX = 150  # scores are ints in [0, SCORE_MAX]
 DISCOVERY_MAX_FRAMES = 24  # full-bug OCR frames for field discovery
@@ -181,13 +187,21 @@ def smooth_series(
     values: Sequence[Optional[int]],
     confs: Optional[Sequence[float]] = None,
     window: int = VOTE_WINDOW,
+    min_conf: float = MIN_SCORE_READ_CONF,
+    min_support: int = MIN_VOTE_SUPPORT,
 ) -> Tuple[List[Optional[int]], List[float]]:
     """Sliding-window majority vote over per-frame reads.
 
     ``values[i]`` is the raw read at frame i (None = missing/invalid — hidden
-    frames stay None and never vote). Ties prefer the previously smoothed
-    value (stability), then the raw read at i, then the smallest candidate.
-    Returns (smoothed values, mean OCR confidence of the winning votes).
+    frames stay None and never vote). Reads below ``min_conf`` (when
+    confidences are supplied) do not vote, and a winning value needs
+    ``min_support`` votes: an isolated or low-confidence read — the signature
+    of a replay / graphic-transition where the bug is absent or garbled —
+    cannot establish or change the score, so it never becomes a phantom delta.
+    A frame with no confident, corroborated value nearby stays None. Ties prefer
+    the previously smoothed value (stability), then the raw read at i, then the
+    smallest candidate. Returns (smoothed values, mean OCR confidence of the
+    winning votes).
     """
     n = len(values)
     half = max(0, window // 2)
@@ -198,12 +212,17 @@ def smooth_series(
         if values[i] is None:
             continue
         lo, hi = max(0, i - half), min(n, i + half + 1)
+        voters = [j for j in range(lo, hi) if values[j] is not None and (confs is None or confs[j] >= min_conf)]
         counts: Dict[int, int] = {}
-        for j in range(lo, hi):
+        for j in voters:
             v = values[j]
-            if v is not None:
-                counts[v] = counts.get(v, 0) + 1
+            assert v is not None
+            counts[v] = counts.get(v, 0) + 1
+        if not counts:
+            continue  # no confident read nearby -> cannot smooth this frame
         top = max(counts.values())
+        if top < min_support:
+            continue  # only an isolated read supports any value here -> drop it
         tied = [v for v, c in counts.items() if c == top]
         if prev in tied:
             winner = prev
@@ -213,7 +232,7 @@ def smooth_series(
             winner = min(tied)
         assert winner is not None
         if confs is not None:
-            votes = [confs[j] for j in range(lo, hi) if values[j] == winner]
+            votes = [confs[j] for j in voters if values[j] == winner]
             out_conf[i] = float(np.mean(votes)) if votes else 0.0
         else:
             out_conf[i] = 1.0

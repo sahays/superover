@@ -58,6 +58,29 @@ class TestSmoothing:
         assert smoothed == [35] * 5
         assert sm_conf[2] == pytest.approx((0.9 + 0.8 + 0.8 + 0.9) / 4)
 
+    def test_low_confidence_reads_do_not_vote(self):
+        # Replay / graphic-transition noise (low-confidence misreads) cannot
+        # override a confident value or establish a phantom one.
+        values = [30, 30, 30, 5, 1, 5, 30, 30, 30]
+        confs = [0.9, 0.9, 0.9, 0.1, 0.2, 0.1, 0.9, 0.9, 0.9]
+        smoothed, _ = scorebug.smooth_series(values, confs)
+        assert {v for v in smoothed if v is not None} == {30}
+
+    def test_isolated_read_is_dropped(self):
+        # A single read with no corroboration in its window stays unsmoothed
+        # (support < 2) — an isolated glimpse never sets the score.
+        values = [None, None, 42, None, None]
+        smoothed, _ = scorebug.smooth_series(values, [0.0, 0.0, 0.99, 0.0, 0.0])
+        assert smoothed == [None] * 5
+
+    def test_corroborated_confident_change_survives(self):
+        # Regression guard: a genuine change read confidently by >= 2 frames
+        # must still be kept (the confidence/support floor must not drop real
+        # score changes, e.g. a stopped-clock free throw).
+        values = [30] * 5 + [32] * 5
+        smoothed, _ = scorebug.smooth_series(values, [0.9] * 10)
+        assert smoothed == [30] * 5 + [32] * 5
+
 
 # ---------------------------------------------------------------------------
 # Unit: event extraction (domain rules)
