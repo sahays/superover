@@ -127,6 +127,32 @@ Jersey moved separately, **0/2 → 2/2**, via the `scorer` graphic reader and th
 fix — the scorebug confidence/corroboration floor — cured a dead-ball replay
 that fabricated two scores on shot_0005, with zero regression on the 22.
 
+## Play-by-play join (V2, Phase 1)
+
+The `pbp` stage matches each made basket to the official ESPN play-by-play by
+`score_after` — a globally-unique key, since scores only increase and each play
+increments one side — and attaches the authoritative **scorer name + jersey +
+shot type** with zero per-clip labeling:
+
+| Make | Scorer (from PBP) | Jersey | Shot type |
+|---|---|---|---|
+| shot_0017 | Kevin McCullar Jr. | 15 | 3pt |
+| shot_0020 | Will McNair Jr. | 13 | dunk |
+| shot_0030 | Dai Dai Ames / Hunter Dickinson | 4 / 1 | layup / jumper |
+| shot_0075 | Dajuan Harris | 3 | ft |
+| shot_0092 | Arthur Kaluma | 24 | layup |
+| shot_0094 | Tylor Perry | 2 | 3pt |
+
+Coverage went from partial (broadcast graphics only) to **15/15 makes** — every
+make now has the correct scorer, jersey, and shot flavor, all cross-checked
+against the box score, agreeing with the scorer-graphic where it existed, with
+**no metric regression** (P=1.00 / R=0.94 / F1=0.97). This is the scale answer:
+for any game with an ESPN id, ground truth comes for free. Verified on game
+401603459 (Kansas @ Kansas State, 2024-02-05). The PBP is fetched once
+(`scripts/basketball_fetch_pbp.py`) into a gitignored local cache; the runtime
+join is offline. Phase 2 (noted, not built) would use PBP missed-shot rows to
+close the remaining recall miss.
+
 ## Methodology
 
 - **Matching**: greedy 1:1 within ±2 s of an event's `[t, t_end]` uncertainty

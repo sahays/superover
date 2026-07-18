@@ -170,6 +170,30 @@ class BasketballSettings(BaseSettings):
     """Minimum jersey-stage vote confidence before the shooter's jersey
     number is attached to an event; below it ``jersey`` stays null."""
 
+    # --- Play-by-play join (pbp stage) ---
+    pbp_game_id: str = ""
+    """ESPN game id for the clip's game. Empty -> the pbp stage skips. For the
+    eval set it comes from the manifest top-level ``game_id``."""
+
+    pbp_league: str = "mens-college-basketball"
+    """ESPN league slug for the PBP/summary endpoints."""
+
+    pbp_cache_dir: str = ""
+    """Directory of cached normalized PBP JSONs. Empty -> the packaged default
+    ``evals/basketball/datasets/pbp``."""
+
+    pbp_allow_fetch: bool = False
+    """Offline-first: only fetch PBP live from ESPN when true; otherwise a
+    missing cache file makes the stage skip."""
+
+    pbp_clock_tolerance_sec: float = 40.0
+    """Game-clock window for the PBP clock fallback / tie-break (absorbs OCR
+    lag and read jitter)."""
+
+    pbp_override_team: bool = True
+    """Let a confident PBP match (exact score + known orientation) override the
+    fused event's scoring team on disagreement."""
+
     # --- Evaluation ---
     eval_tolerance_sec: float = 2.0
     """Tolerance window (± seconds) when matching predicted events to truth."""

@@ -665,6 +665,72 @@ class TestAsrCorroboration:
         assert "asr" not in one_event(events).evidence
 
 
+@pytest.mark.unit
+class TestPbpEnrichment:
+    @staticmethod
+    def _pbp(*plays, away="kansas", home="kansas-state"):
+        return {"teams": {"away": {"key": away}, "home": {"key": home}}, "plays": list(plays)}
+
+    @staticmethod
+    def _play(away, home, **kw):
+        p = dict(
+            period=2,
+            clock="5:00",
+            clock_sec=300.0,
+            made=True,
+            scoring_play=True,
+            score_value=2,
+            away_score=away,
+            home_score=home,
+            scoring_team="home",
+            text="x",
+            scorer_name="Player",
+            scorer_jersey="7",
+            shot_type="layup",
+        )
+        p.update(kw)
+        return p
+
+    def test_pbp_overrides_graphic_jersey(self):
+        # delta() make has score_after [37, 51]; the graphic says #99, PBP says #7 -> PBP wins.
+        events, _ = fuse_signals(
+            shots_out(),
+            sb_out(delta()),
+            scorer=scorer_out(feat("99", t_start=3.0, t_end=8.0)),
+            pbp=self._pbp(self._play(37, 51, scorer_jersey="7", scorer_name="Real Scorer", shot_type="dunk")),
+        )
+        e = one_event(events)
+        assert e.jersey == "7" and e.scorer_name == "Real Scorer" and e.shot_type == "dunk"
+        assert "pbp" in e.evidence
+
+    def test_pbp_fills_ocr_only_make(self):
+        events, _ = fuse_signals(shots_out(), sb_out(delta()), pbp=self._pbp(self._play(37, 51, scorer_jersey="7")))
+        e = one_event(events)
+        assert e.jersey == "7" and "pbp" in e.evidence
+
+    def test_no_pbp_for_trajectory_only_make(self):
+        # Scorebug down -> trajectory-only make has no delta/score_after -> no PBP key.
+        events, _ = fuse_signals(
+            shots_out(cand(kind="make")), sb_out(bug_found=False), pbp=self._pbp(self._play(37, 51, scorer_jersey="7"))
+        )
+        e = one_event(events)
+        assert "pbp" not in e.evidence and e.jersey is None
+
+    def test_pbp_none_and_skipped_are_noops(self):
+        for pbp_arg in (None, {"skipped": True}):
+            events, _ = fuse_signals(shots_out(), sb_out(delta()), pbp=pbp_arg)
+            assert "pbp" not in one_event(events).evidence
+
+    def test_team_override_on_exact_known_orientation(self):
+        sb = sb_out(delta(team="kansas"))
+        sb["fields"] = {"left": {"team": "kansas"}, "right": {"team": "kansas-state"}}
+        events, _ = fuse_signals(
+            shots_out(), sb, pbp=self._pbp(self._play(37, 51, scoring_team="home", scorer_jersey="7"))
+        )
+        e = one_event(events)
+        assert e.team == "kansas-state" and "pbp" in e.evidence
+
+
 class TestFuseRunStage:
     def _context(self, tmp_path) -> StageContext:
         return StageContext(

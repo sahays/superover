@@ -47,6 +47,9 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--workdir", type=Path, default=None, help="Stage-cache root (default: settings.workdir)")
     parser.add_argument("--base-fps", type=float, default=None, help="Base sampling fps (default: settings.base_fps)")
     parser.add_argument(
+        "--pbp-game-id", default=None, help="ESPN game id for the play-by-play join (default: settings.pbp_game_id)"
+    )
+    parser.add_argument(
         "--narrate", action="store_true", help="Gemini narration pass (requires GCP env + ADC; see libs/gemini)"
     )
     parser.add_argument(
@@ -98,6 +101,8 @@ def main(argv=None) -> int:
         overrides["base_fps"] = args.base_fps
     if args.workdir is not None:
         overrides["workdir"] = str(args.workdir)
+    if args.pbp_game_id is not None:
+        overrides["pbp_game_id"] = args.pbp_game_id
     if args.narrate:
         overrides["narrate_enabled"] = True
     if overrides:

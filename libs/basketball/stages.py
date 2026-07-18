@@ -84,6 +84,7 @@ STAGE_ORDER: List[str] = [
     "jersey",
     "scorer",
     "asr",
+    "pbp",
     "fuse",
     "narrate",
 ]
@@ -99,6 +100,7 @@ STAGE_REGISTRY: Dict[str, str] = {
     "jersey": "libs.basketball.jersey:run_stage",
     "scorer": "libs.basketball.scorer:run_stage",
     "asr": "libs.basketball.asr:run_stage",
+    "pbp": "libs.basketball.pbp:run_stage",
     "fuse": "libs.basketball.timeline:run_stage",
     "narrate": "libs.basketball.narrate:run_stage",
 }

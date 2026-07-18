@@ -57,6 +57,8 @@ class Event:
     jersey: Optional[str] = None
     confidence: Dict[str, float] = field(default_factory=dict)  # per-attribute + "overall"
     evidence: List[str] = field(default_factory=list)
+    scorer_name: Optional[str] = None  # authoritative scorer (play-by-play join)
+    shot_type: Optional[str] = None  # layup | dunk | jumper | 3pt | ft | tip | other (PBP)
 
     @property
     def midpoint(self) -> float:
@@ -375,6 +377,9 @@ def fuse_signals(
     detect_arrays: Optional[Dict[str, Any]] = None,
     scorer: Optional[Dict[str, Any]] = None,
     asr: Optional[Dict[str, Any]] = None,
+    pbp: Optional[Dict[str, Any]] = None,
+    pbp_clock_tol_sec: float = 40.0,
+    pbp_override_team: bool = True,
 ) -> Tuple[List[Event], Dict[str, Any]]:
     """Fuse shots + scorebug (+ teams + jersey) stage outputs into events.
 
@@ -590,6 +595,7 @@ def fuse_signals(
     _apply_team_and_jersey(entries, teams, jersey, jersey_min_conf, debug)
     _attach_scorer_graphic(entries, scorer, debug)
     _corroborate_with_asr(entries, scorer, asr, debug)
+    _enrich_with_pbp(entries, pbp, scorebug, debug, pbp_clock_tol_sec, pbp_override_team)
 
     events = sorted((entry[0] for entry in entries), key=lambda e: (e.t, e.type))
     return events, debug
@@ -809,6 +815,89 @@ def _corroborate_with_asr(
             event.evidence.append("asr")
 
 
+def _enrich_with_pbp(
+    entries: List[Tuple[Event, Optional[Dict[str, Any]], Optional[Dict[str, Any]]]],
+    pbp: Optional[Dict[str, Any]],
+    scorebug: Optional[Dict[str, Any]],
+    debug: Dict[str, Any],
+    clock_tol_sec: float,
+    override_team: bool,
+) -> None:
+    """Attach the official play-by-play scorer name + jersey + shot type to a
+    made basket, matched by ``score_after`` (see ``libs/basketball/pbp.py``).
+
+    PBP is the strongest identity signal, so its jersey overrides the
+    scorer-graphic / shooter-track jerseys; it also fills the scorer on makes no
+    broadcast graphic ever showed. Enrichment only — it never creates, removes,
+    or retimes an event. Trajectory-only makes (``delta is None``) have no score
+    key and are left to the graphic/ASR jerseys. Mutates events in place.
+    """
+    if not pbp or pbp.get("skipped"):
+        return
+    from libs.basketball import pbp as pbp_mod  # lazy: avoid scorebug<->timeline import cycle
+
+    teams = pbp.get("teams") or {}
+    away_key = (teams.get("away") or {}).get("key")
+    home_key = (teams.get("home") or {}).get("key")
+    plays = pbp.get("plays") or []
+    score_index = pbp_mod.build_score_index(plays)
+
+    fields = (scorebug or {}).get("fields") or {}
+    left_key = (fields.get("left") or {}).get("team")
+    right_key = (fields.get("right") or {}).get("team")
+    clock_by_rawt = {
+        round(float(r["raw_t"]), 3): (r.get("clock") or {}).get("value")
+        for r in (scorebug or {}).get("reads", [])
+        if r.get("raw_t") is not None
+    }
+
+    for event, _cand, delta in entries:
+        if event.outcome != OUTCOME_MADE or delta is None:
+            continue
+        score_after = delta.get("score_after")
+        if not score_after:
+            continue
+        clock_read = clock_by_rawt.get(round(float(delta.get("raw_t", -1)), 3))
+        match = pbp_mod.match_score_after(
+            score_after, left_key, right_key, clock_read, away_key, home_key, score_index, plays, clock_tol_sec
+        )
+        if match is None:
+            debug.setdefault("pbp_unmatched", []).append({"t": event.t, "score_after": score_after})
+            continue
+        play = match.play
+        if play.get("scorer_jersey"):
+            event.jersey = str(play["scorer_jersey"])
+            event.confidence["jersey"] = round(match.confidence, 3)
+        event.scorer_name = play.get("scorer_name")
+        event.shot_type = play.get("shot_type")
+        if "pbp" not in event.evidence:
+            event.evidence.append("pbp")
+        pbp_points = play.get("score_value")
+        if pbp_points is not None and event.points is not None and pbp_points != event.points:
+            debug.setdefault("warnings", []).append(
+                f"event t={event.t}: PBP points {pbp_points} != fused {event.points}"
+            )
+        pbp_team = (
+            away_key
+            if play.get("scoring_team") == "away"
+            else (home_key if play.get("scoring_team") == "home" else None)
+        )
+        if pbp_team and event.team and event.team != pbp_team:
+            debug.setdefault("warnings", []).append(f"event t={event.t}: PBP team {pbp_team} != fused {event.team}")
+            if override_team and match.method == "score_exact" and match.orientation_known:
+                event.team = pbp_team
+                event.confidence["team"] = round(match.confidence, 3)
+        debug.setdefault("pbp_matches", []).append(
+            {
+                "t": event.t,
+                "jersey": event.jersey,
+                "name": event.scorer_name,
+                "shot_type": event.shot_type,
+                "method": match.method,
+            }
+        )
+
+
 def run_stage(ctx) -> None:  # ctx: libs.basketball.stages.StageContext
     """``fuse`` stage: combine scorebug/shots/teams/jersey caches into the
     final event timeline (predictions format — see module docstring).
@@ -842,6 +931,7 @@ def run_stage(ctx) -> None:  # ctx: libs.basketball.stages.StageContext
     jersey = _optional("jersey")
     scorer = _optional("scorer")
     asr = _optional("asr")
+    pbp = _optional("pbp")
     try:
         detect_arrays: Optional[Dict[str, Any]] = ctx.cache.read_arrays("detect")
     except FileNotFoundError:
@@ -857,6 +947,9 @@ def run_stage(ctx) -> None:  # ctx: libs.basketball.stages.StageContext
         detect_arrays=detect_arrays,
         scorer=scorer,
         asr=asr,
+        pbp=pbp,
+        pbp_clock_tol_sec=ctx.settings.pbp_clock_tolerance_sec,
+        pbp_override_team=ctx.settings.pbp_override_team,
     )
     logger.info("fuse: %d event(s) for clip %s", len(events), ctx.clip_id)
     ctx.cache.write_json(ctx.stage, debug, filename="fusion_debug.json")

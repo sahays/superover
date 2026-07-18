@@ -129,6 +129,8 @@ libs/basketball/            # new package — no Firestore/GCS deps
                             #   → jersey number directly, no shooter track
     asr.py                  # commentary transcript (faster-whisper, optional)
                             #   → scorer-name cross-check + shot-type/miss cues
+    pbp.py                  # V2: official ESPN play-by-play join by score_after
+                            #   → authoritative scorer name + jersey + shot type
     timeline.py             # fuse signals → typed events {t, type, team,
                             #   points, jersey, confidence, evidence[]}
     narrate.py              # Gemini pass via libs/gemini (SceneAnalyzer)

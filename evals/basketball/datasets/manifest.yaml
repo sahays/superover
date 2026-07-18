@@ -1,5 +1,6 @@
 version: 1
 game: Kansas vs Kansas State (college basketball broadcast, 30 s segments)
+game_id: '401603459'
 teams:
 - kansas
 - kansas-state

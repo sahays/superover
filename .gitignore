@@ -74,6 +74,7 @@ gemini-key
 .basketball-work/
 evals/basketball/datasets/clips/
 evals/basketball/datasets/sources.local.yaml
+evals/basketball/datasets/pbp/
 libs/basketball/models/*.onnx
 libs/basketball/models/*.metrics.json
 libs/basketball/models/dataset/

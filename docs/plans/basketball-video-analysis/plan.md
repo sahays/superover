@@ -123,7 +123,10 @@ throw where the rim itself was not detected, so no trajectory candidate could
 form. This is the one remaining FN. Closing it (ASR-created miss events, better
 rim recall) is post-V1.
 
-**Deferred to V2** (tracked in the spec's "Later (out of V1)"): fouls/blocks/
-turnovers, play-by-play join (the scale/player-name lever), court homography
-(missed 2PT vs 3PT), action recognition (shot flavor), and multi-broadcast
-generalization — everything so far is one game.
+**V2 (in progress):** the **play-by-play join** (the scale/player-name lever) is
+built — Phase 1, `pbp` stage — see `docs/tech/basketball-eval-results.md`. It
+matches each make to the official ESPN PBP by `score_after` and attaches the
+authoritative scorer name + jersey + shot type (15/15 makes, no regression).
+Still deferred: PBP miss recall (Phase 2), fouls/blocks/turnovers, court
+homography (missed 2PT vs 3PT), action recognition (shot flavor), and
+multi-broadcast generalization — everything so far is one game.

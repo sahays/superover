@@ -37,7 +37,19 @@ def make_ctx(stage: str, clip: Path, workdir: Path, **settings_overrides) -> Sta
 @pytest.mark.unit
 class TestRegistry:
     def test_all_planned_stages_registered(self):
-        expected = ["decode", "scorebug", "detect", "shots", "teams", "jersey", "scorer", "asr", "fuse", "narrate"]
+        expected = [
+            "decode",
+            "scorebug",
+            "detect",
+            "shots",
+            "teams",
+            "jersey",
+            "scorer",
+            "asr",
+            "pbp",
+            "fuse",
+            "narrate",
+        ]
         assert STAGE_ORDER == expected
         assert set(STAGE_REGISTRY) == set(expected)
 
