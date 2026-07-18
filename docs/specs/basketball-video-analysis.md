@@ -1,6 +1,8 @@
 # Basketball Video Analysis CLI — Research Findings & Implementation Plan
 
-Status: **draft for review** (2026-07-17)
+Status: **implemented + measured** (2026-07). Eval results:
+`docs/tech/basketball-eval-results.md` (P = R = F1 = 0.94, team & points 100%,
+jersey 2/2, held-out validated). Latest findings appended at the end.
 
 ## Context
 
@@ -93,10 +95,15 @@ clip.mp4
 │ Signal A  Score-bug OCR (RapidOCR): score deltas → made shots with  │
 │           exact timestamps, scoring team, 1/2/3 points              │
 │ Signal B  Ball/rim YOLO + trajectory: makes AND misses, shot moment │
-│ Signal C  Player tracking (ByteTrack) + team clustering (HSV) +     │
-│           jersey digits (crop → tiny classifier → tracklet vote)    │
-│ Signal D  (later) court homography → 2PT vs 3PT from shooter feet   │
-└──────────── fuse → typed event timeline (JSON, confidences) ────────┘
+│ Signal C  Player tracking + team clustering (HSV) → scoring team;    │
+│           shooter-track jersey (weak — trajectory-detected shots     │
+│           only; see Findings)                                        │
+│ Signal D  (later) court homography → 2PT vs 3PT from shooter feet    │
+│ Signal E  Scorer lower-third OCR → scorer's number + name directly,  │
+│           no shooter track — the primary jersey signal (see Findings)│
+│ Signal F  Commentary ASR (Whisper) → scorer name (cross-checks E),   │
+│           shot type, and miss calls ("no good")                      │
+└──────────── fuse → typed event timeline (JSON, confidences) ─────────┘
   │
   ▼
 Layer 2: Gemini narration (reuse libs/gemini/scene_analyzer.py,
@@ -117,6 +124,10 @@ libs/basketball/            # new package — no Firestore/GCS deps
     shots.py                # ball-trajectory made/miss logic + ball-in-basket
     teams.py                # HSV torso clustering per track (SigLIP fallback)
     jersey.py               # number-crop digit classifier + tracklet voting
+    scorer.py               # OCR the scorer lower-third graphic ("24 NAME")
+                            #   → jersey number directly, no shooter track
+    asr.py                  # commentary transcript (faster-whisper, optional)
+                            #   → scorer-name cross-check + shot-type/miss cues
     timeline.py             # fuse signals → typed events {t, type, team,
                             #   points, jersey, confidence, evidence[]}
     narrate.py              # Gemini pass via libs/gemini (SceneAnalyzer)
@@ -172,3 +183,64 @@ python evals/basketball/run_eval.py                          # score vs manifest
 - **Licensing**: Ultralytics YOLO is AGPL-3.0 (fine for internal tooling; revisit if this ships in a commercial product — RF-DETR/Apache alternatives exist at a CPU-speed cost). Roboflow Universe datasets are typically CC BY 4.0 — confirm per-project license before training.
 - **Jersey-number ceiling**: ~90% tracklet-level accuracy is the published broadcast ceiling; the timeline schema carries per-attribute confidence so narration can hedge ("#4" vs omitting the number) below a threshold.
 - **Eval-set size**: ~20 clips from one game is enough to iterate but not to generalize (one score-bug layout, two jersey sets). Post-V1: add clips from 2–3 other broadcasts before trusting the numbers.
+
+## Findings from implementation (2026-07)
+
+Built, measured, and cross-dataset validated. Results:
+`docs/tech/basketball-eval-results.md` — **P = R = F1 = 0.94**, team & points
+**100%**, **jersey 2/2**, and precision/recall **1.00** on a held-out 5-clip set
+the pipeline was never tuned against.
+
+**The scoreboard-authoritative thesis held — and had to be enforced against the
+labels too.** The reviewer/Gemini notes were themselves wrong on several clips
+(shot_0017 timing, shot_0094 2-vs-3, shot_0029 team+jersey, held-out shot_0023
+"two misses" that were actually two makes). Ground truth had to be re-derived
+from the score bug; the deterministic pipeline then matched the truth where the
+human review did not. **Reviewer notes are hints, not ground truth.**
+
+**Jersey attribution was architectural, not a threshold.** Signal C's
+shooter-track jersey only fires for *trajectory-detected* shots, but most real
+makes are **scoreboard-only** (the trajectory misses the shot — no clean
+ball-through-rim), so there is no shooter to attribute to; one eval case was a
+3-pointer where no rim-proximity fallback can work. This is why jersey sat at
+0/2. The fix was to read the scorer's identity **directly**, not via the shooter:
+
+- **Signal E — scorer lower-third OCR (`scorer.py`)**: the broadcast graphic
+  "`24 ARTHUR KALUMA`" gives the number with no tracking. A name that maps to a
+  team ("4 KANSAS") or a long caption ("21st season as … coach") is rejected.
+- **Signal F — commentary ASR (`asr.py`)**: Whisper `small.en` (CPU) cross-checks
+  the graphic's name against the spoken name ("Perry" ↔ "TYLORPERRY") and calls
+  misses ("no good"). It *corroborates only* — never creates or changes an event.
+  The graphic and the commentary resolve each other's gaps: the graphic is the
+  name↔number roster ASR lacks; ASR is the continuous coverage (and miss signal)
+  the graphic lacks. (`tiny.en` mangles names; `small.en` is required.)
+
+**Score-bug robustness (from real footage, not fixtures):**
+
+- **White-on-colour digits defeat strip-level OCR *detection*** (a score on a
+  solid team-colour panel) while the dark-on-white opposite reads fine. Fixed by
+  a symmetry fallback: when only one score is found, mirror its box about the
+  clock and let the per-field reader recover the other.
+- **Replays / dead-ball recovery produce low-confidence noise reads** that the
+  smoother can turn into a phantom baseline → phantom score deltas → fabricated
+  makes (held-out shot_0005). Fixed by a confidence + corroboration floor: a
+  low-confidence or uncorroborated read cannot establish or move the score.
+- **Clock-gating does NOT work**: the game clock is unreadable during dead balls
+  (including real free throws), so it cannot separate a phantom delta from a real
+  stopped-clock make. OCR confidence, not the clock, is the discriminator.
+
+**Fusion refinements** (`timeline.py`): a trajectory "miss" within ~3.5 s of a
+delta-confirmed OCR-only make is the *same shot* (OCR lag pushed the delta past
+the confirm window) → suppressed, not a phantom miss beside the make. And a
+`no_scoring_expected` window asserts no *made* basket, so a predicted miss inside
+it is ignored, not a false positive.
+
+**Eval methodology**: match predictions inside the ground-truth `[t, t_end]`
+*uncertainty window* (not against its midpoint); label from the scoreboard;
+**always validate on held-out clips before committing** (the confidence-floor fix
+was born from a held-out failure and cost zero regression on the original 22).
+
+**Open cost / gaps**: the `asr` (Whisper) stage transcribes every clip in full —
+for scale, gate it to run only around scoreboard deltas. Misses remain the blind
+spot (ASR corroborates but does not yet *create* a miss event). One residual FP
+(shot_0085) is a trajectory-precision issue in the shots stage.
