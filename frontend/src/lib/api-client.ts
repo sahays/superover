@@ -556,6 +556,47 @@ export const engagementApi = {
   },
 }
 
+// Dubbing API client
+export const dubbingApi = {
+  listJobs: async (videoId?: string, limit = 50) => {
+    const response = await apiClient.get('/api/dubbing/jobs', {
+      params: { video_id: videoId, limit },
+    })
+    return response.data
+  },
+
+  getJob: async (jobId: string) => {
+    const response = await apiClient.get(`/api/dubbing/jobs/${jobId}`)
+    return response.data
+  },
+
+  createJob: async (data: {
+    video_id: string
+    config: {
+      target_languages: string[]
+      voice: string
+      mode: string
+      ducking_db?: number
+      source_language?: string
+    }
+  }) => {
+    const response = await apiClient.post('/api/dubbing/jobs', data)
+    return response.data
+  },
+
+  getPlaybackUrl: async (jobId: string, language: string, mediaType: 'video' | 'audio' = 'video') => {
+    const response = await apiClient.get(`/api/dubbing/jobs/${jobId}/playback/${language}`, {
+      params: { media_type: mediaType },
+    })
+    return response.data
+  },
+
+  deleteJob: async (jobId: string) => {
+    const response = await apiClient.delete(`/api/dubbing/jobs/${jobId}`)
+    return response.data
+  },
+}
+
 // Upload file to GCS using signed URL
 export const uploadToGCS = async (signedUrl: string, file: File) => {
   await axios.put(signedUrl, file, {
@@ -564,3 +605,4 @@ export const uploadToGCS = async (signedUrl: string, file: File) => {
     },
   })
 }
+

@@ -238,6 +238,7 @@ export default function InviteCodesPage() {
                   value={newCode}
                   onChange={(e) => setNewCode(e.target.value)}
                   placeholder="Enter or generate a code"
+                  maxLength={32}
                   className="font-mono"
                 />
                 <Button variant="outline" onClick={() => setNewCode(generateRandomCode())}>

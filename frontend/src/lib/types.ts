@@ -30,6 +30,31 @@ export enum EngagementJobStatus {
   FAILED = 'failed',
 }
 
+export enum DubbingJobStatus {
+  PENDING = 'pending',
+  EXTRACTING_AUDIO = 'extracting_audio',
+  DUBBING_TRANSLATION = 'dubbing_translation',
+  GENERATING_SPEECH = 'generating_speech',
+  MUXING_VIDEO = 'muxing_video',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+}
+
+export enum DubbingLanguage {
+  HINDI = 'hi-IN',
+  ENGLISH = 'en-US',
+  PORTUGUESE = 'pt-BR',
+  SPANISH = 'es-ES',
+  GERMAN = 'de-DE',
+}
+
+export enum DubbingMode {
+  VOICEOVER = 'voiceover',
+  REPLACE = 'replace',
+  ISOLATED = 'isolated',
+}
+
+
 // Zod Schemas
 export const videoSchema = z.object({
   video_id: z.string(),
@@ -296,3 +321,54 @@ export type EngagementExtremum = z.infer<typeof engagementExtremumSchema>
 export type EngagementResults = z.infer<typeof engagementResultsSchema>
 export type EngagementJob = z.infer<typeof engagementJobSchema>
 export type EligibleSourceJob = z.infer<typeof eligibleSourceJobSchema>
+
+// Dubbing Types
+export interface TimedDubbingSegment {
+  speaker: string
+  start_seconds: number
+  end_seconds: number
+  original_text: string
+  translated_text: string
+  confidence: number
+}
+
+export interface DubbingTrackInfo {
+  language: DubbingLanguage | string
+  language_label: string
+  audio_gcs_path: string
+  video_gcs_path?: string | null
+  audio_size_bytes: number
+  video_size_bytes: number
+  segments: TimedDubbingSegment[]
+  duration_seconds: number
+}
+
+export interface DubbingJobConfig {
+  target_languages: DubbingLanguage[]
+  voice: string
+  mode: DubbingMode
+  ducking_db: number
+  source_language: string
+}
+
+export interface DubbingJob {
+  job_id: string
+  video_id: string
+  status: DubbingJobStatus
+  config: DubbingJobConfig
+  tracks: Record<string, DubbingTrackInfo>
+  source_audio_path?: string | null
+  source_dialog_path?: string | null
+  error_message?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface DubbingPlaybackData {
+  signed_url: string
+  content_type: string
+  language: string
+  media_type: 'video' | 'audio'
+  expires_in_minutes: number
+}
+

@@ -138,6 +138,10 @@ def test_process_engagement_job_happy_path(worker):
         "finish_reason": "STOP",
         "token_usage": {"prompt_tokens": 1, "candidates_tokens": 2, "total_tokens": 3, "estimated_cost_usd": 0.0001},
     }
+    engagement.summarize_episode.return_value = {
+        "summary": "Epic match summary",
+        "token_usage": {"prompt_tokens": 0, "candidates_tokens": 0, "total_tokens": 0, "estimated_cost_usd": 0.0},
+    }
     engagement.recommend.return_value = {
         "headline": "Lean into Hero scenes; trim slow exposition.",
         "do_more_of": [

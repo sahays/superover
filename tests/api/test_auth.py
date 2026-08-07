@@ -65,7 +65,7 @@ class TestValidateCodeShape:
 
         monkeypatch.setattr(settings, "master_invite_code", "MAGIC-MASTER")
         result = validate_code("MAGIC-MASTER")
-        assert result == {"valid": True, "is_master": True, "is_admin": False}
+        assert result == {"valid": True, "is_master": True, "is_admin": False, "owner": ""}
 
     def test_stored_admin_code_returns_admin(self, monkeypatch):
         from config import settings
@@ -82,7 +82,7 @@ class TestValidateCodeShape:
             }
             g.return_value = db
             result = validate_code("ADM")
-        assert result == {"valid": True, "is_master": False, "is_admin": True}
+        assert result == {"valid": True, "is_master": False, "is_admin": True, "owner": ""}
 
     def test_stored_regular_code_returns_neither(self, monkeypatch):
         from config import settings
@@ -98,7 +98,7 @@ class TestValidateCodeShape:
             }
             g.return_value = db
             result = validate_code("USR")
-        assert result == {"valid": True, "is_master": False, "is_admin": False}
+        assert result == {"valid": True, "is_master": False, "is_admin": False, "owner": ""}
 
     def test_unknown_code_invalid(self, monkeypatch):
         from config import settings
@@ -110,7 +110,7 @@ class TestValidateCodeShape:
             db.get_invite_code_by_value.return_value = None
             g.return_value = db
             result = validate_code("WHO?")
-        assert result == {"valid": False, "is_master": False, "is_admin": False}
+        assert result == {"valid": False, "is_master": False, "is_admin": False, "owner": ""}
 
 
 # ----------------------------------------------------------------------------

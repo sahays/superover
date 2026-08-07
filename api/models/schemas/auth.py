@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class ValidateCodeRequest(BaseModel):
-    code: str = Field(..., description="Invite code to validate")
+    code: str = Field(..., min_length=1, max_length=32, description="Invite code to validate")
 
 
 class ValidateCodeResponse(BaseModel):
@@ -33,7 +33,7 @@ class InviteCodeResponse(BaseModel):
 
 
 class CreateInviteCodeRequest(BaseModel):
-    code: str = Field(..., min_length=1, max_length=100, description="The invite code string")
+    code: str = Field(..., min_length=1, max_length=32, description="The invite code string")
     label: str = Field("", max_length=200, description="Human-readable label")
     is_admin: bool = Field(False, description="Grant master-level access except code creation")
     owner: str = Field("", max_length=100, description="Studio slug scoping content visibility")

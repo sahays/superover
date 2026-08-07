@@ -57,6 +57,7 @@ export function InviteCodeGate() {
               placeholder="Enter invite code"
               value={code}
               onChange={(e) => { setCode(e.target.value); setError('') }}
+              maxLength={32}
               autoFocus
               className={error ? 'border-red-500' : ''}
             />

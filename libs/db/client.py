@@ -15,6 +15,7 @@ from .category_schemas import CategorySchemasMixin
 from .branding import BrandingMixin
 from .invite_codes import InviteCodesMixin
 from .avatars import AvatarsMixin
+from .dubbing import DubbingMixin
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class FirestoreDB(
     BrandingMixin,
     InviteCodesMixin,
     AvatarsMixin,
+    DubbingMixin,
 ):
     """Firestore database operations."""
 
@@ -47,6 +49,7 @@ class FirestoreDB(
         self.image_jobs = self.client.collection(f"{prefix}image_jobs")
         self.image_results = self.client.collection(f"{prefix}image_results")
         self.engagement_jobs = self.client.collection(f"{prefix}engagement_jobs")
+        self.dubbing_jobs = self.client.collection(f"{prefix}dubbing_jobs")
         self.prompts = self.client.collection(f"{prefix}prompts")
         self.category_schemas = self.client.collection(f"{prefix}category_schemas")
         self.branding_settings = self.client.collection(f"{prefix}branding_settings")

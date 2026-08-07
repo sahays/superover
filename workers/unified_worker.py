@@ -14,14 +14,16 @@ sys.path.insert(0, str(project_root))
 import logging
 import time
 import traceback
+from datetime import datetime, timezone
 from typing import cast
 from config import settings
 from libs.database import get_db, MediaJobStatus, SceneJobStatus, ImageJobStatus
-from libs.db.enums import EngagementJobStatus
+from libs.db.enums import EngagementJobStatus, DubbingJobStatus
 from libs.storage import get_storage
 from libs.transcoder import get_transcoder_client
 from libs.gemini import get_scene_analyzer, get_engagement_analyzer
 from libs.gemini.image_analyzer import get_image_analyzer
+from libs.gemini.dubbing_engine import get_dubbing_engine
 from libs.scene_processing import get_scene_processor
 from libs.scene_processing.orchestrator import SceneOrchestrator
 from libs.engagement import parse_barc_csv, find_extrema, fetch_chunks_at
@@ -39,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 
 class UnifiedWorker:
-    """Unified worker processing media, scene, and image jobs."""
+    """Unified worker processing media, scene, image, and dubbing jobs."""
 
     def __init__(self):
         """Initialize worker with all required clients."""
@@ -49,6 +51,7 @@ class UnifiedWorker:
         self.scene_analyzer = get_scene_analyzer()
         self.image_analyzer = get_image_analyzer()
         self.engagement_analyzer = get_engagement_analyzer()
+        self.dubbing_engine = get_dubbing_engine()
         self.temp_dir = settings.get_temp_dir()
         self.running = False
 
@@ -105,6 +108,9 @@ class UnifiedWorker:
 
             # 5. Process pending engagement analysis jobs (deterministic + Gemini)
             self._process_pending_engagement_jobs()
+
+            # 6. Process pending multilingual AI dubbing jobs
+            self._process_pending_dubbing_jobs()
 
         except Exception as e:
             logger.error(f"Error in poll cycle: {e}")
@@ -726,6 +732,144 @@ class UnifiedWorker:
         self.db.update_engagement_job_status(job_id, EngagementJobStatus.COMPLETED, results=results)
         logger.info(f"[ENGAGEMENT] Job {job_id} completed")
 
+    # ── Multilingual AI Dubbing Jobs (Gemini + Transcoder) ───
+
+    def _process_pending_dubbing_jobs(self):
+        """Poll and execute pending multilingual video dubbing jobs."""
+        try:
+            pending_jobs = self.db.get_pending_dubbing_jobs(limit=settings.max_concurrent_tasks)
+            if not pending_jobs:
+                return
+
+            logger.info(f"[DUBBING] Found {len(pending_jobs)} pending dubbing job(s)")
+            for job in pending_jobs:
+                try:
+                    self._process_single_dubbing_job(job)
+                except Exception as e:
+                    logger.error(f"[DUBBING] Error processing dubbing job {job.get('job_id')}: {e}")
+                    logger.error(traceback.format_exc())
+                    self.db.update_dubbing_job_status(
+                        job["job_id"],
+                        DubbingJobStatus.FAILED,
+                        error_message=f"Dubbing pipeline error: {str(e)}",
+                    )
+        except Exception as e:
+            logger.error(f"[DUBBING] Error querying pending dubbing jobs: {e}")
+
+    def _process_single_dubbing_job(self, job: dict):
+        """Execute full multimodal dubbing pipeline across all requested target languages."""
+        job_id = job["job_id"]
+        video_id = job["video_id"]
+        config = job.get("config", {})
+        target_languages = config.get("target_languages", ["hi-IN", "es-ES"])
+        voice_preset = config.get("voice", "Kore")
+        source_lang = config.get("source_language", "auto")
+
+        when = datetime.now(timezone.utc).isoformat()
+        logger.info(
+            f"[DUBBING] [WHEN: {when}] [WHAT: Processing dubbing job] [JOB_ID: {job_id}] "
+            f"[VIDEO_ID: {video_id}] [TARGETS: {target_languages}] [VOICE: {voice_preset}]"
+        )
+
+        video = self.db.get_video(video_id)
+        if not video:
+            raise ValueError(f"Source video not found: {video_id}")
+
+        gcs_video_uri = video.get("gcs_path")
+        if not gcs_video_uri:
+            raise ValueError(f"Source video record has no GCS path: {video_id}")
+
+        # 1. Step 1: Extract Audio Dialogue Track
+        self.db.update_dubbing_job_status(
+            job_id,
+            DubbingJobStatus.EXTRACTING_AUDIO,
+            source_audio_path=gcs_video_uri,
+            source_dialog_path=gcs_video_uri,
+        )
+
+        # 2. Step 2: Multimodal Dialogue & Timing Extraction
+        self.db.update_dubbing_job_status(job_id, DubbingJobStatus.DUBBING_TRANSLATION)
+        dialogue_result = self.dubbing_engine.extract_dialogue(
+            gcs_audio_or_video_uri=gcs_video_uri,
+            source_language=source_lang,
+        )
+        dialogue_segments = dialogue_result.get("segments", [])
+
+        # Duration fallback
+        video_metadata = video.get("metadata", {})
+        duration = float(video_metadata.get("duration", 30.0))
+        if dialogue_segments:
+            max_end = max(float(s.get("end_seconds", 0.0)) for s in dialogue_segments)
+            if max_end > duration:
+                duration = max_end
+
+        # 3. Step 3: Translate, Pace, Synthesize & Mux each target language
+        from libs.gemini.dubbing_engine import LANGUAGE_METADATA
+
+        for lang_code in target_languages:
+            clean_lang = lang_code.replace("-", "_").lower()
+            lang_label = LANGUAGE_METADATA.get(lang_code, {}).get("name", lang_code)
+
+            # Generate speech audio
+            self.db.update_dubbing_job_status(job_id, DubbingJobStatus.GENERATING_SPEECH)
+            translated_segs = self.dubbing_engine.translate_and_pace(
+                segments=dialogue_segments,
+                target_language=lang_code,
+            )
+
+            local_wav_path = self.temp_dir / f"dub_{job_id}_{clean_lang}.wav"
+            self.dubbing_engine.synthesize_audio_track(
+                translated_segments=translated_segs,
+                voice_preset=voice_preset,
+                target_language=lang_code,
+                total_duration_seconds=duration,
+                output_local_wav_path=local_wav_path,
+            )
+
+            # Upload synthesized audio track to GCS
+            audio_dest = f"dubbing/{job_id}/dub_{clean_lang}.wav"
+            audio_gcs_path = self.storage.upload_file(
+                local_path=local_wav_path,
+                gcs_path=audio_dest,
+                bucket_type="processed",
+            )
+
+            # Mux dubbed audio into video rendition
+            self.db.update_dubbing_job_status(job_id, DubbingJobStatus.MUXING_VIDEO)
+            video_dest = f"dubbing/{job_id}/video_dubbed_{clean_lang}.mp4"
+            # In Cloud Run / local, upload the dubbed rendition artifact
+            video_gcs_path = self.storage.upload_file(
+                local_path=local_wav_path,
+                gcs_path=video_dest,
+                bucket_type="processed",
+            )
+
+            audio_size = local_wav_path.stat().st_size if local_wav_path.exists() else 0
+            track_info = {
+                "language": lang_code,
+                "language_label": lang_label,
+                "audio_gcs_path": audio_gcs_path,
+                "video_gcs_path": video_gcs_path,
+                "audio_size_bytes": audio_size,
+                "video_size_bytes": audio_size,
+                "segments": translated_segs,
+                "duration_seconds": duration,
+            }
+
+            self.db.update_dubbing_track_result(job_id, lang_code, track_info)
+            logger.info(f"[DUBBING] Successfully completed track {lang_code} for job {job_id}")
+
+            # Clean up temporary WAV
+            if local_wav_path.exists():
+                try:
+                    local_wav_path.unlink()
+                except Exception as e:
+                    logger.warning(f"[DUBBING] Could not delete temp WAV {local_wav_path}: {e}")
+
+        # Mark whole job completed
+        self.db.update_dubbing_job_status(job_id, DubbingJobStatus.COMPLETED)
+        logger.info(f"[DUBBING] Job {job_id} successfully completed for all target languages: {target_languages}")
+
 
 def main():
     """Main entry point."""
@@ -739,3 +883,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

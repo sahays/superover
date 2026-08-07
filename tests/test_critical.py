@@ -22,8 +22,18 @@ from api.main import app
 
 @pytest.fixture
 def client():
-    """FastAPI test client."""
-    return TestClient(app)
+    """FastAPI test client with default auth header."""
+    c = TestClient(app)
+    c.headers.update({"X-Invite-Code": "TEST-CODE"})
+    return c
+
+
+@pytest.fixture(autouse=True)
+def mock_auth():
+    """Bypass invite code validation for critical tests."""
+    with patch("api.routes.auth.validate_code") as mock_validate:
+        mock_validate.return_value = {"valid": True, "is_master": True}
+        yield mock_validate
 
 
 @pytest.fixture
@@ -57,6 +67,7 @@ class TestCriticalRouting:
         CRITICAL: /api/scenes/jobs must not be caught by /{video_id} route.
         This was a real bug - "jobs" was being treated as a video_id.
         """
+        mock_db.list_scene_jobs_paginated.return_value = ([], None)
         mock_db.scene_jobs = MagicMock()
         mock_db.scene_jobs.where.return_value.order_by.return_value.limit.return_value.stream.return_value = []
 
@@ -64,7 +75,7 @@ class TestCriticalRouting:
 
         # Should NOT be 404 (which would mean /{video_id} caught it)
         assert response.status_code == 200, "Route /api/scenes/jobs returned 404 - route ordering bug!"
-        assert isinstance(response.json(), list)
+        assert isinstance(response.json().get("items"), list)
 
     def test_job_results_route_exists(self, client, mock_db):
         """
@@ -108,18 +119,13 @@ class TestJobBasedArchitecture:
             },
         ]
 
-        # Mock the query chain
-        mock_query = MagicMock()
-        mock_db.scene_jobs = mock_query
-        mock_query.order_by.return_value.limit.return_value.stream.return_value = [
-            MagicMock(to_dict=lambda j=jobs[0]: j),
-            MagicMock(to_dict=lambda j=jobs[1]: j),
-        ]
+        # Mock the paginated query
+        mock_db.list_scene_jobs_paginated.return_value = (jobs, None)
 
         response = client.get("/api/scenes/jobs")
 
         assert response.status_code == 200
-        data = response.json()
+        data = response.json().get("items", [])
         assert len(data) == 2
         assert data[0]["job_id"] == "job-1"
         assert data[1]["job_id"] == "job-2"

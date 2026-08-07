@@ -74,6 +74,14 @@ from .avatars import (
     LiveConfigResponse,
     LiveTokenResponse,
 )
+from .dubbing import (
+    DubbingConfigRequest,
+    CreateDubbingJobRequest,
+    TimedDubbingSegment,
+    DubbingTrackInfo,
+    DubbingJobResponse,
+    DubbingPlaybackResponse,
+)
 from .search import (
     SyncStatusItem,
     SyncRequest,
@@ -159,4 +167,12 @@ __all__ = [
     "UpdateAvatarRequest",
     "LiveConfigResponse",
     "LiveTokenResponse",
+    # Dubbing
+    "DubbingConfigRequest",
+    "CreateDubbingJobRequest",
+    "TimedDubbingSegment",
+    "DubbingTrackInfo",
+    "DubbingJobResponse",
+    "DubbingPlaybackResponse",
 ]
+

@@ -15,6 +15,7 @@ import {
   LogOut,
   TrendingUp,
   MessagesSquare,
+  Languages,
 } from 'lucide-react'
 import { useBranding } from '@/hooks/use-branding'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -48,6 +49,12 @@ const featureItems: NavItem[] = [
     description: 'AI-powered scene analysis',
   },
   {
+    title: 'AI Dubbing',
+    href: '/dubbing',
+    icon: Languages,
+    description: 'Multilingual speech & voice translation',
+  },
+  {
     title: 'Engagement',
     href: '/engagement',
     icon: TrendingUp,
@@ -60,6 +67,7 @@ const featureItems: NavItem[] = [
     description: 'Semantic video search',
   },
 ]
+
 
 const configItems: NavItem[] = [
   {

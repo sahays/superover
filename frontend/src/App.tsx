@@ -23,6 +23,9 @@ import InviteCodesPage from '@/pages/InviteCodesPage'
 import AvatarsPage from '@/pages/AvatarsPage'
 import AvatarCreatePage from '@/pages/AvatarCreatePage'
 import AvatarPage from '@/pages/AvatarPage'
+import DubbingPage from '@/pages/DubbingPage'
+import DubbingNewPage from '@/pages/DubbingNewPage'
+import DubbingDetailPage from '@/pages/DubbingDetailPage'
 
 export function App() {
   const { isAuthenticated, isMaster, isAdmin, inviteCode, logout } = useAuthStore()
@@ -52,7 +55,11 @@ export function App() {
         <Route path="/scene-analysis" element={<SceneAnalysisPage />} />
         <Route path="/scene/:id" element={<SceneDetailPage />} />
         <Route path="/scene/:id/results" element={<SceneResultsPage />} />
+        <Route path="/dubbing" element={<DubbingPage />} />
+        <Route path="/dubbing/new" element={<DubbingNewPage />} />
+        <Route path="/dubbing/:jobId" element={<DubbingDetailPage />} />
         <Route path="/engagement" element={<EngagementAnalysisPage />} />
+
         {elevated && <Route path="/engagement/new" element={<EngagementNewPage />} />}
         <Route path="/engagement/:jobId" element={<EngagementResultsPage />} />
         <Route path="/prompts" element={<PromptsPage />} />

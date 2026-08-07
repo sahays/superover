@@ -2,7 +2,7 @@
 
 ## 🚀 Project Overview
 
-**Super Over Alchemy** is an AI-powered video analysis platform leveraging Google Gemini (Gemini 2.5 Pro) for multimodal scene analysis, automated video processing, and content understanding.
+**Super Over Alchemy** is an AI-powered video analysis platform leveraging Google Gemini AI for multimodal scene analysis, automated video processing, and content understanding.
 
 The system utilizes a dual-worker asynchronous processing architecture for handling media transformation (video transcoding, audio extraction) and AI scene analysis (transcription, character identification, key moment extraction, sentiment analysis).
 
@@ -49,10 +49,15 @@ The system utilizes a dual-worker asynchronous processing architecture for handl
 ├── tests/                     # Pytest test suite
 │   ├── api/                   # API unit & integration tests
 │   ├── workers/               # Worker processing tests
-│   └── libs/                  # Shared library tests
+├── scripts/                   # Shell scripts for build, testing & deployment
+│   ├── pre-deploy.sh          # Master pre-deployment lint, type & build check
+│   ├── deploy-gcp.sh          # Automated GCP Cloud Build & Cloud Run deployment
+│   ├── deploy-sandbox.sh      # Sandbox VM Docker build & Cloud Run deployer
+│   ├── launch-sandbox.sh      # Sandbox VM launcher with Shielded Secure Boot
+│   ├── remote-test.sh         # Remote sandbox test orchestrator
+│   └── run_tests.sh           # Master test runner script
 ├── docs/                      # Technical documentation & sequence diagrams
 ├── config.py                  # Environment configuration & settings
-├── run_tests.sh               # Master test runner script
 ├── scene_analysis_schema.json # JSON Schema for Gemini scene analysis output
 └── requirements.txt           # Python dependencies
 ```
@@ -61,27 +66,30 @@ The system utilizes a dual-worker asynchronous processing architecture for handl
 
 ## 🛠 Command Reference
 
+### **Pre-Deployment Verification**
+```bash
+# Run all pre-deploy checks (Python lint, mypy types, pytest suite, frontend build)
+./scripts/pre-deploy.sh
+
+# Run with auto-formatting
+./scripts/pre-deploy.sh --fix
+```
+
 ### **Testing**
 Run tests using the project test runner:
 ```bash
 # Run all tests
-./run_tests.sh all
+./scripts/run_tests.sh all
 
 # Run specific test suites
-./run_tests.sh api
-./run_tests.sh worker
-./run_tests.sh libs
-./run_tests.sh unit
-./run_tests.sh integration
+./scripts/run_tests.sh api
+./scripts/run_tests.sh worker
+./scripts/run_tests.sh libs
+./scripts/run_tests.sh unit
+./scripts/run_tests.sh integration
 
 # Run with coverage report
-./run_tests.sh all true
-```
-
-Alternatively, invoke `pytest` directly:
-```bash
-pytest tests/ -v
-pytest tests/api/ -v
+./scripts/run_tests.sh all true
 ```
 
 ### **Code Quality & Linting**
@@ -89,8 +97,9 @@ pytest tests/api/ -v
 # Type checking
 mypy --config-file mypy.ini api libs workers
 
-# Linting
+# Linting & Formatting
 ruff check .
+ruff format --check .
 ```
 
 ### **Frontend Development**
@@ -110,3 +119,13 @@ npm run lint     # Lint frontend code
 3. **Async / Non-blocking IO**: Heavy media or network tasks in `api` or `workers` must utilize async patterns or delegating worker threads.
 4. **Error Handling**: Mask sensitive details in production responses; ensure structured logging across all services.
 5. **Testing Requirements**: Any new API route, worker feature, or library utility must include corresponding pytest coverage in `tests/`.
+
+## Coding instructions
+1. DRY: no code duplicates
+2. Semantic logging: when, what, why, who, where, and how
+3. OWASP: secure coding practices to ensure no vulnerabilities like XSS, CSRF, SQL injection, RCE, etc.
+4. SOLID: single responsibility, open/closed, Liskov substitution, interface segregation, dependency inversion
+5. Clean Architecture: follow clean architecture principles
+6. [Critical] No brute force: Always ensure you optimize data structures and most suitable well-known algorithms
+
+

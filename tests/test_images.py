@@ -1,14 +1,24 @@
 import pytest
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 from api.main import app
 from libs.database import get_db
 import uuid
 
 
+@pytest.fixture(autouse=True)
+def mock_auth():
+    with patch("api.routes.auth.validate_code") as mock_validate:
+        mock_validate.return_value = {"valid": True, "is_master": True}
+        yield mock_validate
+
+
 @pytest.fixture()
 def client():
-    """TestClient — seeding is suppressed by conftest._no_seed."""
-    return TestClient(app)
+    """TestClient with default auth header."""
+    c = TestClient(app)
+    c.headers.update({"X-Invite-Code": "TEST-CODE"})
+    return c
 
 
 @pytest.fixture
