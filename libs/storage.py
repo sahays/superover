@@ -89,7 +89,7 @@ class GCSStorage:
         logger.info(f"Generated signed download URL for: {gcs_path}")
         return url
 
-    def upload_file(self, local_path: Path, gcs_path: str, content_type: Optional[str] = None) -> str:
+    def upload_file(self, local_path: Union[Path, str], gcs_path: str, content_type: Optional[str] = None) -> str:
         """
         Upload a file from local storage to GCS.
 
@@ -135,7 +135,7 @@ class GCSStorage:
         logger.info(f"Uploaded {len(data)} bytes to {gcs_path}")
         return gcs_path
 
-    def download_file(self, gcs_path: str, local_path: Path) -> Path:
+    def download_file(self, gcs_path: str, local_path: Union[Path, str]) -> Path:
         """
         Download a file from GCS to local storage.
 
@@ -151,11 +151,12 @@ class GCSStorage:
         blob = bucket.blob(blob_name)
 
         # Ensure parent directory exists
-        local_path.parent.mkdir(parents=True, exist_ok=True)
+        dest_path = Path(local_path)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
 
-        blob.download_to_filename(str(local_path))
-        logger.info(f"Downloaded {gcs_path} to {local_path}")
-        return local_path
+        blob.download_to_filename(str(dest_path))
+        logger.info(f"Downloaded {gcs_path} to {dest_path}")
+        return dest_path
 
     def file_exists(self, gcs_path: str) -> bool:
         """
