@@ -779,7 +779,7 @@ class UnifiedWorker:
         if not gcs_video_uri:
             raise ValueError(f"Source video record has no GCS path: {video_id}")
 
-        # 1. Step 1: Extract Audio Dialogue Track
+        # 1. Step 1: Download/localize source video and extract 16kHz PCM audio
         self.db.update_dubbing_job_status(
             job_id,
             DubbingJobStatus.EXTRACTING_AUDIO,
@@ -787,43 +787,44 @@ class UnifiedWorker:
             source_dialog_path=gcs_video_uri,
         )
 
-        # 2. Step 2: Multimodal Dialogue & Timing Extraction
-        self.db.update_dubbing_job_status(job_id, DubbingJobStatus.DUBBING_TRANSLATION)
-        dialogue_result = self.dubbing_engine.extract_dialogue(
-            gcs_audio_or_video_uri=gcs_video_uri,
-            source_language=source_lang,
-        )
-        dialogue_segments = dialogue_result.get("segments", [])
+        local_video_path = self.storage.download_file(gcs_video_uri)
+        pcm_source_path = str(self.temp_dir / f"source_{job_id}_16k.pcm")
+        self.dubbing_engine.extraction_service.extract_pcm_16k(str(local_video_path), pcm_source_path)
 
-        # Duration fallback
-        video_metadata = video.get("metadata", {})
-        duration = float(video_metadata.get("duration", 30.0))
-        if dialogue_segments:
-            max_end = max(float(s.get("end_seconds", 0.0)) for s in dialogue_segments)
-            if max_end > duration:
-                duration = max_end
-
-        # 3. Step 3: Translate, Pace, Synthesize & Mux each target language
+        # 2. Step 2 & 3: Gemini Live Speech-to-Speech Translation across all target languages
         from libs.gemini.dubbing_engine import LANGUAGE_METADATA
 
         for lang_code in target_languages:
             clean_lang = lang_code.replace("-", "_").lower()
             lang_label = LANGUAGE_METADATA.get(lang_code, {}).get("name", lang_code)
 
-            # Generate speech audio
-            self.db.update_dubbing_job_status(job_id, DubbingJobStatus.GENERATING_SPEECH)
-            translated_segs = self.dubbing_engine.translate_and_pace(
-                segments=dialogue_segments,
-                target_language=lang_code,
+            self.db.update_dubbing_job_status(job_id, DubbingJobStatus.DUBBING_TRANSLATION)
+            when_tr = datetime.now(timezone.utc).isoformat()
+            logger.info(
+                f"[DUBBING] [WHEN: {when_tr}] [WHAT: Streaming speech to Gemini Live] [TARGET: {lang_code}] [VOICE: {voice_preset}]"
             )
 
+            live_res = asyncio.run(
+                self.dubbing_engine.translate_speech_live(
+                    raw_pcm_path=pcm_source_path,
+                    target_language_code=lang_code,
+                    voice_preset=voice_preset,
+                )
+            )
+
+            # Step 4: Synthesize & encode high-fidelity audio tracks (24kHz -> WAV & 48kHz AAC)
+            self.db.update_dubbing_job_status(job_id, DubbingJobStatus.GENERATING_SPEECH)
             local_wav_path = self.temp_dir / f"dub_{job_id}_{clean_lang}.wav"
-            self.dubbing_engine.synthesize_audio_track(
-                translated_segments=translated_segs,
-                voice_preset=voice_preset,
-                target_language=lang_code,
-                total_duration_seconds=duration,
-                output_local_wav_path=local_wav_path,
+            local_aac_path = self.temp_dir / f"dub_{job_id}_{clean_lang}.aac"
+
+            self.dubbing_engine.synthesis_service.pcm_24k_to_wav(
+                live_res.get("audio_bytes", b""),
+                str(local_wav_path),
+                sample_rate=24000,
+            )
+            self.dubbing_engine.synthesis_service.convert_to_stereo_aac(
+                str(local_wav_path),
+                str(local_aac_path),
             )
 
             # Upload synthesized audio track to GCS
@@ -834,10 +835,9 @@ class UnifiedWorker:
                 bucket_type="processed",
             )
 
-            # Mux dubbed audio into video rendition
+            # Step 5: Mux dubbed audio into video rendition
             self.db.update_dubbing_job_status(job_id, DubbingJobStatus.MUXING_VIDEO)
             video_dest = f"dubbing/{job_id}/video_dubbed_{clean_lang}.mp4"
-            # In Cloud Run / local, upload the dubbed rendition artifact
             video_gcs_path = self.storage.upload_file(
                 local_path=local_wav_path,
                 gcs_path=video_dest,
@@ -852,19 +852,29 @@ class UnifiedWorker:
                 "video_gcs_path": video_gcs_path,
                 "audio_size_bytes": audio_size,
                 "video_size_bytes": audio_size,
-                "segments": translated_segs,
-                "duration_seconds": duration,
+                "input_transcript": live_res.get("input_transcription", ""),
+                "translated_transcript": live_res.get("output_transcription", ""),
+                "duration_seconds": live_res.get("duration_seconds", 30.0),
+                "voice_preset": voice_preset,
             }
 
             self.db.update_dubbing_track_result(job_id, lang_code, track_info)
-            logger.info(f"[DUBBING] Successfully completed track {lang_code} for job {job_id}")
+            logger.info(f"[DUBBING] Successfully completed Live Speech track {lang_code} for job {job_id}")
 
-            # Clean up temporary WAV
-            if local_wav_path.exists():
-                try:
-                    local_wav_path.unlink()
-                except Exception as e:
-                    logger.warning(f"[DUBBING] Could not delete temp WAV {local_wav_path}: {e}")
+            # Clean up temporary WAV and AAC
+            for p in (local_wav_path, local_aac_path):
+                if p.exists():
+                    try:
+                        p.unlink()
+                    except Exception as e:
+                        logger.warning(f"[DUBBING] Could not delete temp audio {p}: {e}")
+
+        # Clean up source PCM
+        if Path(pcm_source_path).exists():
+            try:
+                Path(pcm_source_path).unlink()
+            except Exception:
+                pass
 
         # Mark whole job completed
         self.db.update_dubbing_job_status(job_id, DubbingJobStatus.COMPLETED)

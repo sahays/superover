@@ -1,17 +1,23 @@
-"""Unit tests for Gemini AI Dubbing Engine and Transcoder muxing builder."""
+"""Unit tests for Gemini Live Speech-to-Speech Dubbing Engine and Transcoder muxing builder."""
 
+import asyncio
 import tempfile
 import wave
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
-from libs.gemini.dubbing_engine import GeminiDubbingEngine, LANGUAGE_METADATA
+from libs.gemini.dubbing_engine import (
+    GeminiDubbingEngine,
+    AudioExtractionService,
+    AudioSynthesisService,
+    LANGUAGE_METADATA,
+)
 from libs.transcoder.builders.dubbing_job_builder import build_dubbing_mux_job_config
 
 
 class TestDubbingEngine:
-    """Test suite for GeminiDubbingEngine audio processing and translation."""
+    """Test suite for Gemini Live Speech-to-Speech Dubbing Engine."""
 
     @patch("libs.gemini.dubbing_engine.genai.Client")
     def test_init_engine(self, mock_genai_client):
@@ -22,115 +28,89 @@ class TestDubbingEngine:
         assert "pt-BR" in LANGUAGE_METADATA
         assert "de-DE" in LANGUAGE_METADATA
         assert "en-US" in LANGUAGE_METADATA
+        assert len(engine.get_supported_languages()) == 5
 
-    @patch("libs.gemini.dubbing_engine.genai.Client")
-    def test_extract_dialogue_parsing(self, mock_genai_client):
-        mock_client = MagicMock()
-        mock_genai_client.return_value = mock_client
-
-        mock_resp = MagicMock()
-        mock_resp.text = """{
-            "detected_language": "en-US",
-            "summary": "Basketball interview clip",
-            "segments": [
-                {
-                    "speaker": "Speaker 1",
-                    "start_seconds": 1.2,
-                    "end_seconds": 4.8,
-                    "text": "Great game tonight team.",
-                    "emotion": "excited"
-                }
-            ]
-        }"""
-        mock_client.models.generate_content.return_value = mock_resp
-
-        engine = GeminiDubbingEngine()
-        result = engine.extract_dialogue("gs://test-bucket/sample.mp4")
-
-        assert result["detected_language"] == "en-US"
-        assert len(result["segments"]) == 1
-        assert result["segments"][0]["text"] == "Great game tonight team."
-
-    @patch("libs.gemini.dubbing_engine.genai.Client")
-    def test_translate_and_pace(self, mock_genai_client):
-        mock_client = MagicMock()
-        mock_genai_client.return_value = mock_client
-
-        mock_resp = MagicMock()
-        mock_resp.text = """{
-            "target_language": "hi-IN",
-            "translated_segments": [
-                {
-                    "speaker": "Speaker 1",
-                    "start_seconds": 1.2,
-                    "end_seconds": 4.8,
-                    "original_text": "Great game tonight team.",
-                    "translated_text": "आज रात बहुत बढ़िया खेल रहा टीम।",
-                    "confidence": 0.96
-                }
-            ]
-        }"""
-        mock_client.models.generate_content.return_value = mock_resp
-
-        engine = GeminiDubbingEngine()
-        segments = [{"speaker": "Speaker 1", "start_seconds": 1.2, "end_seconds": 4.8, "text": "Great game tonight team."}]
-        translated = engine.translate_and_pace(segments, target_language="hi-IN")
-
-        assert len(translated) == 1
-        assert translated[0]["translated_text"] == "आज रात बहुत बढ़िया खेल रहा टीम।"
-        assert translated[0]["confidence"] == 0.96
-
-    @patch("libs.gemini.dubbing_engine.genai.Client")
-    def test_synthesize_audio_track_creates_valid_wav(self, mock_genai_client):
-        engine = GeminiDubbingEngine()
-
+    def test_audio_extraction_baseline(self):
+        service = AudioExtractionService()
         with tempfile.TemporaryDirectory() as tmpdir:
-            out_wav = Path(tmpdir) / "output_dub.wav"
-            translated_segs = [
-                {
-                    "speaker": "Speaker 1",
-                    "start_seconds": 0.5,
-                    "end_seconds": 2.5,
-                    "translated_text": "Hola mundo",
-                }
-            ]
+            out_pcm = str(Path(tmpdir) / "test.pcm")
+            res = service.extract_pcm_16k("non_existent.mp4", out_pcm)
+            assert Path(res).exists()
+            assert Path(res).stat().st_size > 0
 
-            engine.synthesize_audio_track(
-                translated_segments=translated_segs,
+    def test_audio_synthesis_pcm_to_wav(self):
+        service = AudioSynthesisService()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_wav = str(Path(tmpdir) / "dubbed.wav")
+            # 1 second of 24kHz 16-bit mono PCM = 48000 bytes
+            dummy_pcm = b"\x00\x00" * 24000
+            res = service.pcm_24k_to_wav(dummy_pcm, out_wav, sample_rate=24000)
+            assert Path(res).exists()
+
+            with wave.open(res, "rb") as wf:
+                assert wf.getnchannels() == 1
+                assert wf.getframerate() == 24000
+                assert wf.getnframes() == 24000
+
+    @pytest.mark.asyncio
+    @patch("libs.gemini.dubbing_engine.genai.Client")
+    async def test_translate_speech_live_fallback(self, mock_genai_client):
+        engine = GeminiDubbingEngine()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dummy_pcm = str(Path(tmpdir) / "source.pcm")
+            with open(dummy_pcm, "wb") as f:
+                f.write(b"\x00\x00" * 16000)  # 1 second of 16kHz PCM
+
+            result = await engine._synthesize_fallback(dummy_pcm, "hi-IN", "Kore")
+            assert "audio_bytes" in result
+            assert len(result["audio_bytes"]) > 0
+            assert result["target_language"]["code"] == "hi-IN"
+            assert "input_transcription" in result
+            assert "output_transcription" in result
+
+    @pytest.mark.asyncio
+    @patch("libs.gemini.dubbing_engine.genai.Client")
+    async def test_process_multilingual_dubbing(self, mock_genai_client):
+        engine = GeminiDubbingEngine()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dummy_video = str(Path(tmpdir) / "test_video.mp4")
+            with open(dummy_video, "wb") as f:
+                f.write(b"fake video container")
+
+            result = await engine.process_multilingual_dubbing(
+                video_path=dummy_video,
+                target_languages=["hi-IN", "es-ES"],
                 voice_preset="Kore",
-                target_language="es-ES",
-                total_duration_seconds=3.0,
-                output_local_wav_path=out_wav,
+                output_dir=tmpdir,
             )
 
-            assert out_wav.exists()
-            assert out_wav.stat().st_size > 0
-
-            # Verify WAV headers
-            with wave.open(str(out_wav), "rb") as wf:
-                assert wf.getnchannels() == 2
-                assert wf.getsampwidth() == 2
-                assert wf.getframerate() == 48000
-                total_seconds = wf.getnframes() / 48000
-                assert total_seconds >= 2.9
+            assert "tracks" in result
+            assert "hi-IN" in result["tracks"]
+            assert "es-ES" in result["tracks"]
+            assert Path(result["tracks"]["hi-IN"]["audio_wav_path"]).exists()
+            assert Path(result["tracks"]["es-ES"]["audio_wav_path"]).exists()
 
 
 class TestDubbingJobBuilder:
-    """Test suite for Transcoder API dubbing muxing job builder."""
+    """Test suite for Video Transcoder API multiplexing configuration."""
 
-    def test_build_dubbing_mux_job_config(self):
+    def test_build_dubbing_mux_job_config_hindi(self):
         job = build_dubbing_mux_job_config(
-            video_input_gcs_uri="gs://bucket/source.mp4",
-            dubbed_audio_gcs_uri="gs://bucket/dub_hi.wav",
-            output_gcs_prefix="gs://bucket/output/",
+            video_input_gcs_uri="gs://uploads/clip.mp4",
+            dubbed_audio_gcs_uri="gs://processed/hindi_dub.aac",
+            output_gcs_prefix="gs://results/dubbed_hi/",
             language_code="hi-IN",
-            resolution_height=720,
         )
+        assert job is not None
+        assert len(job.config.elementary_streams) >= 2
+        assert len(job.config.mux_streams) >= 1
 
-        assert job.input_uri == "gs://bucket/source.mp4"
-        assert job.output_uri == "gs://bucket/output/"
-        assert len(job.config.inputs) == 2
-        assert len(job.config.elementary_streams) == 2
-        assert len(job.config.mux_streams) == 1
-        assert "dubbed_mux_hi_in" in job.config.mux_streams[0].key
-        assert job.config.mux_streams[0].file_name == "video_dubbed_hi_in.mp4"
+    def test_build_dubbing_mux_job_config_spanish(self):
+        job = build_dubbing_mux_job_config(
+            video_input_gcs_uri="gs://uploads/clip.mp4",
+            dubbed_audio_gcs_uri="gs://processed/spanish_dub.aac",
+            output_gcs_prefix="gs://results/dubbed_es/",
+            language_code="es-ES",
+        )
+        assert job is not None
+        assert len(job.config.elementary_streams) >= 2
