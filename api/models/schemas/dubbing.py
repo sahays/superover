@@ -1,7 +1,7 @@
 """Dubbing Pydantic schemas."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 from libs.db.enums import DubbingJobStatus, DubbingLanguage, DubbingMode
 from api.models.schemas.avatars import AvatarVoice
@@ -70,9 +70,13 @@ class DubbingJobResponse(BaseModel):
     video_id: str = Field(..., description="Source video identifier")
     status: DubbingJobStatus = Field(..., description="Current processing status")
     config: DubbingConfigRequest = Field(..., description="Job configuration")
-    tracks: Dict[str, DubbingTrackInfo] = Field(default_factory=dict, description="Generated language tracks keyed by language code")
+    tracks: Dict[str, DubbingTrackInfo] = Field(
+        default_factory=dict, description="Generated language tracks keyed by language code"
+    )
     source_audio_path: Optional[str] = Field(None, description="Source audio track extracted from video")
-    source_dialog_path: Optional[str] = Field(None, description="Dialogue-only mono track extracted for ASR/translation")
+    source_dialog_path: Optional[str] = Field(
+        None, description="Dialogue-only mono track extracted for ASR/translation"
+    )
     error_message: Optional[str] = Field(None, description="Failure reason if job failed")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

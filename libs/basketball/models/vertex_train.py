@@ -81,14 +81,19 @@ def _fetch_dataset(dataset_uri: str) -> Path:
 
     data_yaml = LOCAL_DATASET / "data.yaml"
     if not data_yaml.is_file():
-        raise FileNotFoundError(f"no data.yaml under {dataset_uri} (got: {sorted(p.name for p in LOCAL_DATASET.iterdir())})")
+        file_list = sorted(p.name for p in LOCAL_DATASET.iterdir())
+        raise FileNotFoundError(f"no data.yaml under {dataset_uri} (got: {file_list})")
     spec = yaml.safe_load(data_yaml.read_text())
     for split, sub in (("train", "train"), ("val", "valid"), ("test", "test")):
         images = LOCAL_DATASET / sub / "images"
         if images.is_dir():
             spec[split] = str(images)
     data_yaml.write_text(yaml.safe_dump(spec, sort_keys=False), encoding="utf-8")
-    counts = {s: len(list((LOCAL_DATASET / s / "images").glob("*"))) for s in ("train", "valid", "test") if (LOCAL_DATASET / s / "images").is_dir()}
+    counts = {
+        s: len(list((LOCAL_DATASET / s / "images").glob("*")))
+        for s in ("train", "valid", "test")
+        if (LOCAL_DATASET / s / "images").is_dir()
+    }
     print(f"dataset ready at {LOCAL_DATASET}: {counts}", flush=True)
     print(f"classes ({spec.get('nc')}): {spec.get('names')}", flush=True)
     return data_yaml

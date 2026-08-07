@@ -6,7 +6,6 @@ Follows official Gemini Live API specs (gemini-3.5-live-translate-preview).
 """
 
 import asyncio
-import io
 import logging
 import math
 import os
@@ -305,8 +304,9 @@ class GeminiDubbingEngine:
         input_tx = types.AudioTranscriptionConfig() if hasattr(types, "AudioTranscriptionConfig") else None
         output_tx = types.AudioTranscriptionConfig() if hasattr(types, "AudioTranscriptionConfig") else None
 
+        modalities: Any = ["AUDIO"]
         live_config = types.LiveConnectConfig(
-            response_modalities=["AUDIO"],
+            response_modalities=modalities,
             input_audio_transcription=input_tx,
             output_audio_transcription=output_tx,
             translation_config=translation_config,

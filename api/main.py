@@ -19,7 +19,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from config import settings
-from api.routes import scenes, media, prompts, images, search, branding, auth, engagement, avatars, avatars_live, dubbing
+from api.routes import (
+    scenes,
+    media,
+    prompts,
+    images,
+    search,
+    branding,
+    auth,
+    engagement,
+    avatars,
+    avatars_live,
+    dubbing,
+)
 from api.middleware.invite_code import InviteCodeMiddleware
 from api.models.schemas import HealthResponse
 

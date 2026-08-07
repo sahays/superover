@@ -102,7 +102,10 @@ class DubbingMixin:
 
     def list_dubbing_jobs_for_video(self, video_id: str) -> List[Dict[str, Any]]:
         """List all dubbing jobs for a specific video."""
-        query = self.dubbing_jobs.where("video_id", "==", video_id).order_by("created_at", direction=firestore.Query.DESCENDING)
+        query = (
+            self.dubbing_jobs.where("video_id", "==", video_id)
+            .order_by("created_at", direction=firestore.Query.DESCENDING)
+        )
         return [doc.to_dict() for doc in query.stream()]
 
     def get_pending_dubbing_jobs(self, limit: int = 10) -> List[Dict[str, Any]]:
