@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -18,8 +18,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { videoApi, dubbingApi, uploadToGCS } from '@/lib/api-client'
-import { DubbingLanguage, DubbingMode, Video } from '@/lib/types'
+import { videoApi, mediaApi, dubbingApi, uploadToGCS } from '@/lib/api-client'
+import { DubbingLanguage, DubbingMode } from '@/lib/types'
 import { toast } from 'sonner'
 
 const TARGET_LANGUAGES = [
@@ -56,17 +56,46 @@ export default function DubbingNewPage() {
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
 
-  // Fetch available uploaded videos
-  const { data: videos, isLoading: loadingVideos } = useQuery({
-    queryKey: ['videos-list-for-dubbing-page'],
+  // Fetch available uploaded videos from both media and scene endpoints
+  const { data: mediaVideosData, isLoading: loadingMediaVideos } = useQuery({
+    queryKey: ['media-videos-list-for-dubbing'],
+    queryFn: () => mediaApi.listVideos(100),
+  })
+
+  const { data: sceneVideosData, isLoading: loadingSceneVideos } = useQuery({
+    queryKey: ['scene-videos-list-for-dubbing'],
     queryFn: () => videoApi.listVideos(100),
   })
 
-  const videoList: any[] = Array.isArray(videos)
-    ? videos
-    : Array.isArray((videos as any)?.items)
-      ? (videos as any).items
-      : []
+  const videoList = useMemo(() => {
+    const map = new Map<string, any>()
+    const mediaItems = Array.isArray(mediaVideosData)
+      ? mediaVideosData
+      : Array.isArray((mediaVideosData as any)?.items)
+        ? (mediaVideosData as any).items
+        : []
+    const sceneItems = Array.isArray(sceneVideosData)
+      ? sceneVideosData
+      : Array.isArray((sceneVideosData as any)?.items)
+        ? (sceneVideosData as any).items
+        : []
+
+    for (const v of [...mediaItems, ...sceneItems]) {
+      if (v?.video_id && !map.has(v.video_id)) {
+        map.set(v.video_id, v)
+      }
+    }
+    return Array.from(map.values())
+  }, [mediaVideosData, sceneVideosData])
+
+  const loadingVideos = loadingMediaVideos || loadingSceneVideos
+
+  // Auto-select first video if not already selected
+  useEffect(() => {
+    if (!selectedVideoId && videoList.length > 0 && !uploadFile) {
+      setSelectedVideoId(videoList[0].video_id)
+    }
+  }, [videoList, selectedVideoId, uploadFile])
 
   const toggleLanguage = (lang: DubbingLanguage) => {
     setSelectedLanguages((prev) =>
@@ -183,11 +212,37 @@ export default function DubbingNewPage() {
                     <SelectValue placeholder="Select existing video..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {videoList.map((v) => (
-                      <SelectItem key={v.video_id} value={v.video_id}>
-                        {v.filename || v.video_id}
+                    {videoList.length === 0 ? (
+                      <SelectItem value="none" disabled>
+                        No videos found. Upload a video to start.
                       </SelectItem>
-                    ))}
+                    ) : (
+                      videoList.map((v) => {
+                        const durationSec = v.metadata?.duration || 0
+                        const mins = Math.floor(durationSec / 60)
+                        const secs = Math.round(durationSec % 60)
+                        const sizeMb = v.size_bytes ? (v.size_bytes / (1024 * 1024)).toFixed(1) : null
+
+                        return (
+                          <SelectItem key={v.video_id} value={v.video_id}>
+                            <div className="flex items-center gap-2 max-w-[340px]">
+                              <Film className="h-3.5 w-3.5 text-primary shrink-0" />
+                              <span className="font-medium truncate">{v.filename || v.video_id}</span>
+                              {durationSec > 0 && (
+                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
+                                  {mins}m {secs}s
+                                </Badge>
+                              )}
+                              {sizeMb && (
+                                <span className="text-[11px] text-muted-foreground">
+                                  {sizeMb} MB
+                                </span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        )
+                      })
+                    )}
                   </SelectContent>
                 </Select>
               </div>

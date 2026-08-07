@@ -787,9 +787,10 @@ class UnifiedWorker:
             source_dialog_path=gcs_video_uri,
         )
 
-        local_video_path = self.storage.download_file(gcs_video_uri)
+        local_video_path = str(self.temp_dir / f"source_{job_id}.mp4")
+        self.storage.download_file(gcs_video_uri, local_video_path)
         pcm_source_path = str(self.temp_dir / f"source_{job_id}_16k.pcm")
-        self.dubbing_engine.extraction_service.extract_pcm_16k(str(local_video_path), pcm_source_path)
+        self.dubbing_engine.extraction_service.extract_pcm_16k(local_video_path, pcm_source_path)
 
         # 2. Step 2 & 3: Gemini Live Speech-to-Speech Translation across all target languages
         from libs.gemini.dubbing_engine import LANGUAGE_METADATA
@@ -815,8 +816,9 @@ class UnifiedWorker:
 
             # Step 4: Synthesize & encode high-fidelity audio tracks (24kHz -> WAV & 48kHz AAC)
             self.db.update_dubbing_job_status(job_id, DubbingJobStatus.GENERATING_SPEECH)
-            local_wav_path = self.temp_dir / f"dub_{job_id}_{clean_lang}.wav"
-            local_aac_path = self.temp_dir / f"dub_{job_id}_{clean_lang}.aac"
+            temp_path = Path(self.temp_dir)
+            local_wav_path = temp_path / f"dub_{job_id}_{clean_lang}.wav"
+            local_aac_path = temp_path / f"dub_{job_id}_{clean_lang}.aac"
 
             self.dubbing_engine.synthesis_service.pcm_24k_to_wav(
                 live_res.get("audio_bytes", b""),
@@ -831,7 +833,7 @@ class UnifiedWorker:
             # Upload synthesized audio track to GCS
             audio_dest = f"dubbing/{job_id}/dub_{clean_lang}.wav"
             audio_gcs_path = self.storage.upload_file(
-                local_path=local_wav_path,
+                local_path=str(local_wav_path),
                 gcs_path=audio_dest,
                 bucket_type="processed",
             )
@@ -840,7 +842,7 @@ class UnifiedWorker:
             self.db.update_dubbing_job_status(job_id, DubbingJobStatus.MUXING_VIDEO)
             video_dest = f"dubbing/{job_id}/video_dubbed_{clean_lang}.mp4"
             video_gcs_path = self.storage.upload_file(
-                local_path=local_wav_path,
+                local_path=str(local_wav_path),
                 gcs_path=video_dest,
                 bucket_type="processed",
             )

@@ -138,7 +138,7 @@ class Settings(BaseSettings):
 
     def get_temp_dir(self) -> Path:
         """Get temp directory, creating if needed."""
-        temp_dir = self.temp_storage_path
+        temp_dir = Path(self.temp_storage_path)
         temp_dir.mkdir(parents=True, exist_ok=True)
         return temp_dir
 
