@@ -185,10 +185,9 @@ def main(argv=None) -> int:
     run(["gcloud", "storage", "cp", str(TRAINER), uris["trainer"]])
 
     display_name = args.display_name or f"yolo11n-basketball-{time.strftime('%Y%m%d-%H%M%S')}"
-    # gcloud --config wants a CustomJobSpec YAML keyed by workerPoolSpecs (JSON
-    # is valid YAML, so we emit JSON). camelCase only — underscores are invalid.
     config_path = Path("/tmp/vertex_custom_job.yaml")
-    config_path.write_text(json.dumps({"workerPoolSpecs": [make_worker_pool_spec(args, uris)]}, indent=2), encoding="utf-8")
+    spec_payload = {"workerPoolSpecs": [make_worker_pool_spec(args, uris)]}
+    config_path.write_text(json.dumps(spec_payload, indent=2), encoding="utf-8")
 
     run(
         [

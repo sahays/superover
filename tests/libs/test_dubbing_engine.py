@@ -1,10 +1,7 @@
-"""Unit tests for Gemini Live Speech-to-Speech Dubbing Engine and Transcoder muxing builder."""
-
-import asyncio
 import tempfile
 import wave
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 import pytest
 
 from libs.gemini.dubbing_engine import (

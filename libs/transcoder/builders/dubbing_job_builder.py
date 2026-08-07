@@ -1,7 +1,6 @@
 """Build Transcoder API and FFmpeg multiplexing configs for dubbed video generation."""
 
 import logging
-from typing import Dict, List, Optional
 from google.cloud.video.transcoder_v1 import types as transcoder_types
 
 logger = logging.getLogger(__name__)

@@ -21,7 +21,6 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 from google import genai
 from google.genai import types
 from config import settings
-from libs.gemini.common import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -227,7 +226,12 @@ class GeminiDubbingEngine:
     ) -> None:
         self.model = model
         self.region = region
-        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or getattr(settings, "gemini_api_key", None) or "dummy-api-key"
+        api_key = (
+            os.getenv("GEMINI_API_KEY")
+            or os.getenv("GOOGLE_API_KEY")
+            or getattr(settings, "gemini_api_key", None)
+            or "dummy-api-key"
+        )
         try:
             self.client = genai.Client(api_key=api_key)
         except Exception:
@@ -298,10 +302,13 @@ class GeminiDubbingEngine:
                 echo_target_language=True,
             )
 
+        input_tx = types.AudioTranscriptionConfig() if hasattr(types, "AudioTranscriptionConfig") else None
+        output_tx = types.AudioTranscriptionConfig() if hasattr(types, "AudioTranscriptionConfig") else None
+
         live_config = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
-            input_audio_transcription=types.AudioTranscriptionConfig() if hasattr(types, "AudioTranscriptionConfig") else None,
-            output_audio_transcription=types.AudioTranscriptionConfig() if hasattr(types, "AudioTranscriptionConfig") else None,
+            input_audio_transcription=input_tx,
+            output_audio_transcription=output_tx,
             translation_config=translation_config,
             speech_config=speech_config,
         )
@@ -370,14 +377,17 @@ class GeminiDubbingEngine:
 
         except Exception as exc:
             logger.warning(
-                "[DUBBING_LIVE] [WHEN: %s] [WHAT: Live speech streaming encountered error, using fallback] [ERROR: %s]",
+                "[DUBBING_LIVE] [WHEN: %s] [WHAT: Live speech streaming encountered error, using fallback] "
+                "[ERROR: %s]",
                 now,
                 exc,
             )
             return await self._synthesize_fallback(raw_pcm_path, target_language_code, voice_preset)
 
         combined_input_text = " ".join(input_transcripts).strip() or "Dialogue detected from original video audio."
-        combined_output_text = " ".join(output_transcripts).strip() or f"Translated {lang_meta['name']} audio narration."
+        combined_output_text = (
+            " ".join(output_transcripts).strip() or f"Translated {lang_meta['name']} audio narration."
+        )
         audio_result = bytes(accumulated_audio)
 
         # Estimate duration in seconds (24kHz, 16-bit = 48000 bytes/sec)
@@ -425,7 +435,9 @@ class GeminiDubbingEngine:
         return {
             "audio_bytes": fallback_audio,
             "input_transcription": "Original spoken dialogue extracted from media stream.",
-            "output_transcription": f"Natural {lang_meta['name']} translated speech stream synthesized via {voice_preset}.",
+            "output_transcription": (
+                f"Natural {lang_meta['name']} translated speech stream synthesized via {voice_preset}."
+            ),
             "target_language": lang_meta,
             "duration_seconds": source_dur,
         }

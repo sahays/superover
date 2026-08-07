@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 from api.main import app
-from libs.db.enums import DubbingJobStatus, DubbingLanguage, DubbingMode
+from libs.db.enums import DubbingJobStatus, DubbingMode
 
 TEST_INVITE = {"X-Invite-Code": "TEST-CODE"}
 

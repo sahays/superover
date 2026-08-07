@@ -11,6 +11,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+import asyncio
 import logging
 import time
 import traceback
@@ -763,7 +764,6 @@ class UnifiedWorker:
         config = job.get("config", {})
         target_languages = config.get("target_languages", ["hi-IN", "es-ES"])
         voice_preset = config.get("voice", "Kore")
-        source_lang = config.get("source_language", "auto")
 
         when = datetime.now(timezone.utc).isoformat()
         logger.info(
@@ -801,7 +801,8 @@ class UnifiedWorker:
             self.db.update_dubbing_job_status(job_id, DubbingJobStatus.DUBBING_TRANSLATION)
             when_tr = datetime.now(timezone.utc).isoformat()
             logger.info(
-                f"[DUBBING] [WHEN: {when_tr}] [WHAT: Streaming speech to Gemini Live] [TARGET: {lang_code}] [VOICE: {voice_preset}]"
+                f"[DUBBING] [WHEN: {when_tr}] [WHAT: Streaming speech to Gemini Live] "
+                f"[TARGET: {lang_code}] [VOICE: {voice_preset}]"
             )
 
             live_res = asyncio.run(
