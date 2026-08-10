@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     results_bucket: str
 
     # Gemini API (uses ADC — no API key needed on Cloud Run)
+    gemini_api_key: Optional[str] = None
     gemini_region: str = "global"  # Gemini endpoint region (separate from gcp_region)
     gemini_default_model: str = "gemini-3.1-pro-preview"
     gemini_default_output_tokens: int = 65536

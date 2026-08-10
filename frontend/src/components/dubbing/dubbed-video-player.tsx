@@ -108,7 +108,7 @@ export function DubbedVideoPlayer({ job }: DubbedVideoPlayerProps) {
   const videoSrc =
     activeLanguage === 'original'
       ? originalPlayback?.signed_url
-      : dubbedPlayback?.signed_url || originalPlayback?.signed_url
+      : dubbedPlayback?.signed_url
 
   return (
     <div className="space-y-6">

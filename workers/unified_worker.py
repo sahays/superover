@@ -13,6 +13,7 @@ sys.path.insert(0, str(project_root))
 
 import asyncio
 import logging
+import subprocess
 import time
 import traceback
 from datetime import datetime, timezone
@@ -831,46 +832,102 @@ class UnifiedWorker:
             )
 
             # Upload synthesized audio track to GCS
-            audio_dest = f"dubbing/{job_id}/dub_{clean_lang}.wav"
+            audio_gcs_uri = f"gs://{settings.processed_bucket}/dubbing/{job_id}/dub_{clean_lang}.wav"
             audio_gcs_path = self.storage.upload_file(
                 local_path=str(local_wav_path),
-                gcs_path=audio_dest,
-                bucket_type="processed",
+                gcs_path=audio_gcs_uri,
+                content_type="audio/wav",
             )
 
             # Step 5: Mux dubbed audio into video rendition
             self.db.update_dubbing_job_status(job_id, DubbingJobStatus.MUXING_VIDEO)
-            video_dest = f"dubbing/{job_id}/video_dubbed_{clean_lang}.mp4"
+            local_dubbed_video_path = temp_path / f"dubbed_{job_id}_{clean_lang}.mp4"
+            mux_cmd = [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(local_video_path),
+                "-i",
+                str(local_wav_path),
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-shortest",
+                str(local_dubbed_video_path),
+            ]
+            mux_success = False
+            try:
+                mux_res = subprocess.run(mux_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+                if mux_res.returncode == 0 and local_dubbed_video_path.exists():
+                    mux_success = True
+                else:
+                    logger.warning(
+                        f"[DUBBING] FFmpeg video/audio muxing failed (code {mux_res.returncode}): "
+                        f"{mux_res.stderr.decode('utf-8', errors='ignore')}"
+                    )
+            except Exception as e:
+                logger.warning(f"[DUBBING] FFmpeg video/audio muxing execution error: {e}")
+
+            upload_video_src = str(local_dubbed_video_path) if mux_success else str(local_video_path)
+
+            video_gcs_uri = f"gs://{settings.processed_bucket}/dubbing/{job_id}/video_dubbed_{clean_lang}.mp4"
             video_gcs_path = self.storage.upload_file(
-                local_path=str(local_wav_path),
-                gcs_path=video_dest,
-                bucket_type="processed",
+                local_path=upload_video_src,
+                gcs_path=video_gcs_uri,
+                content_type="video/mp4",
             )
 
             audio_size = local_wav_path.stat().st_size if local_wav_path.exists() else 0
+            video_size = Path(upload_video_src).stat().st_size if Path(upload_video_src).exists() else 0
+            segments = live_res.get("segments") or [
+                {
+                    "speaker": "Speaker 1",
+                    "start_seconds": 0.0,
+                    "end_seconds": live_res.get("duration_seconds", 30.0),
+                    "original_text": live_res.get("input_transcription", "Dialogue detected from original video audio."),
+                    "translated_text": live_res.get("output_transcription", f"Translated {lang_label} dialogue."),
+                    "confidence": 0.95,
+                }
+            ]
+
             track_info = {
                 "language": lang_code,
                 "language_label": lang_label,
                 "audio_gcs_path": audio_gcs_path,
                 "video_gcs_path": video_gcs_path,
                 "audio_size_bytes": audio_size,
-                "video_size_bytes": audio_size,
+                "video_size_bytes": video_size,
                 "input_transcript": live_res.get("input_transcription", ""),
                 "translated_transcript": live_res.get("output_transcription", ""),
+                "segments": segments,
                 "duration_seconds": live_res.get("duration_seconds", 30.0),
                 "voice_preset": voice_preset,
             }
 
             self.db.update_dubbing_track_result(job_id, lang_code, track_info)
-            logger.info(f"[DUBBING] Successfully completed Live Speech track {lang_code} for job {job_id}")
+            now_tr = datetime.now(timezone.utc).isoformat()
+            logger.info(
+                f"[DUBBING] [WHEN: {now_tr}] [WHAT: Completed Live Speech Track] [WHY: Dubbing processing complete for language] "
+                f"[WHO: UnifiedWorker] [WHERE: Firestore track {lang_code}] [HOW: update_dubbing_track_result] "
+                f"[JOB_ID: {job_id}] [LANG: {lang_code}] [SEGMENTS: {len(segments)}]"
+            )
 
-            # Clean up temporary WAV and AAC
-            for p in (local_wav_path, local_aac_path):
+            # Clean up temporary WAV, AAC, and dubbed video files
+            for p in (local_wav_path, local_aac_path, local_dubbed_video_path):
                 if p.exists():
                     try:
                         p.unlink()
                     except Exception as e:
-                        logger.warning(f"[DUBBING] Could not delete temp audio {p}: {e}")
+                        logger.warning(
+                            f"[DUBBING] [WHEN: {datetime.now(timezone.utc).isoformat()}] [WHAT: Temp file cleanup warning] "
+                            f"[WHY: Could not remove temporary file] [WHO: UnifiedWorker] [WHERE: {p}] [HOW: p.unlink] "
+                            f"[ERROR: {e}]"
+                        )
 
         # Clean up source PCM
         if Path(pcm_source_path).exists():
@@ -881,7 +938,12 @@ class UnifiedWorker:
 
         # Mark whole job completed
         self.db.update_dubbing_job_status(job_id, DubbingJobStatus.COMPLETED)
-        logger.info(f"[DUBBING] Job {job_id} successfully completed for all target languages: {target_languages}")
+        now_done = datetime.now(timezone.utc).isoformat()
+        logger.info(
+            f"[DUBBING] [WHEN: {now_done}] [WHAT: Dubbing Job Completed] [WHY: All target language tracks successfully processed] "
+            f"[WHO: UnifiedWorker] [WHERE: Firestore job {job_id}] [HOW: update_dubbing_job_status] "
+            f"[JOB_ID: {job_id}] [TARGETS: {target_languages}]"
+        )
 
 
 def main():

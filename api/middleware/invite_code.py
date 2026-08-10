@@ -27,6 +27,8 @@ NON_MASTER_WRITE_PREFIXES = (
     "/api/images/jobs",
     "/api/engagement/signed-url",
     "/api/engagement/jobs",
+    "/api/dubbing/jobs",
+    "/api/dubbing/signed-url",
 )
 
 # Dynamic write paths allowed for non-master users

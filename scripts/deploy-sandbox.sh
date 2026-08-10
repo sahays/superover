@@ -94,11 +94,16 @@ if [ "$VM_STATUS" != "RUNNING" ]; then
 fi
 
 echo -e "\n${BLUE}Syncing workspace changes to $VM_NAME...${NC}"
-ARCHIVE_PATH="/tmp/superover_deploy_$(date +%s).tar.gz"
+ARCHIVE_PATH="$(pwd)/workspace_deploy_$(date +%s).tar.gz"
 tar --exclude='.git' \
+    --exclude='*.tar.gz' \
     --exclude='venv' \
     --exclude='__pycache__' \
     --exclude='node_modules' \
+    --exclude='frontend/node_modules' \
+    --exclude='frontend/dist' \
+    --exclude='storage' \
+    --exclude='docs' \
     --exclude='.pytest_cache' \
     --exclude='dist' \
     --exclude='.coverage' \
@@ -125,31 +130,7 @@ gcloud compute ssh "$VM_NAME" \
     --zone="$ZONE" \
     --project="$PROJECT_ID" \
     --tunnel-through-iap \
-    --command "bash -c '
-set -e
-cd ~/super-over-alchemy
-
-# Ensure docker is installed and running
-if ! command -v docker >/dev/null 2>&1; then
-    echo \">> Installing docker.io on sandbox VM...\"
-    while sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1 || sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
-        sleep 2
-    done
-    sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io
-    sudo systemctl start docker
-    sudo systemctl enable docker
-    sudo usermod -aG docker \$USER
-fi
-
-# Ensure docker daemon is running
-sudo systemctl is-active --quiet docker || sudo systemctl start docker
-sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
-
-# Run deployment script using Docker (skipping API bootstrap already completed by admin)
-chmod +x ./deploy-gcp.sh
-./deploy-gcp.sh --project $PROJECT_ID --region $REGION --service $SERVICE --docker --skip-bootstrap
-'"
+    --command "cd ~/super-over-alchemy && chmod +x ./deploy-gcp.sh && ./deploy-gcp.sh --project $PROJECT_ID --region $REGION --service $SERVICE --docker --skip-bootstrap --skip-pre-deploy"
 
 echo ""
 echo "============================================================"

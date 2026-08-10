@@ -59,17 +59,39 @@ done
 META="http://metadata.google.internal/computeMetadata/v1"
 MH=(-H "Metadata-Flavor: Google")
 if [[ -z "$PROJECT" ]]; then
+  PROJECT="${GCP_PROJECT:-${GOOGLE_CLOUD_PROJECT:-}}"
+fi
+if [[ -z "$PROJECT" ]]; then
   PROJECT="$(gcloud config get-value project 2>/dev/null || true)"
 fi
 if [[ -z "$PROJECT" || "$PROJECT" == "(unset)" ]]; then
-  PROJECT="$(curl -s "${MH[@]}" "$META/project/project-id")"
+  PROJECT="$(curl -s --connect-timeout 2 "${MH[@]}" "$META/project/project-id" 2>/dev/null || true)"
+fi
+if [[ -z "$PROJECT" || "$PROJECT" == "(unset)" ]]; then
+  PROJECT="aug18-25-3"
 fi
 
-# ── Get access token from metadata server ───────────────────────────────────
-TOKEN="$(curl -s "${MH[@]}" "$META/instance/service-accounts/default/token" \
-  | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")"
+# ── Get access token (try gcloud CLI first, then metadata server fallback) ──
+TOKEN=""
+if command -v gcloud &>/dev/null; then
+  TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || true)"
+  if [[ -z "$TOKEN" ]]; then
+    TOKEN="$(gcloud auth print-access-token 2>/dev/null || true)"
+  fi
+fi
 if [[ -z "$TOKEN" ]]; then
-  echo "ERROR: could not obtain access token from metadata server" >&2
+  TOKEN="${GOOGLE_OAUTH_ACCESS_TOKEN:-}"
+fi
+if [[ -z "$TOKEN" ]]; then
+  RAW_META="$(curl -s --connect-timeout 2 "${MH[@]}" "$META/instance/service-accounts/default/token" 2>/dev/null || true)"
+  if [[ -n "$RAW_META" ]]; then
+    TOKEN="$(echo "$RAW_META" | python3 -c "import sys,json; data=json.load(sys.stdin); print(data.get('access_token',''))" 2>/dev/null || true)"
+  fi
+fi
+
+if [[ -z "$TOKEN" ]]; then
+  echo "ERROR: could not obtain access token via gcloud CLI or metadata server." >&2
+  echo "Please run 'gcloud auth login' or 'gcloud auth application-default login'." >&2
   exit 1
 fi
 

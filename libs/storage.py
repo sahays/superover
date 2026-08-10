@@ -6,7 +6,7 @@ Works both locally and on Cloud Run.
 import datetime
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import google.auth
 from google.auth.transport import requests as auth_requests
